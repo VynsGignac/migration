@@ -553,6 +553,18 @@ class GameScene extends Phaser.Scene {
     this.menuButton.on('pointerup', () => this.toggleSaveMenu());
     this.uiElements.push(this.menuButton);
 
+    // Chrono : temps de jeu écoulé (this.elapsed, déjà en pause avec le reste de la simulation --
+    // voir update(), incrémenté seulement dans le bloc "if (!this.paused)") -- juste besoin de
+    // l'afficher, pas de logique de pause séparée à gérer ici. Même coin que Pause/Menu (voir
+    // layoutHud), demande utilisateur.
+    // Origine à droite (1, 0) : le texte grandit vers la GAUCHE au fil de la partie (9:59 -> 10:00
+    // -> 1:00:00...) sans jamais empiéter sur Pause/Menu à sa droite, dont la position à eux ne
+    // dépend elle d'aucune largeur variable.
+    this.chronoText = this.add.text(0, 0, '0:00', {
+      font: 'bold 15px sans-serif', color: '#ffffff', backgroundColor: '#000000aa', padding: { x: 8, y: 6 },
+    }).setDepth(1002).setOrigin(1, 0);
+    this.uiElements.push(this.chronoText);
+
     this.buildSaveMenu();
     this.buildTechTree();
     this.buildGameOver();
@@ -1269,6 +1281,11 @@ class GameScene extends Phaser.Scene {
     }
 
     if (visible) {
+      // Mémorise si c'est CETTE ouverture qui a mis le jeu en pause (par opposition à une pause
+      // déjà posée manuellement avant de taper l'Université) : sert à la fermeture ci-dessous,
+      // pour ne lever QUE la pause qu'on a nous-même posée (bug corrigé -- demande utilisateur :
+      // la pause restait posée après avoir quitté l'Université).
+      this.pausedByTechTree = !this.paused;
       if (!this.paused) this.togglePause();
       // Toujours recentré sur le milieu du diagramme (d'où rayonnent les 5 branches) à
       // l'ouverture, plutôt que de garder la position du glisser précédent (qui pourrait laisser
@@ -1278,6 +1295,9 @@ class GameScene extends Phaser.Scene {
       this.techTreePanDragging = false;
       this.techTreeSelectedId = null;
       this.layoutTechTree();
+    } else if (this.pausedByTechTree) {
+      this.pausedByTechTree = false;
+      if (this.paused) this.togglePause();
     }
   }
 
@@ -1376,9 +1396,10 @@ class GameScene extends Phaser.Scene {
   layoutHud() {
     const w = this.scale.width, h = this.scale.height;
 
-    // Pause / Menu : toujours en haut à droite, indépendamment de la mise en page PC/mobile.
+    // Pause / Menu / Chrono : toujours en haut à droite, indépendamment de la mise en page PC/mobile.
     this.menuButton.setPosition(w - this.menuButton.width - 10, 10);
     this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, 10);
+    this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, 10);
 
     const categoryIds = Object.keys(GameConfig.buildingCategories);
     const activeCategoryIds = GameConfig.buildingCategories[this.activeBuildCategory].ids;
@@ -2617,7 +2638,13 @@ class GameScene extends Phaser.Scene {
 
     // Une Université s'ouvre directement en arbre technologique (au lieu du panneau d'info
     // habituel), que le jeu soit en pause ou non — ouvrir le menu gère lui-même la pause.
+    // Sélectionnée comme n'importe quel autre bâtiment (voir redrawActionZone/zoneRadiusFor) pour
+    // que sa zone d'action reste visible sur la carte même après avoir refermé l'arbre techno --
+    // demande utilisateur : cette zone (même rayon que l'Entrepôt de base) doit être visible pour
+    // les recherches qui affectent les bâtiments à portée (voir techTree.nodes.rec_formateur).
     if (GameState.getTile(wrappedCol, row).type === 'university') {
+      this.selectedBuildingKey = GameState.key(wrappedCol, row);
+      this.redrawActionZone();
       this.openTechTree(wrappedCol, row);
       return;
     }
@@ -2842,6 +2869,13 @@ class GameScene extends Phaser.Scene {
     this.populationStatsText.setText(
       `Main-d'œuvre nécessaire : ${GameState.neededWorkers()}   Logements libres : ${GameState.availableHousing()}`
     );
+
+    // Chrono (voir demande utilisateur) : this.elapsed n'avance déjà que hors pause (voir plus
+    // haut, dans le bloc "if (!this.paused)") -- rien à faire de spécial ici pour la pause,
+    // juste formater la valeur courante.
+    const chronoSeconds = Math.floor(this.elapsed);
+    const chronoMin = Math.floor(chronoSeconds / 60), chronoSec = chronoSeconds % 60;
+    this.chronoText.setText(`${chronoMin}:${String(chronoSec).padStart(2, '0')}`);
 
     this.updateInfoPanel();
   }
