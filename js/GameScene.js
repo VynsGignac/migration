@@ -1256,21 +1256,31 @@ class GameScene extends Phaser.Scene {
       const iconGridHeight = Math.ceil(this.resourceOrder.length / pcCols) * (pcIconSize + pcRowGap);
 
       this.populationStatsText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
+
+      // Le bloc "construction" (Valider/Améliorer, onglets, liste de bâtiments) est ancré au BAS
+      // de la colonne plutôt qu'à une hauteur fixe (190px) collée sous le bandeau du haut : avec
+      // du texte de plusieurs lignes dans le panneau d'info (ex. une tour, avec portée/dégâts/
+      // main-d'œuvre/amélioration), ce bloc fixe finissait par en chevaucher le bas (bug vécu pour
+      // de vrai). Ancré en bas, le panneau d'info dispose de tout l'espace libre entre les deux
+      // pour respirer, quelle que soit la hauteur de la fenêtre (voir demande utilisateur).
+      const bottomPadding = 10;
+      const bottomBlockHeight = confirmRowHeight + desktopGap + catBlockHeight + desktopGap
+        + buttonIds.length * (desktopBtnHeight + desktopGap);
+      const bottomBlockY = h - bottomBlockHeight - bottomPadding;
+
       this.infoPanelText.setPosition(10, 10 + iconGridHeight + 34).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
 
-      // La ligne du bouton "Valider" est toujours réservée (bâtiments listés plus bas dans tous
-      // les cas), pour que la liste ne saute pas de place à chaque fois qu'il apparaît/disparaît.
       this.confirmButton
-        .setPosition(10, 190).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
+        .setPosition(10, bottomBlockY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(14).setVisible(showConfirm);
       this.upgradeCastleButton
-        .setPosition(10, 190).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
+        .setPosition(10, bottomBlockY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(13);
 
       // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
       // libellés comme "Production" dans les 220px de la colonne PC -- voir categoryButtons).
       const catTabWidth = (this.sidebarWidth - 20 - categoryGap) / catCols;
-      const catBlockY = 190 + confirmRowHeight + desktopGap;
+      const catBlockY = bottomBlockY + confirmRowHeight + desktopGap;
       categoryIds.forEach((catId, i) => {
         const col = i % catCols, row = Math.floor(i / catCols);
         const active = catId === this.activeBuildCategory;
