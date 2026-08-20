@@ -100,6 +100,17 @@ const GameConfig = {
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
     startClearance: 4,
   },
+  // Regroupe les bâtiments par onglet dans le menu de construction (voir GameScene.layoutHud/
+  // activeBuildCategory) : la liste à plat est devenue trop longue pour tenir sans scroller une
+  // fois la Tour de Guet ajoutée (voir demande utilisateur). L'ordre des clés = l'ordre des
+  // onglets ; l'ordre de "ids" = l'ordre dans la liste de cet onglet. Château n'y figure pas : il
+  // ne se construit pas depuis ce menu (voir buildings.castle).
+  buildingCategories: {
+    production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery'] },
+    civil: { label: 'Civil', ids: ['warehouse', 'university', 'house'] },
+    defense: { label: 'Défense', ids: ['donjon', 'watchtower'] },
+    route: { label: 'Route', ids: ['road'] },
+  },
   // Chaque bâtiment producteur a son propre stock local (inputBuffer/outputBuffer), pas un
   // pool global : les ressources doivent être physiquement acheminées d'un bâtiment à l'autre.
   // kind: 'extractor' récolte une ressource de terrain (tree/stone) dans extractRadius autour de lui

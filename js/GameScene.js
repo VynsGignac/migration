@@ -374,6 +374,10 @@ class GameScene extends Phaser.Scene {
       const btn = this.buildButtons[id];
       if (btn.visible && Phaser.Geom.Rectangle.Contains(btn.getBounds(), pointer.x, pointer.y)) return true;
     }
+    for (const id in this.categoryButtons) {
+      const btn = this.categoryButtons[id];
+      if (btn.visible && Phaser.Geom.Rectangle.Contains(btn.getBounds(), pointer.x, pointer.y)) return true;
+    }
     return false;
   }
 
@@ -432,6 +436,9 @@ class GameScene extends Phaser.Scene {
     this.uiElements = [];
     this.buildMenuOpen = false; // mode mobile uniquement : le pavé de boutons est replié par défaut
     this.mobileLayout = false; // recalculé dans layoutHud() selon la taille d'écran réelle
+    // Onglet actif du menu de construction (voir GameConfig.buildingCategories) : seuls les
+    // bâtiments de cette catégorie apparaissent dans la liste, voir layoutHud.
+    this.activeBuildCategory = 'production';
 
     this.sidebarBg = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 0.85).setOrigin(0, 0).setDepth(999);
     this.uiElements.push(this.sidebarBg);
@@ -581,6 +588,25 @@ class GameScene extends Phaser.Scene {
       this.buildButtons[def.id] = btn;
       this.uiElements.push(btn);
     });
+
+    // Onglets de catégorie (voir GameConfig.buildingCategories/activeBuildCategory) : au-dessus de
+    // la liste de bâtiments, filtrent laquelle est affichée -- la liste à plat était devenue trop
+    // longue (voir demande utilisateur). Changer d'onglet ne change PAS le mode de construction en
+    // cours (buildMode) : on peut très bien être en train de poser une Route et jeter un œil à
+    // l'onglet Défense sans que ça annule quoi que ce soit.
+    this.categoryButtons = {};
+    for (const catId in GameConfig.buildingCategories) {
+      const btn = this.add.text(0, 0, GameConfig.buildingCategories[catId].label, {
+        font: 'bold 12px sans-serif', color: '#ffffff', backgroundColor: '#1b3322',
+        padding: { x: 8, y: 6 }, align: 'center',
+      }).setVisible(false).setDepth(1000).setInteractive({ useHandCursor: true });
+      btn.on('pointerup', () => {
+        this.activeBuildCategory = catId;
+        this.layoutHud();
+      });
+      this.categoryButtons[catId] = btn;
+      this.uiElements.push(btn);
+    }
 
     this.layoutHud();
     this.scale.on('resize', (size) => {
@@ -1172,11 +1198,19 @@ class GameScene extends Phaser.Scene {
     this.menuButton.setPosition(w - this.menuButton.width - 10, 10);
     this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, 10);
 
-    const buttonIds = Object.keys(this.buildButtons).filter((id) => this.isBuildingUnlocked(id));
+    const categoryIds = Object.keys(GameConfig.buildingCategories);
+    const activeCategoryIds = GameConfig.buildingCategories[this.activeBuildCategory].ids;
+    const buttonIds = Object.keys(this.buildButtons)
+      .filter((id) => this.isBuildingUnlocked(id) && activeCategoryIds.includes(id));
+    const categoryRowHeight = 26, categoryGap = 4;
+    const catCols = 2; // grille 2x2 en colonne PC (voir plus bas) : 4 catégories -> 2 rangées
+    const catTabRows = Math.ceil(categoryIds.length / catCols);
+    const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
     const desktopSidebarWidth = 220;
     const desktopBtnHeight = 38, desktopGap = 6;
     const confirmRowHeight = 42;
-    const desktopNeededHeight = 190 + confirmRowHeight + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
+    const desktopNeededHeight = 190 + confirmRowHeight + catBlockHeight + desktopGap
+      + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Château (voir GameState.upgradeToCastle) : upgradeCastleButton partage le même emplacement
     // que confirmButton ci-dessous (les deux états sont mutuellement exclusifs, voir
@@ -1226,7 +1260,22 @@ class GameScene extends Phaser.Scene {
         .setPosition(10, 190).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(13);
 
-      let y = 190 + confirmRowHeight + desktopGap;
+      // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
+      // libellés comme "Production" dans les 220px de la colonne PC -- voir categoryButtons).
+      const catTabWidth = (this.sidebarWidth - 20 - categoryGap) / catCols;
+      const catBlockY = 190 + confirmRowHeight + desktopGap;
+      categoryIds.forEach((catId, i) => {
+        const col = i % catCols, row = Math.floor(i / catCols);
+        const active = catId === this.activeBuildCategory;
+        this.categoryButtons[catId]
+          .setPosition(10 + col * (catTabWidth + categoryGap), catBlockY + row * (categoryRowHeight + categoryGap))
+          .setFixedSize(catTabWidth, categoryRowHeight)
+          .setFontSize(12).setAlign('center').setVisible(true)
+          .setBackgroundColor(active ? '#ffd23f' : '#1b3322')
+          .setColor(active ? '#10151a' : '#ffffff');
+      });
+
+      let y = catBlockY + catBlockHeight + desktopGap;
       for (const id of buttonIds) {
         this.buildButtons[id]
           .setPosition(10, y).setFixedSize(this.sidebarWidth - 20, desktopBtnHeight)
@@ -1295,17 +1344,31 @@ class GameScene extends Phaser.Scene {
     const cols = 3;
     const btnWidth = (w - gap * (cols + 1)) / cols;
     const rows = Math.ceil(buttonIds.length / cols);
-    const menuHeight = rows * (btnHeight + gap) + gap;
+    // Une seule rangée de catégories ici (contrairement à la grille 2x2 de la colonne PC) : en
+    // paysage mobile, la largeur d'écran suffit largement pour 4 onglets côte à côte.
+    const menuHeight = categoryRowHeight + gap + rows * (btnHeight + gap) + gap;
     // Ne descend jamais sous le bandeau du haut, même si en théorie ça manquerait de place :
     // le pavé n'est de toute façon affiché que ponctuellement (replié par défaut).
     const menuTop = Math.max(topBarHeight + 4, h - menuHeight - this.buildMenuToggle.height - 24);
 
     this.buildMenuBg.setPosition(0, menuTop - gap).setSize(w, menuHeight + gap * 2).setVisible(this.buildMenuOpen);
 
+    const catTabWidth = (w - gap * (categoryIds.length + 1)) / categoryIds.length;
+    categoryIds.forEach((catId, i) => {
+      const active = catId === this.activeBuildCategory;
+      this.categoryButtons[catId]
+        .setPosition(gap + i * (catTabWidth + gap), menuTop + gap)
+        .setFixedSize(catTabWidth, categoryRowHeight)
+        .setFontSize(compact ? 11 : 12).setAlign('center').setVisible(this.buildMenuOpen)
+        .setBackgroundColor(active ? '#ffd23f' : '#1b3322')
+        .setColor(active ? '#10151a' : '#ffffff');
+    });
+
+    const gridTop = menuTop + gap + categoryRowHeight + gap;
     buttonIds.forEach((id, i) => {
       const col = i % cols, row = Math.floor(i / cols);
       this.buildButtons[id]
-        .setPosition(gap + col * (btnWidth + gap), menuTop + gap + row * (btnHeight + gap))
+        .setPosition(gap + col * (btnWidth + gap), gridTop + row * (btnHeight + gap))
         .setFixedSize(btnWidth, btnHeight)
         .setFontSize(compact ? 12 : 14).setAlign('center').setWordWrapWidth(btnWidth - 12)
         .setVisible(this.buildMenuOpen);
