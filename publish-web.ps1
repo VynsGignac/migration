@@ -17,7 +17,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
-Write-Host "1/3 Ajout des fichiers modifiés..." -ForegroundColor Cyan
+Write-Host "1/4 Ajout des fichiers modifiés..." -ForegroundColor Cyan
 git add -A
 
 git diff --cached --quiet
@@ -27,11 +27,25 @@ if ($LASTEXITCODE -eq 0) {
   exit 0
 }
 
-Write-Host "2/3 Commit..." -ForegroundColor Cyan
+# Fait ici, PAS avant le check ci-dessus (sinon sw.js "changerait" à chaque lancement même sans
+# rien de neuf, et "Rien à publier" ne se déclencherait plus jamais). Le service worker sert le
+# jeu en cache-d'abord (voir sw.js) : sans ce changement de CACHE_NAME à CHAQUE vraie publication,
+# les navigateurs qui ont déjà visité le site continuent de servir l'ancienne version indéfiniment
+# — vécu une fois pour de vrai (plusieurs mises à jour de suite invisibles sur le site), ne plus
+# jamais l'oublier en le rendant automatique plutôt que manuel.
+Write-Host "2/4 Invalidation du cache hors-ligne (sw.js)..." -ForegroundColor Cyan
+$swPath = Join-Path $root "sw.js"
+$sw = Get-Content $swPath -Raw
+$version = Get-Date -Format "yyyyMMddHHmmss"
+$sw = $sw -replace "const CACHE_NAME = '[^']*';", "const CACHE_NAME = 'migration-$version';"
+Set-Content -Path $swPath -Value $sw -NoNewline -Encoding utf8
+git add $swPath
+
+Write-Host "3/4 Commit..." -ForegroundColor Cyan
 $date = Get-Date -Format "yyyy-MM-dd HH:mm"
 git commit -m "Mise a jour du site - $date"
 
-Write-Host "3/3 Envoi vers GitHub..." -ForegroundColor Cyan
+Write-Host "4/4 Envoi vers GitHub..." -ForegroundColor Cyan
 git push
 
 Write-Host ""
