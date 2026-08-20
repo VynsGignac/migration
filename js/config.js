@@ -202,10 +202,14 @@ const GameConfig = {
     // tickProduction, juste après celui du Tunnelier/minerai, même principe). extractRate = 1/60 :
     // un cadavre (amount toujours 1) prend environ 1 minute à recycler à pleine main-d'œuvre.
     recycler: {
-      name: 'Recycleur', cost: { planks: 10, stoneBlocks: 4 }, color: 0x6b1f3a,
+      name: 'Recycleur', cost: { planks: 3, stoneBlocks: 3 }, color: 0x6b1f3a,
       kind: 'extractor', resource: 'corpse', outputResource: 'codex',
       extractRadius: 3, extractRate: 1 / 60, outputCap: 3,
-      ruinLoot: { planks: 5 },
+      // PAS de main-d'œuvre (voir allocateLabor/tickProduction, cas spécial "recycler") :
+      // toujours à pleine efficacité, sans dépendre d'habitants à proximité -- ce bâtiment se
+      // pose près d'un cadavre isolé, souvent loin de toute Maison (voir demande utilisateur :
+      // "il n'y a pas de main d'œuvre pour les recycleurs").
+      ruinLoot: { planks: 2 },
     },
     // kind: 'house' => héberge des habitants (jusqu'à populationCap) qui consomment du pain
     // livré ici (inputBuffer, comme un processeur). Toutes les growthInterval secondes : si le

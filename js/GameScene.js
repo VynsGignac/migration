@@ -433,9 +433,11 @@ class GameScene extends Phaser.Scene {
         }, 0);
       lines.push(`Ressource à proximité : ${Math.round(nearby)}`);
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
-      lines.push(this.laborStatusLine(col, row, def));
       if (tile.type === 'recycler') {
+        lines.push('Fonctionne seul, sans main-d\'œuvre (toujours à pleine efficacité).');
         lines.push('Codex versé directement au stock central (pas de livraison par la route).');
+      } else {
+        lines.push(this.laborStatusLine(col, row, def));
       }
     } else if (def.kind === 'processor') {
       lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);

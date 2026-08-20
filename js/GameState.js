@@ -433,7 +433,10 @@ const GameState = {
       if (def.kind === 'house') {
         const [col, row] = key.split(',').map(Number);
         houses.push({ col, row, population: tile.population });
-      } else if (def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower') {
+      } else if ((def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower') && tile.type !== 'recycler') {
+        // Recycleur exclu (voir buildings.recycler/tickProduction) : toujours à pleine efficacité
+        // sans main-d'œuvre, ça ne servirait qu'à détourner inutilement des habitants d'un
+        // bâtiment qui, lui, en profiterait vraiment.
         const [col, row] = key.split(',').map(Number);
         // Apprentissage (voir techTree.nodes.ind_apprentissage) / Service militaire (voir
         // techTree.nodes.def_service, même principe pour les tours) : ces bâtiments démarrent
@@ -596,8 +599,9 @@ const GameState = {
       if (!def || def.kind !== 'extractor' || tile.underConstruction) continue;
 
       const [col, row] = key.split(',').map(Number);
+      // Recycleur : pas de main-d'œuvre (voir allocateLabor/buildings.recycler), toujours 100 %.
       const workers = labor.get(key) ? labor.get(key).workers : 0;
-      const efficiency = this.efficiencyForWorkers(workers);
+      const efficiency = tile.type === 'recycler' ? 1 : this.efficiencyForWorkers(workers);
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
