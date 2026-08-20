@@ -1,14 +1,16 @@
-﻿// ============================================================
-// SERVICE WORKER â€” met en cache l'app (fichiers du jeu + Phaser) pour un lancement hors-ligne
-// une fois installÃ©e. StratÃ©gie "cache d'abord, rÃ©seau en secours" : les fichiers du jeu changent
-// rarement, autant Ã©viter un aller-retour rÃ©seau Ã  chaque lancement.
+// ============================================================
+// SERVICE WORKER — met en cache l'app (fichiers du jeu + Phaser) pour un lancement hors-ligne
+// une fois installée. Stratégie "cache d'abord, réseau en secours" : les fichiers du jeu changent
+// rarement, autant éviter un aller-retour réseau à chaque lancement.
 // ============================================================
 
-// IncrÃ©menter ce numÃ©ro Ã  chaque changement notable du jeu : un appareil ayant dÃ©jÃ  installÃ© la
-// PWA ne rÃ©cupÃ¨re PAS automatiquement les nouveaux fichiers tant que ce nom ne change pas (le
-// cache "gagne" toujours contre le rÃ©seau avec la stratÃ©gie ci-dessous) â€” vÃ©cu pendant le
-// dÃ©veloppement, oÃ¹ un ancien build restait servi malgrÃ© des fichiers sources Ã  jour.
-const CACHE_NAME = 'migration-20260820162657';
+// Ce numéro est désormais généré automatiquement à chaque publication (voir publish-web.ps1,
+// horodatage) plutôt que changé à la main : un appareil ayant déjà installé la PWA ne récupère
+// PAS automatiquement les nouveaux fichiers tant que ce nom ne change pas (le cache "gagne"
+// toujours contre le réseau avec la stratégie ci-dessous) — vécu pour de vrai en développement,
+// où plusieurs mises à jour de suite sont restées invisibles sur le site tant que ce n'était pas
+// automatisé.
+const CACHE_NAME = 'migration-20260820162807';
 const ASSETS = [
   './',
   './index.html',
@@ -27,11 +29,11 @@ const ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // Un par un plutÃ´t qu'en parallÃ¨le (Promise.all) : le petit serveur local du jeu
-      // (serve.ps1) traite les requÃªtes une Ã  la fois sur une seule connexion et s'Ã©touffe
-      // si le navigateur lui envoie d'un coup une dizaine de requÃªtes simultanÃ©es Ã 
+      // Un par un plutôt qu'en parallèle (Promise.all) : le petit serveur local du jeu
+      // (serve.ps1) traite les requêtes une à la fois sur une seule connexion et s'étouffe
+      // si le navigateur lui envoie d'un coup une dizaine de requêtes simultanées à
       // l'installation. Un peu plus lent, mais fiable sur ce serveur comme sur un vrai
-      // hÃ©bergement HTTPS.
+      // hébergement HTTPS.
       for (const url of ASSETS) {
         await cache.add(url).catch(() => {});
       }
@@ -52,9 +54,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  // Cache d'abord, sans revalidation rÃ©seau en arriÃ¨re-plan : une requÃªte rÃ©seau EN PLUS par
-  // ressource (pour vÃ©rifier une mise Ã  jour) doublait la charge sur le petit serveur local du
-  // jeu (une seule connexion traitÃ©e Ã  la fois) et le faisait se bloquer. Une mise Ã  jour des
+  // Cache d'abord, sans revalidation réseau en arrière-plan : une requête réseau EN PLUS par
+  // ressource (pour vérifier une mise à jour) doublait la charge sur le petit serveur local du
+  // jeu (une seule connexion traitée à la fois) et le faisait se bloquer. Une mise à jour des
   // fichiers du jeu se voit au prochain changement de CACHE_NAME (voir activate ci-dessus), pas
   // besoin de revalidation continue pour un jeu qui ne change pas pendant une partie.
   event.respondWith(
