@@ -327,6 +327,16 @@ class GameScene extends Phaser.Scene {
         g.fillStyle(color, 1);
         g.fillEllipse(cx, cy, size * 0.92, size * 0.62);
         break;
+      case 'codex':
+        g.fillStyle(color, 1);
+        g.fillRoundedRect(x + size * 0.1, y + size * 0.06, size * 0.8, size * 0.88, size * 0.08);
+        g.lineStyle(Math.max(1, size * 0.05), 0x000000, 0.35);
+        g.strokeRoundedRect(x + size * 0.1, y + size * 0.06, size * 0.8, size * 0.88, size * 0.08);
+        g.beginPath();
+        g.moveTo(cx, y + size * 0.06);
+        g.lineTo(cx, y + size * 0.94);
+        g.strokePath();
+        break;
       default:
         break;
     }
@@ -435,10 +445,11 @@ class GameScene extends Phaser.Scene {
     this.uiElements.push(this.resourceBarIconsGraphics);
     // Uniquement les produits finaux (voir demande utilisateur) : le bois, la pierre brute et le
     // blé restent des ressources internes (production/stock) mais ne s'affichent plus ici.
-    // "ore" (minerai) reste affiché même à 0 tant que Tunnelier n'est pas débloqué (voir
-    // techTree.nodes.ind_tunnelier) : ni plus clair ni plus simple de faire apparaître/disparaître
-    // un emplacement du bandeau selon l'état de l'arbre techno, pour un seul cas.
-    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ore'];
+    // "ore"/"codex" restent affichés même à 0/hors recherche (voir techTree.nodes.ind_tunnelier/
+    // rec_imprimerie) : ni plus clair ni plus simple de les faire apparaître/disparaître selon
+    // l'état de l'arbre techno. "codex" n'a pas encore de vraie icône (voir js/assets.js) : passe
+    // par le dessin vectoriel de secours (drawResourceBarIcon), comme "wheat"/"stone" à l'origine.
+    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ore', 'codex'];
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
     // dessinée ci-dessus (drawResourceBarIcon).
     this.resourceBarIconTextureKeys = {

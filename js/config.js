@@ -49,7 +49,10 @@ const GameConfig = {
     // Stock de départ, volontairement généreux : sur une carte de 1000 colonnes, les premiers
     // blobs de ressources peuvent être loin de l'Entrepôt de départ. Ce coussin doit suffire à
     // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
-    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, codex: 0 },
+    // codex volontairement énorme (voir demande utilisateur) : à terme les Codex se récupèrent sur
+    // les cadavres de monstres tués (pas encore implémenté), en attendant les recherches doivent
+    // rester quasi gratuites.
+    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, codex: 9999 },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
   // qui voyage sur les routes, pour chaque ressource.
@@ -63,8 +66,12 @@ const GameConfig = {
     // Introduit par la techno Tunnelier (voir techTree.nodes.ind_tunnelier) : pas encore de
     // bâtiment qui la consomme, s'accumule simplement dans le stock central pour l'instant.
     ore: { long: 'Minerai', short: 'Minerai', color: 0x8a6d4f },
-    // Introduit par la techno Imprimerie (voir techTree.nodes.rec_imprimerie) : mise de côté pour
-    // un usage futur (voir demande utilisateur), pas encore affichée dans le bandeau de ressources.
+    // Monnaie des recherches (voir techTree.researchCostPerLevel), globale et jamais transportée
+    // sur les routes (directement dépensée/gagnée dans le stock central) : à terme récupérée sur
+    // les cadavres de monstres tués (pas encore implémenté, voir demande utilisateur) ; en
+    // attendant le stock de départ est volontairement énorme (voir resources.starting) pour que
+    // les recherches restent quasi gratuites. Imprimerie (voir techTree.nodes.rec_imprimerie) en
+    // ajoute aussi un peu à chaque récolte, en plus de ce futur gain de guerre.
     codex: { long: 'Codex', short: 'Codex', color: 0x6f5fa3 },
   },
   // Transport des ressources le long des routes.
@@ -212,10 +219,10 @@ const GameConfig = {
     ringSpacing: 70,
     // Coût d'une recherche, par niveau acheté (1er niveau = 1x, 2e = 2x, etc.), avant la réduction
     // de Scolarisation (voir GameState.researchCostFor/techTree.nodes.rec_scolarisation) — identique
-    // pour tous les nœuds de l'arbre, quelle que soit leur branche. En minerai (voir
-    // techTree.nodes.ind_tunnelier) : donne enfin un débouché à une ressource qui, sinon, ne fait
-    // que s'accumuler sans jamais être dépensée (voir resourceLabels.ore).
-    researchCostPerLevel: { ore: 10 },
+    // pour tous les nœuds de l'arbre, quelle que soit leur branche. En Codex (voir resourceLabels.
+    // codex) : stock de départ énorme pour l'instant (voir resources.starting), donc ce montant
+    // n'a presque aucun effet tant que le vrai gain de Codex (cadavres de monstres) n'existe pas.
+    researchCostPerLevel: { codex: 10 },
     nodes: {
       // Population (branche à 0°) : nutrition -> urbanisme -> {immigration, mariage, colocation}.
       // Nœuds à plusieurs niveaux (maxLevel > 1) : cliquables plusieurs fois, un niveau par clic sur
@@ -284,7 +291,7 @@ const GameConfig = {
       },
       rec_scolarisation: {
         name: 'Scolarisation', parent: 'rec_alphabetisation', ring: 2, angle: 144, maxLevel: 3,
-        description: 'Réduit de 10 % / 20 % / 30 % le coût en minerai de toute recherche (celle-ci comprise).',
+        description: 'Réduit de 10 % / 20 % / 30 % le coût en Codex de toute recherche (celle-ci comprise).',
         costReductionByLevel: [0.10, 0.20, 0.30],
       },
       rec_formateur: {
@@ -294,7 +301,7 @@ const GameConfig = {
       },
       rec_imprimerie: {
         name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162,
-        description: 'Lors de la récolte, 10 % de chances de récupérer aussi un Codex (nouvelle ressource, usage prévu plus tard).',
+        description: 'Lors de la récolte, 10 % de chances de récupérer aussi un Codex, la monnaie des recherches.',
         codexChance: 0.10,
       },
 
