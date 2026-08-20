@@ -93,14 +93,16 @@ const GameState = {
     // tronçons isolés sans connexion au réseau. L'Entrepôt de départ est entouré de routes dès le
     // début de la partie (voir GameScene.create) pour donner un premier point de départ.
     if (buildingId === 'road' && !this._hasAdjacentRoad(col, row)) return { ok: false, reason: 'noRoadAdjacent' };
-    // Pas une vraie réservation (voir plus bas, rien n'est dépensé ici pour un chantier) : juste
-    // un garde-fou pour ne pas lancer un chantier qu'on n'a straightforwardement aucune chance de
-    // payer un jour. Plusieurs chantiers peuvent quand même finir par se disputer le même stock.
-    if (!this.canAfford(def.cost)) return { ok: false, reason: 'cost' };
 
     if (resTile) this.resourceTiles.delete(key);
 
     if (buildingId === 'road') {
+      // Une route reste payée immédiatement (voir demande utilisateur explicite), donc encore
+      // soumise à une vraie vérification de solde -- contrairement à un chantier ci-dessous, qui
+      // n'est plus bloqué par le coût (demande utilisateur : "je n'ai plus besoin de vérifier si
+      // les matériaux de construction sont disponibles maintenant... il restera en attente tant
+      // que les ressources ne sont pas disponibles").
+      if (!this.canAfford(def.cost)) return { ok: false, reason: 'cost' };
       this.spend(def.cost);
       this.tiles.set(key, { type: 'road' });
       this.dirty = true;
@@ -334,8 +336,8 @@ const GameState = {
           const tile = this.tiles.get(key);
           if (!tile) continue;
 
-          if (matchFn(tile)) {
-            const score = scoreFn(tile);
+          if (matchFn(tile, key)) {
+            const score = scoreFn(tile, key);
             if (score > 0 && (!best || score > best.score)) {
               const newPath = [...cur.path, { col: wrappedCol, row: n.row }];
               best = { path: newPath, targetCol: wrappedCol, targetRow: n.row, score };
@@ -987,52 +989,58 @@ const GameState = {
   // (voir placeBuilding/demande utilisateur) : même mécanique que _spawnWarehouseBread (la
   // "source" est le stock central, pas un outputBuffer local), mais vers N'IMPORTE QUEL type de
   // chantier plutôt qu'un type précis -- d'où findBestPath (prédicat) plutôt que
-  // findBestPathToBuildingType (liste de types figée). Un chantier qui a besoin de plusieurs
-  // ressources (ex. Entrepôt : planches ET pierre taillée) n'en reçoit qu'UNE par voyage, comme
-  // n'importe quel autre chargement -- pas de raison de le traiter différemment.
+  // findBestPathToBuildingType (liste de types figée).
+  // Priorité EXPLICITE demandée par l'utilisateur : on parcourt les chantiers dans leur ORDRE DE
+  // POSE (l'ordre d'insertion de `this.tiles`, jamais réordonné), pas par proximité/score -- le
+  // premier chantier posé est toujours servi avant les suivants s'ils sont tous à portée d'un
+  // Entrepôt disponible. Pour CE chantier, on cherche ensuite l'Entrepôt le plus proche (scoreFn
+  // constant -> BFS s'arrête au premier trouvé, donc le plus proche) parmi ceux pas encore
+  // occupés CE TICK (voir `busy`, alimenté à la fois par les livraisons déjà en route et par les
+  // envois qu'on vient de décider dans cette même passe). Plusieurs Entrepôts différents à portée
+  // peuvent donc livrer le même chantier simultanément (chacun un aller à la fois, comme pour tout
+  // autre chargement), chacun une ressource différente si besoin.
   _spawnWarehouseConstructionDeliveries() {
     const batch = GameConfig.logistics.shipBatchSize;
-    for (const [key, tile] of this.tiles) {
-      if (tile.type !== 'warehouse' || tile.underConstruction) continue;
-      // Voie séparée de celle du pain (voir le commentaire équivalent dans _spawnWarehouseBread) :
-      // ignore les chargements de pain déjà en route, ne regarde que d'éventuels AUTRES chantiers
-      // déjà en cours de livraison depuis ce même Entrepôt.
-      if (this.shipments.some(s => s.fromKey === key && s.forConstruction)) continue;
+    const busy = new Set();
+    for (const s of this.shipments) {
+      if (s.forConstruction) busy.add(s.fromKey);
+    }
 
-      const [col, row] = key.split(',').map(Number);
-      let found = null;
-      let chosenRes = null;
-      for (const res in this.resources) {
+    for (const [destKey, tile] of this.tiles) {
+      if (!tile.underConstruction) continue;
+      const [destCol, destRow] = destKey.split(',').map(Number);
+
+      for (const res in tile.constructionNeeded) {
+        const stillNeeded = tile.constructionNeeded[res] - tile.constructionDelivered[res];
+        if (stillNeeded <= 0) continue;
         if (this.resources[res] <= 0) continue;
-        const candidate = this.findBestPath(col, row, (t) => {
-          return t.underConstruction && t.constructionNeeded[res] > t.constructionDelivered[res];
-        }, this.warehouseZoneRadius(), (t) => t.constructionNeeded[res] - t.constructionDelivered[res]);
-        if (candidate && (!found || candidate.score > found.score)) {
-          found = candidate;
-          chosenRes = res;
-        }
+
+        const candidate = this.findBestPath(destCol, destRow, (t, key) => {
+          return t.type === 'warehouse' && !t.underConstruction && !busy.has(key);
+        }, this.warehouseZoneRadius(), () => 1);
+        if (!candidate) continue;
+
+        const fromKey = this.key(candidate.targetCol, candidate.targetRow);
+        const amount = Math.min(batch, this.resources[res], stillNeeded);
+        if (amount <= 0) continue;
+
+        this.resources[res] -= amount;
+        // candidate.path va du chantier (départ de la BFS) vers l'Entrepôt : on l'inverse pour
+        // obtenir le trajet réel du chargement, Entrepôt -> chantier.
+        this.shipments.push({
+          id: this.nextShipmentId++,
+          resource: res,
+          amount,
+          path: [...candidate.path].reverse(),
+          progress: 0,
+          fromKey,
+          toKey: destKey,
+          toType: tile.type,
+          forConstruction: true,
+        });
+        busy.add(fromKey);
+        this.dirty = true;
       }
-      if (!found) continue;
-
-      const destKey = this.key(found.targetCol, found.targetRow);
-      const destTile = this.tiles.get(destKey);
-      const stillNeeded = destTile.constructionNeeded[chosenRes] - destTile.constructionDelivered[chosenRes];
-      const amount = Math.min(batch, this.resources[chosenRes], stillNeeded);
-      if (amount <= 0) continue;
-
-      this.resources[chosenRes] -= amount;
-      this.shipments.push({
-        id: this.nextShipmentId++,
-        resource: chosenRes,
-        amount,
-        path: found.path,
-        progress: 0,
-        fromKey: key,
-        toKey: destKey,
-        toType: destTile.type,
-        forConstruction: true,
-      });
-      this.dirty = true;
     }
   },
 

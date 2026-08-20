@@ -201,7 +201,10 @@ class GameScene extends Phaser.Scene {
     return true;
   }
 
-  // Une case est constructible si elle est vide, sans ressource de terrain, et si le coût est payable.
+  // Une case est constructible si elle est vide et sans ressource de terrain bloquante. Le coût
+  // n'est vérifié QUE pour une Route (payée immédiatement, voir GameState.placeBuilding) -- un
+  // chantier normal n'a plus besoin d'être payable pour être posé (demande utilisateur : il
+  // attend en chantier tant que les ressources ne sont pas livrées par un Entrepôt).
   isValidBuildSpot(col, row) {
     const key = GameState.key(col, row);
     if (GameState.tiles.has(key)) return false;
@@ -214,8 +217,11 @@ class GameScene extends Phaser.Scene {
       const roadClearsResource = this.buildMode === 'road' && (resTile.type === 'tree' || resTile.type === 'wheat');
       if (!roadClearsResource) return false;
     }
-    if (this.buildMode === 'road' && !GameState._hasAdjacentRoad(col, row)) return false;
-    return GameState.canAfford(GameConfig.buildings[this.buildMode].cost);
+    if (this.buildMode === 'road') {
+      if (!GameState._hasAdjacentRoad(col, row)) return false;
+      return GameState.canAfford(GameConfig.buildings[this.buildMode].cost);
+    }
+    return true;
   }
 
   // Recalcule la case survolée par le pointeur et redessine l'aperçu du bâtiment (+ sa zone d'action)
@@ -1675,8 +1681,6 @@ class GameScene extends Phaser.Scene {
       // (le seul cas instantané, posé par glissé -- voir onPointerMove, pas confirmBuild).
       this.showToast(GameConfig.buildings[this.buildMode].name + ' en construction');
       this.setBuildMode(null);
-    } else if (result.reason === 'cost') {
-      this.showToast('Pas assez de ressources');
     } else if (result.reason === 'occupied') {
       this.showToast('Case déjà occupée');
     } else if (result.reason === 'resource') {
