@@ -192,6 +192,26 @@ const GameConfig = {
       kind: 'tower', range: 4, fireInterval: 2, damage: 1,
       ruinLoot: { planks: 10, stoneBlocks: 6 },
     },
+    // kind: 'watchtower' => aucune action (pas de tir, pas de production), juste une zone de
+    // révélation du brouillard de guerre plus grande que la normale (voir zoneRadiusFor) : une
+    // tour de guet sert à repérer au loin, pas à combattre. Débloquée par la techno Explorateur
+    // (voir techTree.nodes.def_explorateur) -- absente du menu de construction tant qu'elle n'est
+    // pas débloquée (voir GameScene.isBuildingUnlocked).
+    watchtower: {
+      name: 'Tour de Guet', cost: { planks: 6 }, color: 0x6b7a8f,
+      kind: 'watchtower', range: 10,
+      ruinLoot: { planks: 3 },
+    },
+    // Pas dans le menu de construction : n'existe que comme amélioration d'un Donjon déjà posé
+    // (voir GameState.upgradeToCastle), débloquée par la techno Forgerie (voir techTree.nodes.
+    // def_forgerie). "cost" sert de coût d'amélioration (payé au moment de la transformation),
+    // pas de coût de construction initiale -- même kind: 'tower' que le Donjon, donc traité
+    // automatiquement par tout le code déjà écrit pour les tours (tir, main-d'œuvre, portée...).
+    castle: {
+      name: 'Château', cost: { planks: 25, stoneBlocks: 20 }, color: 0x3a2a4a,
+      kind: 'tower', range: 6, fireInterval: 1.2, damage: 3,
+      ruinLoot: { planks: 15, stoneBlocks: 10 },
+    },
     // kind: 'university' => pas de zone d'action, ne reçoit/n'expédie aucune ressource (pas de
     // outputBuffer/inputBuffer, pas de linkTargets). Un clic dessus ouvre l'arbre technologique
     // (voir GameScene.openTechTree) plutôt que d'afficher un panneau d'info classique. N'est
@@ -335,15 +355,32 @@ const GameConfig = {
       // Nom provisoire : effet de la 3e branche de Logistique pas encore défini par le joueur.
       log_tbd: { name: 'Centre-ville', parent: 'log_charrue', ring: 3, angle: 241, description: 'Technologie à définir plus tard.' },
 
-      // Défense (branche à 288°) : explorateur -> donjon -> {armée de profession, service militaire, forgerie}.
-      def_explorateur: { name: 'Explorateur', parent: null, ring: 1, angle: 288, description: 'Repousse les limites du territoire connu.' },
-      def_donjon: { name: 'Donjon', parent: 'def_explorateur', ring: 2, angle: 288, description: 'Établit les bases de la défense du territoire.' },
-      def_armee: { name: 'Armée de profession', parent: 'def_donjon', ring: 3, angle: 263, description: 'Forme des soldats entraînés à plein temps.' },
-      def_service: { name: 'Service militaire', parent: 'def_donjon', ring: 3, angle: 288, description: 'Mobilise la population pour la défense.' },
-      def_forgerie: { name: 'Forgerie', parent: 'def_donjon', ring: 3, angle: 313, description: 'Produit des armes et armures de meilleure qualité.' },
+      // Défense (branche à 288°) : explorateur -> artilleur -> {armée de profession, service
+      // militaire, forgerie}. def_donjon garde son id (débloqué par des parties déjà en cours)
+      // même si son nom affiché change en "Artilleur".
+      def_explorateur: {
+        name: 'Explorateur', parent: null, ring: 1, angle: 288,
+        description: 'Permet de construire des Tours de Guet.',
+      },
+      def_donjon: {
+        name: 'Artilleur', parent: 'def_explorateur', ring: 2, angle: 288, maxLevel: 3,
+        description: 'Augmente la portée du Donjon (et du Château) de 1 / 2 / 3 cases (pas cumulatif).',
+        rangeBonusByLevel: [1, 2, 3],
+      },
+      def_armee: {
+        name: 'Armée de profession', parent: 'def_donjon', ring: 3, angle: 263, maxLevel: 3,
+        description: 'Augmente les dégâts du Donjon (et du Château) de 25 % / 50 % / 100 % (pas cumulatif).',
+        damageBonusByLevel: [0.25, 0.50, 1.00],
+      },
+      def_service: {
+        name: 'Service militaire', parent: 'def_donjon', ring: 3, angle: 288,
+        description: 'Chaque Donjon (et Château) a toujours 1 habitant à l\'intérieur, en plus de la main-d\'œuvre affectée (même principe qu\'Apprentissage).',
+      },
+      def_forgerie: {
+        name: 'Forgerie', parent: 'def_donjon', ring: 3, angle: 313,
+        description: 'Permet d\'améliorer un Donjon en Château.',
+      },
     },
-    // Chaque description ci-dessus est un placeholder thématique (voir GameState.unlockTech) :
-    // le texte suggère un effet plausible, mais rien n'est réellement appliqué pour l'instant.
   },
   // Main-d'œuvre : chaque habitant d'une Maison ne peut occuper qu'UN SEUL poste à la fois dans un
   // bâtiment de production (extracteur ou processeur) à laborRadius cases (distance à vol d'oiseau -

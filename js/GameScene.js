@@ -191,6 +191,16 @@ class GameScene extends Phaser.Scene {
       .join(' + ');
   }
 
+  // Vrai si ce type de bâtiment peut apparaître dans le menu de construction : tous, sauf ceux
+  // débloqués par une techno précise (voir GameConfig.techTree.nodes.def_explorateur) -- le seul
+  // cas pour l'instant est la Tour de Guet. Le Château n'est volontairement PAS dans cette liste :
+  // il ne se construit pas depuis le menu, seulement en améliorant un Donjon (voir
+  // GameState.upgradeToCastle).
+  isBuildingUnlocked(id) {
+    if (id === 'watchtower') return GameState.isTechUnlocked('def_explorateur');
+    return true;
+  }
+
   // Une case est constructible si elle est vide, sans ressource de terrain, et si le coût est payable.
   isValidBuildSpot(col, row) {
     const key = GameState.key(col, row);
@@ -357,6 +367,7 @@ class GameScene extends Phaser.Scene {
     if (this.buildMenuBg.visible && Phaser.Geom.Rectangle.Contains(this.buildMenuBg.getBounds(), pointer.x, pointer.y)) return true;
     if (this.buildMenuToggle.visible && Phaser.Geom.Rectangle.Contains(this.buildMenuToggle.getBounds(), pointer.x, pointer.y)) return true;
     if (this.confirmButton.visible && Phaser.Geom.Rectangle.Contains(this.confirmButton.getBounds(), pointer.x, pointer.y)) return true;
+    if (this.upgradeCastleButton.visible && Phaser.Geom.Rectangle.Contains(this.upgradeCastleButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.pauseButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.menuButton.getBounds(), pointer.x, pointer.y)) return true;
     for (const id in this.buildButtons) {
@@ -403,7 +414,11 @@ class GameScene extends Phaser.Scene {
     } else if (def.kind === 'tower') {
       const active = GameState._hasAdjacentRoad(col, row);
       lines.push(active ? 'Relié à une route : actif.' : 'Pas de route adjacente : inactif.');
+      lines.push(`Portée : ${GameState.towerRange(def)}   Dégâts : ${GameState.towerDamage(def)}`);
       if (active) lines.push(this.laborStatusLine(col, row));
+      if (tile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie')) {
+        lines.push('Peut être amélioré en Château (voir bouton ci-dessous).');
+      }
     } else if (tile.type === 'warehouse') {
       lines.push('Les livraisons reçues ici rejoignent le stock central.');
     } else if (tile.type === 'road') {
@@ -526,6 +541,15 @@ class GameScene extends Phaser.Scene {
     this.confirmButton.on('pointerup', () => this.confirmBuild());
     this.uiElements.push(this.confirmButton);
 
+    // Visible uniquement quand le bâtiment sélectionné est un Donjon et que Forgerie est
+    // débloquée (voir updateInfoPanel/GameState.upgradeToCastle) -- même style que confirmButton,
+    // mais une action sur un bâtiment déjà posé plutôt que sur un placement en cours.
+    this.upgradeCastleButton = this.add.text(0, 0, '', {
+      font: 'bold 13px sans-serif', color: '#10151a', backgroundColor: '#c9971f', padding: { x: 12, y: 9 },
+    }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.upgradeCastleButton.on('pointerup', () => this.upgradeSelectedToCastle());
+    this.uiElements.push(this.upgradeCastleButton);
+
     const buildDefs = [
       { id: 'road', label: 'Route' },
       { id: 'lumberjackCamp', label: 'Camp Bûcheron' },
@@ -537,6 +561,7 @@ class GameScene extends Phaser.Scene {
       { id: 'house', label: 'Maison' },
       { id: 'warehouse', label: 'Entrepôt' },
       { id: 'donjon', label: 'Donjon' },
+      { id: 'watchtower', label: 'Tour de Guet' },
       { id: 'university', label: 'Université' },
     ];
     this.buildButtons = {};
@@ -547,6 +572,10 @@ class GameScene extends Phaser.Scene {
         font: '13px sans-serif', color: '#ffffff', backgroundColor: '#2e5339',
         padding: { x: 10, y: 9 }, align: 'left',
       })
+        // Caché par défaut : layoutHud() ne rend visible que les bâtiments débloqués (voir
+        // isBuildingUnlocked) -- sans ce setVisible(false) initial, un bâtiment pas encore
+        // débloqué au premier layoutHud() resterait affiché tel quel à sa position par défaut (0,0).
+        .setVisible(false)
         .setDepth(1000).setInteractive({ useHandCursor: true });
       btn.on('pointerup', () => this.setBuildMode(this.buildMode === def.id ? null : def.id));
       this.buildButtons[def.id] = btn;
@@ -1066,6 +1095,9 @@ class GameScene extends Phaser.Scene {
     GameState.researchTech(id);
     this.refreshTechTree();
     this.updateTechTreeBubble();
+    // Au cas où cette recherche débloque un bâtiment (voir isBuildingUnlocked) : le menu de
+    // construction, masqué derrière ce panneau, doit déjà être à jour au moment où on le referme.
+    this.layoutHud();
   }
 
   // Point d'entrée depuis handleTap() : une Université ouvre l'arbre technologique au lieu du
@@ -1140,12 +1172,18 @@ class GameScene extends Phaser.Scene {
     this.menuButton.setPosition(w - this.menuButton.width - 10, 10);
     this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, 10);
 
-    const buttonIds = Object.keys(this.buildButtons);
+    const buttonIds = Object.keys(this.buildButtons).filter((id) => this.isBuildingUnlocked(id));
     const desktopSidebarWidth = 220;
     const desktopBtnHeight = 38, desktopGap = 6;
     const confirmRowHeight = 42;
     const desktopNeededHeight = 190 + confirmRowHeight + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
+    // Château (voir GameState.upgradeToCastle) : upgradeCastleButton partage le même emplacement
+    // que confirmButton ci-dessous (les deux états sont mutuellement exclusifs, voir
+    // updateInfoPanel). Seules la position/taille sont fixées ici (dépendent de w/h, recalculées
+    // au resize) ; la VISIBILITÉ et le TEXTE dépendent du bâtiment sélectionné, qui peut changer
+    // sans resize -- gérés dans updateInfoPanel (appelé chaque frame) pour rester à jour tout de
+    // suite, PAS ici (setVisible ci-dessous volontairement absent pour upgradeCastleButton).
 
     this.mobileLayout = w < 640 || desktopNeededHeight > h;
 
@@ -1184,6 +1222,9 @@ class GameScene extends Phaser.Scene {
       this.confirmButton
         .setPosition(10, 190).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(14).setVisible(showConfirm);
+      this.upgradeCastleButton
+        .setPosition(10, 190).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
+        .setFontSize(13);
 
       let y = 190 + confirmRowHeight + desktopGap;
       for (const id of buttonIds) {
@@ -1247,6 +1288,9 @@ class GameScene extends Phaser.Scene {
     this.confirmButton
       .setPosition(w - this.buildMenuToggle.width - this.confirmButton.width - 20, h - this.confirmButton.height - 10)
       .setVisible(showConfirm);
+    this.upgradeCastleButton.setFontSize(compact ? 11 : 13);
+    this.upgradeCastleButton
+      .setPosition(w - this.buildMenuToggle.width - this.upgradeCastleButton.width - 20, h - this.upgradeCastleButton.height - 10);
 
     const cols = 3;
     const btnWidth = (w - gap * (cols + 1)) / cols;
@@ -1319,6 +1363,21 @@ class GameScene extends Phaser.Scene {
     } else if (result.reason === 'resource') {
       this.showToast('Il y a une ressource ici : choisis une autre case');
     }
+  }
+
+  // Transforme le Donjon actuellement sélectionné en Château (voir upgradeCastleButton/
+  // GameState.upgradeToCastle) -- même esprit que confirmBuild ci-dessus, mais sur un bâtiment
+  // déjà posé plutôt qu'un placement en cours.
+  upgradeSelectedToCastle() {
+    if (this.paused || !this.selectedBuildingKey) return;
+    const [col, row] = this.selectedBuildingKey.split(',').map(Number);
+    const result = GameState.upgradeToCastle(col, row);
+    if (result.ok) {
+      this.showToast('Donjon amélioré en Château');
+    } else if (result.reason === 'cost') {
+      this.showToast('Pas assez de ressources');
+    }
+    this.layoutHud();
   }
 
   showToast(msg) {
@@ -1775,6 +1834,36 @@ class GameScene extends Phaser.Scene {
         g.fillRect(x - 0.03 * s, y - 0.06 * s, s * 0.06, s * 0.24);
         break;
       }
+      case 'watchtower': {
+        // Tour fine à toit pointu : silhouette de guet, plus haute et plus étroite qu'un Donjon
+        // (pas de combat, juste de la vue au loin).
+        g.fillStyle(ink, 0.9);
+        this.tracePoly(g, [[-0.10, 0.32], [-0.10, -0.20], [0.10, -0.20], [0.10, 0.32]], x, y, s);
+        g.fillPath();
+        this.tracePoly(g, [[-0.16, -0.20], [0.16, -0.20], [0, -0.42]], x, y, s);
+        g.fillPath();
+        g.fillStyle(0xe8d8b8, 1);
+        g.fillRect(x - 0.03 * s, y - 0.06 * s, s * 0.06, s * 0.14);
+        break;
+      }
+      case 'castle': {
+        // Même silhouette que le Donjon, dédoublée et élargie : deux tours crénelées reliées par
+        // un corps commun, pour se distinguer nettement au premier coup d'œil.
+        g.fillStyle(ink, 0.92);
+        for (const dx of [-0.16, 0.16]) {
+          this.tracePoly(g, [
+            [dx - 0.14, -0.20], [dx - 0.14, -0.32], [dx - 0.06, -0.32], [dx - 0.06, -0.20],
+            [dx + 0.06, -0.20], [dx + 0.06, -0.32], [dx + 0.14, -0.32], [dx + 0.14, -0.20],
+            [dx + 0.14, 0.32], [dx - 0.14, 0.32],
+          ], x, y, s);
+          g.fillPath();
+        }
+        this.tracePoly(g, [[-0.16, -0.02], [0.16, -0.02], [0.16, 0.32], [-0.16, 0.32]], x, y, s);
+        g.fillPath();
+        g.fillStyle(0xc9971f, 1);
+        g.fillRect(x - 0.03 * s, y - 0.02 * s, s * 0.06, s * 0.2);
+        break;
+      }
       case 'university': {
         // Fronton triangulaire + colonnes, façade d'académie classique.
         g.fillStyle(ink, 0.9);
@@ -2161,6 +2250,10 @@ class GameScene extends Phaser.Scene {
   // prend de la place que quand il y a effectivement quelque chose à montrer.
   updateInfoPanel() {
     let text = null;
+    // Château (voir upgradeCastleButton/GameState.upgradeToCastle) : recalculé chaque frame (voir
+    // update() plus bas) pour réagir tout de suite à un changement de sélection, contrairement à
+    // sa position/taille (fixées dans layoutHud, qui ne tourne que sur resize).
+    let showUpgrade = false;
 
     if (this.buildMode === 'road') {
       text = 'Construction : Route\nGlisse sur la carte pour tracer.\nTape "Annuler" pour arrêter.';
@@ -2179,6 +2272,7 @@ class GameScene extends Phaser.Scene {
       if (tile && tile.type !== 'ruin' && GameConfig.buildings[tile.type]) {
         const [col, row] = this.selectedBuildingKey.split(',').map(Number);
         text = this.buildingInfoText(col, row, tile);
+        showUpgrade = tile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie');
       } else {
         this.selectedBuildingKey = null;
         this.redrawActionZone();
@@ -2196,6 +2290,14 @@ class GameScene extends Phaser.Scene {
       if (text) this.infoPanelText.setText(text);
     } else {
       this.infoPanelText.setVisible(true).setText(text || 'Tape une case pour voir ses infos.');
+    }
+
+    this.upgradeCastleButton.setVisible(showUpgrade);
+    if (showUpgrade) {
+      const affordable = GameState.canAfford(GameConfig.buildings.castle.cost);
+      this.upgradeCastleButton
+        .setText(`Améliorer en Château — ${this.formatResources(GameConfig.buildings.castle.cost, true)}`)
+        .setAlpha(this.paused ? 0.4 : (affordable ? 1 : 0.5));
     }
   }
 

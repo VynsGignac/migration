@@ -102,6 +102,25 @@ const GameState = {
     return { ok: true };
   },
 
+  // Transforme un Donjon déjà posé en Château (voir GameConfig.buildings.castle et techTree.
+  // nodes.def_forgerie) : contrairement à placeBuilding, ne change QUE le type -- fireCooldown
+  // et l'appartenance à une route restent ceux du Donjon, aucune raison de les réinitialiser.
+  // "cost" sur buildings.castle est le coût de CETTE transformation, pas d'une construction neuve.
+  upgradeToCastle(col, row) {
+    const key = this.key(col, row);
+    const tile = this.tiles.get(key);
+    if (!tile || tile.type !== 'donjon') return { ok: false, reason: 'notDonjon' };
+    if (!this.isTechUnlocked('def_forgerie')) return { ok: false, reason: 'locked' };
+    const cost = GameConfig.buildings.castle.cost;
+    if (!this.canAfford(cost)) return { ok: false, reason: 'cost' };
+
+    this.spend(cost);
+    tile.type = 'castle';
+    this.dirty = true;
+    this.buildingsDirty = true;
+    return { ok: true };
+  },
+
   // Rayon de la "zone d'action" d'un bâtiment selon son type (même logique que GameScene.
   // redrawActionZone, dont c'est en fait le calcul de rayon extrait pour être partagé) : null si le
   // bâtiment n'a pas de zone d'action (route, université). Sert aussi de base au rayon de brouillard
@@ -112,7 +131,8 @@ const GameState = {
     if (def.kind === 'extractor') return def.extractRadius;
     if (def.kind === 'processor') return def.linkRange;
     if (def.kind === 'house') return GameConfig.population.laborRadius;
-    if (def.kind === 'tower') return def.range;
+    if (def.kind === 'tower') return this.towerRange(def);
+    if (def.kind === 'watchtower') return def.range;
     if (def === GameConfig.buildings.warehouse) return this.warehouseZoneRadius();
     // Même rayon que l'Entrepôt (voir plus haut), faute d'un rayon dédié à l'Université dans sa
     // config -- ne servait jusqu'ici à rien (l'Université ouvre l'arbre techno, pas de zone/
@@ -341,11 +361,15 @@ const GameState = {
         houses.push({ col, row, population: tile.population });
       } else if (def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower') {
         const [col, row] = key.split(',').map(Number);
-        // Apprentissage (voir techTree.nodes.ind_apprentissage) : les bâtiments de raffinage
-        // démarrent avec 1 travailleur déjà compté, avant même la répartition des habitants
-        // ci-dessous -- l'algorithme glouton (le moins staffé d'abord) leur envoie donc
-        // naturellement moins d'habitants réels pour atteindre le même plein rendement.
-        const freeWorker = (def.kind === 'processor' && this.isTechUnlocked('ind_apprentissage')) ? 1 : 0;
+        // Apprentissage (voir techTree.nodes.ind_apprentissage) / Service militaire (voir
+        // techTree.nodes.def_service, même principe pour les tours) : ces bâtiments démarrent
+        // avec 1 travailleur déjà compté, avant même la répartition des habitants ci-dessous --
+        // l'algorithme glouton (le moins staffé d'abord) leur envoie donc naturellement moins
+        // d'habitants réels pour atteindre le même plein rendement.
+        const freeWorker =
+          (def.kind === 'processor' && this.isTechUnlocked('ind_apprentissage')) ||
+          (def.kind === 'tower' && this.isTechUnlocked('def_service'))
+            ? 1 : 0;
         producers.set(key, { col, row, workers: freeWorker });
       }
     }
@@ -634,9 +658,9 @@ const GameState = {
       if (tile.fireCooldown > 0) continue;
       tile.fireCooldown = def.fireInterval;
 
-      const target = this._findMonsterInRange(col, row, def.range);
+      const target = this._findMonsterInRange(col, row, this.towerRange(def));
       if (target) {
-        target.hp -= def.damage;
+        target.hp -= this.towerDamage(def);
         if (target.hp <= 0) target.alive = false;
         this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
       }
@@ -742,6 +766,24 @@ const GameState = {
     const level = this.techLevel('log_gestionStocks');
     const node = GameConfig.techTree.nodes.log_gestionStocks;
     return level > 0 ? node.capBonusByLevel[level - 1] : 0;
+  },
+
+  // Portée effective d'une tour (Donjon/Château), boostée par Artilleur (voir GameConfig.
+  // techTree.nodes.def_donjon, renommé "Artilleur" mais id conservé) -- pas cumulatif.
+  towerRange(def) {
+    const level = this.techLevel('def_donjon');
+    const node = GameConfig.techTree.nodes.def_donjon;
+    const bonus = level > 0 ? node.rangeBonusByLevel[level - 1] : 0;
+    return def.range + bonus;
+  },
+
+  // Dégâts effectifs d'une tour, boostés par Armée de profession (voir techTree.nodes.
+  // def_armee) -- pas cumulatif.
+  towerDamage(def) {
+    const level = this.techLevel('def_armee');
+    const node = GameConfig.techTree.nodes.def_armee;
+    const bonus = level > 0 ? node.damageBonusByLevel[level - 1] : 0;
+    return def.damage * (1 + bonus);
   },
 
   // Cherche le monstre vivant le plus proche (en cases) dont la position actuelle tombe dans le
