@@ -205,7 +205,15 @@ class GameScene extends Phaser.Scene {
   isValidBuildSpot(col, row) {
     const key = GameState.key(col, row);
     if (GameState.tiles.has(key)) return false;
-    if (GameState.resourceTiles.has(key)) return false;
+    const resTile = GameState.resourceTiles.get(key);
+    if (resTile) {
+      // Seule une Route peut être posée sur du bois/blé (détruit la ressource, voir demande
+      // utilisateur) -- la pierre reste bloquante, pas demandée. Doit rester cohérent avec la
+      // même règle dans GameState.placeBuilding (vérification faite là-bas de toute façon, mais
+      // le fantôme doit déjà refléter la bonne réponse avant même de taper).
+      const roadClearsResource = this.buildMode === 'road' && (resTile.type === 'tree' || resTile.type === 'wheat');
+      if (!roadClearsResource) return false;
+    }
     if (this.buildMode === 'road' && !GameState._hasAdjacentRoad(col, row)) return false;
     return GameState.canAfford(GameConfig.buildings[this.buildMode].cost);
   }
@@ -398,6 +406,18 @@ class GameScene extends Phaser.Scene {
   buildingInfoText(col, row, tile) {
     const def = GameConfig.buildings[tile.type];
     const lines = [def.name];
+
+    // En chantier (voir GameState.placeBuilding/_spawnWarehouseConstructionDeliveries) : ni
+    // outputBuffer/inputBuffer ni le reste des champs "opérationnels" n'existent encore sur cette
+    // case, les branches par kind ci-dessous les supposent -- il faut sortir avant.
+    if (tile.underConstruction) {
+      lines.push('En construction :');
+      for (const res in tile.constructionNeeded) {
+        lines.push(`  ${GameConfig.resourceLabels[res].long} : ${Math.round(tile.constructionDelivered[res])}/${tile.constructionNeeded[res]}`);
+      }
+      lines.push('Livré depuis un Entrepôt à portée par la route.');
+      return lines.join('\n');
+    }
 
     if (def.kind === 'extractor') {
       const nearby = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows)
@@ -1381,7 +1401,7 @@ class GameScene extends Phaser.Scene {
     // (voir handleTap) pour que ça reste à jour sans attendre un resize. La VISIBILITÉ/le TEXTE
     // réels restent gérés dans updateInfoPanel (chaque frame), pas ici.
     const layoutSelectedTile = this.selectedBuildingKey ? GameState.tiles.get(this.selectedBuildingKey) : null;
-    const layoutShowUpgrade = !!(layoutSelectedTile && layoutSelectedTile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie'));
+    const layoutShowUpgrade = !!(layoutSelectedTile && layoutSelectedTile.type === 'donjon' && !layoutSelectedTile.underConstruction && GameState.isTechUnlocked('def_forgerie'));
     const layoutShowDemolish = !!layoutSelectedTile;
 
     this.mobileLayout = w < 640 || desktopNeededHeight > h;
@@ -1651,7 +1671,9 @@ class GameScene extends Phaser.Scene {
     const { col, row } = this.buildGhostHex;
     const result = GameState.placeBuilding(col, row, this.buildMode);
     if (result.ok) {
-      this.showToast(GameConfig.buildings[this.buildMode].name + ' construit');
+      // Toujours "en chantier" ici (voir placeBuilding) : road est explicitement exclu plus haut
+      // (le seul cas instantané, posé par glissé -- voir onPointerMove, pas confirmBuild).
+      this.showToast(GameConfig.buildings[this.buildMode].name + ' en construction');
       this.setBuildMode(null);
     } else if (result.reason === 'cost') {
       this.showToast('Pas assez de ressources');
@@ -1957,7 +1979,9 @@ class GameScene extends Phaser.Scene {
         const tile = GameState.tiles.get(key);
         if (tile) {
           const textureKey = this.buildingTileArtKeys[tile.type];
-          if (textureKey) drawTile(col, row, textureKey, 1);
+          // Chantier (voir GameState.placeBuilding) : rendu délavé pour se distinguer d'un
+          // bâtiment opérationnel, en attendant ses livraisons.
+          if (textureKey) drawTile(col, row, textureKey, tile.underConstruction ? 0.45 : 1);
         }
       }
     }
@@ -1983,7 +2007,11 @@ class GameScene extends Phaser.Scene {
         // Refixé à chaque copie : drawBuildingIcon() change fillStyle/lineStyle en interne et ne
         // les restaure pas, sinon la case suivante hériterait par erreur des couleurs de l'icône.
         g.lineStyle(1, GameConfig.colors.hexStroke, GameConfig.colors.hexStrokeAlpha);
-        g.fillStyle(color, 1);
+        // Chantier (voir GameState.placeBuilding) : fond délavé, même principe que les tuiles
+        // photo (voir redrawTileArt) -- l'icône elle-même (drawBuildingIcon, plus bas) reste à
+        // son opacité normale, dessinée sur le même Graphics partagé par tous les bâtiments (pas
+        // moyen de la baisser individuellement sans une passe séparée par case).
+        g.fillStyle(color, tile.underConstruction ? 0.5 : 1);
         g.beginPath();
         g.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
@@ -1991,7 +2019,9 @@ class GameScene extends Phaser.Scene {
         g.fillPath();
         g.strokePath();
 
-        this.drawBuildingIcon(g, tile.type, x + offsetX, y, this.hexSize);
+        // Pas d'icône tant que le chantier n'est pas terminé (voir fillStyle plus haut) : une
+        // icône nette sur un fond délavé aurait plutôt donné l'impression d'un bâtiment déjà fini.
+        if (!tile.underConstruction) this.drawBuildingIcon(g, tile.type, x + offsetX, y, this.hexSize);
       }
     }
   }
@@ -2611,7 +2641,7 @@ class GameScene extends Phaser.Scene {
       if (tile && tile.type !== 'ruin' && GameConfig.buildings[tile.type]) {
         const [col, row] = this.selectedBuildingKey.split(',').map(Number);
         text = this.buildingInfoText(col, row, tile);
-        showUpgrade = tile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie');
+        showUpgrade = tile.type === 'donjon' && !tile.underConstruction && GameState.isTechUnlocked('def_forgerie');
         showDemolish = true;
       } else {
         this.selectedBuildingKey = null;
@@ -2710,7 +2740,8 @@ class GameScene extends Phaser.Scene {
         this.productionAccum = 0;
       }
       // Le transport avance chaque frame (pas seulement au tick de production) pour un mouvement fluide.
-      GameState.updateShipments(simDt);
+      const completedBuildings = GameState.updateShipments(simDt);
+      for (const name of completedBuildings) this.showToast(`${name} terminé`);
       GameState.updateShots(simDt);
 
       const monsterMessages = Monsters.update(dt, this.elapsed, GameState);

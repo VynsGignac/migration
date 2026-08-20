@@ -71,21 +71,62 @@ const GameState = {
     for (const res in cost) this.resources[res] -= cost[res];
   },
 
+  // "Route" est le SEUL cas où l'appelant doit encore fournir un tile.type === 'road' déjà posé,
+  // sinon buildingId identifie le chantier. Une Route reste instantanée (voir demande utilisateur
+  // explicite) ; tout le reste passe par un chantier "underConstruction" tant que les ressources
+  // n'ont pas été livrées depuis un Entrepôt (voir _spawnWarehouseConstructionDeliveries) -- un
+  // chantier hors de portée de tout Entrepôt ne sera donc jamais terminé, c'est voulu.
   placeBuilding(col, row, buildingId) {
     const def = GameConfig.buildings[buildingId];
     if (!def) return { ok: false, reason: 'unknown' };
     const key = this.key(col, row);
     if (this.tiles.has(key)) return { ok: false, reason: 'occupied' };
-    if (this.resourceTiles.has(key)) return { ok: false, reason: 'resource' };
+    const resTile = this.resourceTiles.get(key);
+    if (resTile) {
+      // Seule une Route peut être posée sur du bois/blé, ce qui détruit la ressource (voir
+      // demande utilisateur) -- la pierre reste bloquante, pas demandée.
+      const roadClearsResource = buildingId === 'road' && (resTile.type === 'tree' || resTile.type === 'wheat');
+      if (!roadClearsResource) return { ok: false, reason: 'resource' };
+    }
     // Une route ne peut s'étendre qu'à partir d'une route déjà posée (voir _hasAdjacentRoad,
     // partagé avec la condition d'activation des Tours/Universités) : empêche de semer des
     // tronçons isolés sans connexion au réseau. L'Entrepôt de départ est entouré de routes dès le
     // début de la partie (voir GameScene.create) pour donner un premier point de départ.
     if (buildingId === 'road' && !this._hasAdjacentRoad(col, row)) return { ok: false, reason: 'noRoadAdjacent' };
+    // Pas une vraie réservation (voir plus bas, rien n'est dépensé ici pour un chantier) : juste
+    // un garde-fou pour ne pas lancer un chantier qu'on n'a straightforwardement aucune chance de
+    // payer un jour. Plusieurs chantiers peuvent quand même finir par se disputer le même stock.
     if (!this.canAfford(def.cost)) return { ok: false, reason: 'cost' };
 
-    this.spend(def.cost);
-    const tile = { type: buildingId };
+    if (resTile) this.resourceTiles.delete(key);
+
+    if (buildingId === 'road') {
+      this.spend(def.cost);
+      this.tiles.set(key, { type: 'road' });
+      this.dirty = true;
+      this.buildingsDirty = true;
+      return { ok: true };
+    }
+
+    this.tiles.set(key, {
+      type: buildingId,
+      underConstruction: true,
+      constructionNeeded: { ...def.cost },
+      constructionDelivered: Object.fromEntries(Object.keys(def.cost).map(r => [r, 0])),
+    });
+    this.dirty = true;
+    this.buildingsDirty = true;
+    return { ok: true };
+  },
+
+  // Termine un chantier (voir placeBuilding/_spawnWarehouseConstructionDeliveries) : bascule la
+  // case en bâtiment opérationnel, avec exactement la même init que placeBuilding appliquait
+  // auparavant tout de suite après avoir payé le coût.
+  _completeConstruction(tile) {
+    delete tile.underConstruction;
+    delete tile.constructionNeeded;
+    delete tile.constructionDelivered;
+    const def = GameConfig.buildings[tile.type];
     if (def.kind === 'extractor' || def.kind === 'processor') tile.outputBuffer = 0;
     if (def.kind === 'processor' || def.kind === 'house') tile.inputBuffer = 0;
     if (def.plants) tile.plantTimer = 0;
@@ -96,10 +137,8 @@ const GameState = {
       tile.hadDeficit = false;
     }
     if (def.kind === 'tower') tile.fireCooldown = 0;
-    this.tiles.set(key, tile);
     this.dirty = true;
     this.buildingsDirty = true;
-    return { ok: true };
   },
 
   // Transforme un Donjon déjà posé en Château (voir GameConfig.buildings.castle et techTree.
@@ -109,7 +148,7 @@ const GameState = {
   upgradeToCastle(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
-    if (!tile || tile.type !== 'donjon') return { ok: false, reason: 'notDonjon' };
+    if (!tile || tile.type !== 'donjon' || tile.underConstruction) return { ok: false, reason: 'notDonjon' };
     if (!this.isTechUnlocked('def_forgerie')) return { ok: false, reason: 'locked' };
     const cost = GameConfig.buildings.castle.cost;
     if (!this.canAfford(cost)) return { ok: false, reason: 'cost' };
@@ -148,6 +187,7 @@ const GameState = {
   computeRevealedTiles() {
     const revealed = new Set();
     for (const [key, tile] of this.tiles) {
+      if (tile.underConstruction) continue; // pas encore opérationnel, pas de zone/brouillard révélé
       const radius = this.zoneRadiusFor(tile.type);
       if (radius == null) continue;
       const [col, row] = key.split(',').map(Number);
@@ -165,7 +205,7 @@ const GameState = {
   computeGuildZone() {
     const zone = new Set();
     for (const [key, tile] of this.tiles) {
-      if (tile.type !== 'warehouse') continue;
+      if (tile.type !== 'warehouse' || tile.underConstruction) continue;
       const [col, row] = key.split(',').map(Number);
       for (const c of HexUtils.hexesInRange(col, row, this.warehouseZoneRadius(), this.cols, this.rows)) {
         zone.add(this.key(c.col, c.row));
@@ -179,7 +219,7 @@ const GameState = {
   computeUniversityZone() {
     const zone = new Set();
     for (const [key, tile] of this.tiles) {
-      if (tile.type !== 'university') continue;
+      if (tile.type !== 'university' || tile.underConstruction) continue;
       const [col, row] = key.split(',').map(Number);
       for (const c of HexUtils.hexesInRange(col, row, GameConfig.logistics.linkRange, this.cols, this.rows)) {
         zone.add(this.key(c.col, c.row));
@@ -272,7 +312,11 @@ const GameState = {
   // n'en nourrissait qu'une seule, toujours la même, l'autre était totalement ignorée puisque la
   // recherche s'arrêtait sur la première trouvée sans jamais regarder si elle avait encore de la
   // place).
-  findBestPathToBuildingType(fromCol, fromRow, targetTypes, maxRange, scoreFn) {
+  // Version générale de findBestPathToBuildingType ci-dessous (qui n'est plus qu'un raccourci
+  // dessus) : matchFn(tile) plutôt qu'une liste de types fixe, pour pouvoir chercher "n'importe
+  // quel chantier qui a encore besoin de telle ressource" (voir
+  // _spawnWarehouseConstructionDeliveries), pas juste un type de bâtiment précis.
+  findBestPath(fromCol, fromRow, matchFn, maxRange, scoreFn) {
     const visited = new Set([this.key(fromCol, fromRow)]);
     let frontier = [{ col: fromCol, row: fromRow, path: [{ col: fromCol, row: fromRow }] }];
     let best = null;
@@ -290,13 +334,13 @@ const GameState = {
           const tile = this.tiles.get(key);
           if (!tile) continue;
 
-          if (targetTypes.includes(tile.type)) {
+          if (matchFn(tile)) {
             const score = scoreFn(tile);
             if (score > 0 && (!best || score > best.score)) {
               const newPath = [...cur.path, { col: wrappedCol, row: n.row }];
               best = { path: newPath, targetCol: wrappedCol, targetRow: n.row, score };
             }
-            continue; // pas un relais (voir plus bas) : une cible du bon type n'est jamais traversée
+            continue; // pas un relais (voir plus bas) : une cible qui matche n'est jamais traversée
           }
           // Seule une route sert de relais : un autre bâtiment (ou une ruine) bloque le passage —
           // un chargement ne doit pas "couper à travers" une maison/ferme/etc. pour raccourcir son
@@ -309,6 +353,14 @@ const GameState = {
       frontier = next;
     }
     return best;
+  },
+
+  // targetTypes ET jamais un chantier "underConstruction" : un bâtiment pas encore terminé ne
+  // doit recevoir ni matières premières de production NI pain (voir _spawnShipments/
+  // _spawnWarehouseBread, les deux seuls appelants) -- seulement ses matériaux de construction,
+  // via _spawnWarehouseConstructionDeliveries.
+  findBestPathToBuildingType(fromCol, fromRow, targetTypes, maxRange, scoreFn) {
+    return this.findBestPath(fromCol, fromRow, (tile) => targetTypes.includes(tile.type) && !tile.underConstruction, maxRange, scoreFn);
   },
 
   // Distance en pas par la route (BFS le long des ROUTES uniquement, voir findBestPathToBuildingType)
@@ -355,7 +407,7 @@ const GameState = {
     const producers = new Map();
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
-      if (!def) continue;
+      if (!def || tile.underConstruction) continue;
       if (def.kind === 'house') {
         const [col, row] = key.split(',').map(Number);
         houses.push({ col, row, population: tile.population });
@@ -432,7 +484,7 @@ const GameState = {
     let available = 0;
     for (const [, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
-      if (def && def.kind === 'house') available += this.housePopulationCap(def) - tile.population;
+      if (def && def.kind === 'house' && !tile.underConstruction) available += this.housePopulationCap(def) - tile.population;
     }
     return available;
   },
@@ -466,7 +518,7 @@ const GameState = {
     // la Ferme de cultiver son propre blé en boucle au lieu d'épuiser des cases naturelles.
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
-      if (!def || !def.plants) continue;
+      if (!def || !def.plants || tile.underConstruction) continue;
 
       tile.plantTimer += dtSeconds;
       // Labourage (voir techTree.nodes.ind_labourage) : vise explicitement "les champs de blé",
@@ -519,7 +571,7 @@ const GameState = {
     //    d'Expertise/Guilde (voir speedMultiplier) -- Guilde seulement si à portée d'un Entrepôt.
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
-      if (!def || def.kind !== 'extractor') continue;
+      if (!def || def.kind !== 'extractor' || tile.underConstruction) continue;
 
       const [col, row] = key.split(',').map(Number);
       const workers = labor.get(key) ? labor.get(key).workers : 0;
@@ -576,7 +628,7 @@ const GameState = {
     //    travailleur gratuit d'Apprentissage y est déjà inclus, voir allocateLabor) et Expertise/Guilde.
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
-      if (!def || def.kind !== 'processor') continue;
+      if (!def || def.kind !== 'processor' || tile.underConstruction) continue;
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers);
@@ -614,7 +666,7 @@ const GameState = {
 
     for (const [, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
-      if (!def || def.kind !== 'house') continue;
+      if (!def || def.kind !== 'house' || tile.underConstruction) continue;
 
       const needed = tile.population * def.consumptionPerPerson * (1 - breadReduction) * dtSeconds;
       let fed;
@@ -662,7 +714,7 @@ const GameState = {
     // mais appliqué à la fréquence de tir plutôt qu'à un débit de ressource).
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
-      if (!def || def.kind !== 'tower') continue;
+      if (!def || def.kind !== 'tower' || tile.underConstruction) continue;
 
       const [col, row] = key.split(',').map(Number);
       if (!this._hasAdjacentRoad(col, row)) continue;
@@ -687,6 +739,7 @@ const GameState = {
 
     this._spawnShipments();
     this._spawnWarehouseBread();
+    this._spawnWarehouseConstructionDeliveries();
   },
 
   // Vrai si au moins une case voisine est une route (condition pour qu'un Donjon ou une
@@ -892,7 +945,7 @@ const GameState = {
   _spawnWarehouseBread() {
     const batch = GameConfig.logistics.shipBatchSize;
     for (const [key, tile] of this.tiles) {
-      if (tile.type !== 'warehouse') continue;
+      if (tile.type !== 'warehouse' || tile.underConstruction) continue;
       if (this.resources.bread <= 0) continue;
       if (this.shipments.some(s => s.fromKey === key)) continue;
 
@@ -924,8 +977,61 @@ const GameState = {
     }
   },
 
+  // Livre les matériaux de construction depuis le stock central vers les chantiers à portée
+  // (voir placeBuilding/demande utilisateur) : même mécanique que _spawnWarehouseBread (la
+  // "source" est le stock central, pas un outputBuffer local), mais vers N'IMPORTE QUEL type de
+  // chantier plutôt qu'un type précis -- d'où findBestPath (prédicat) plutôt que
+  // findBestPathToBuildingType (liste de types figée). Un chantier qui a besoin de plusieurs
+  // ressources (ex. Entrepôt : planches ET pierre taillée) n'en reçoit qu'UNE par voyage, comme
+  // n'importe quel autre chargement -- pas de raison de le traiter différemment.
+  _spawnWarehouseConstructionDeliveries() {
+    const batch = GameConfig.logistics.shipBatchSize;
+    for (const [key, tile] of this.tiles) {
+      if (tile.type !== 'warehouse' || tile.underConstruction) continue;
+      if (this.shipments.some(s => s.fromKey === key)) continue;
+
+      const [col, row] = key.split(',').map(Number);
+      let found = null;
+      let chosenRes = null;
+      for (const res in this.resources) {
+        if (this.resources[res] <= 0) continue;
+        const candidate = this.findBestPath(col, row, (t) => {
+          return t.underConstruction && t.constructionNeeded[res] > t.constructionDelivered[res];
+        }, this.warehouseZoneRadius(), (t) => t.constructionNeeded[res] - t.constructionDelivered[res]);
+        if (candidate && (!found || candidate.score > found.score)) {
+          found = candidate;
+          chosenRes = res;
+        }
+      }
+      if (!found) continue;
+
+      const destKey = this.key(found.targetCol, found.targetRow);
+      const destTile = this.tiles.get(destKey);
+      const stillNeeded = destTile.constructionNeeded[chosenRes] - destTile.constructionDelivered[chosenRes];
+      const amount = Math.min(batch, this.resources[chosenRes], stillNeeded);
+      if (amount <= 0) continue;
+
+      this.resources[chosenRes] -= amount;
+      this.shipments.push({
+        id: this.nextShipmentId++,
+        resource: chosenRes,
+        amount,
+        path: found.path,
+        progress: 0,
+        fromKey: key,
+        toKey: destKey,
+        toType: destTile.type,
+        forConstruction: true,
+      });
+      this.dirty = true;
+    }
+  },
+
   // Avance tous les chargements en transit ; livre ceux qui sont arrivés.
-  // Appelé chaque frame (indépendamment du tick de production) pour un mouvement fluide.
+  // Appelé chaque frame (indépendamment du tick de production) pour un mouvement fluide. Renvoie
+  // les noms des bâtiments dont le chantier vient de se terminer ce tick (voir GameScene, même
+  // principe que les messages renvoyés par Monsters.update) -- purement informatif pour le toast,
+  // rien ici ne dépend du retour.
   updateShipments(dtSeconds) {
     // Roue (voir techTree.nodes.log_roue) : accélère TOUS les chargements, quelle que soit la
     // ressource ou l'origine, puisqu'ils passent tous par cette même boucle.
@@ -936,6 +1042,7 @@ const GameState = {
     // plus à chaque livraison qui arrive à bon port (pas sur un chargement perdu, voir plus bas).
     const charrueChance = this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.bonusChance : 0;
     const stillTraveling = [];
+    const completedBuildings = [];
     let delivered = false;
 
     for (const s of this.shipments) {
@@ -948,7 +1055,17 @@ const GameState = {
       const destTile = this.tiles.get(s.toKey);
       if (destTile && destTile.type === s.toType) {
         const amount = (charrueChance > 0 && Math.random() < charrueChance) ? s.amount + 1 : s.amount;
-        if (s.toType === 'warehouse') {
+        if (s.forConstruction && destTile.underConstruction) {
+          const needed = destTile.constructionNeeded[s.resource];
+          destTile.constructionDelivered[s.resource] = Math.min(needed, destTile.constructionDelivered[s.resource] + amount);
+          const complete = Object.keys(destTile.constructionNeeded).every(
+            (r) => destTile.constructionDelivered[r] >= destTile.constructionNeeded[r]
+          );
+          if (complete) {
+            completedBuildings.push(GameConfig.buildings[destTile.type].name);
+            this._completeConstruction(destTile);
+          }
+        } else if (s.toType === 'warehouse') {
           this.resources[s.resource] = (this.resources[s.resource] || 0) + amount;
         } else {
           const cap = GameConfig.buildings[destTile.type].inputCap + this.capBonus();
@@ -960,6 +1077,7 @@ const GameState = {
 
     this.shipments = stillTraveling;
     if (delivered) this.dirty = true;
+    return completedBuildings;
   },
 
   // Détruit une case (passage d'un monstre) et la transforme en ruine pillable.
@@ -969,8 +1087,16 @@ const GameState = {
     const tile = this.tiles.get(key);
     if (!tile || tile.type === 'ruin') return false;
     const def = GameConfig.buildings[tile.type];
+    // Un chantier n'a encore rien "payé" au sens propre (voir placeBuilding : rien n'est dépensé
+    // à la pose, seulement au fur et à mesure des livraisons) -- le ruinLoot complet d'un
+    // bâtiment fini serait donc un moyen gratuit de fabriquer des ressources en posant puis
+    // démolissant aussitôt. Le butin d'un chantier est exactement ce qui a déjà été livré, ni
+    // plus ni moins ; un bâtiment terminé garde son ruinLoot habituel, inchangé.
+    const ruinLoot = tile.underConstruction
+      ? { ...tile.constructionDelivered }
+      : (def ? def.ruinLoot : {});
     const warehouseLost = tile.type === 'warehouse';
-    this.tiles.set(key, { type: 'ruin', ruinLoot: def ? def.ruinLoot : {} });
+    this.tiles.set(key, { type: 'ruin', ruinLoot });
     this.dirty = true;
     this.buildingsDirty = true;
     return warehouseLost;
@@ -981,7 +1107,9 @@ const GameState = {
   // pas à chaque frame, voir l'appelant).
   hasAnyWarehouse() {
     for (const [, tile] of this.tiles) {
-      if (tile.type === 'warehouse') return true;
+      // Pas encore opérationnel (voir placeBuilding) : un Entrepôt en chantier ne compte pas,
+      // il ne peut encore rien recevoir/expédier.
+      if (tile.type === 'warehouse' && !tile.underConstruction) return true;
     }
     return false;
   },
