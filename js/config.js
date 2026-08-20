@@ -476,5 +476,8 @@ const GameConfig = {
     // Vie de départ de chaque monstre (voir GameState.tickProduction, section tir de tour, pour
     // les dégâts infligés par un Donjon).
     startingHp: 10,
+    // Chance qu'un monstre tué (par une tour, voir tickProduction/_maybeDropCorpse) laisse un
+    // cadavre sur sa case -- voir resourceNodes.corpse/buildings.recycler, demande utilisateur.
+    corpseDropChance: 0.1,
   },
 };

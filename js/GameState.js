@@ -768,7 +768,10 @@ const GameState = {
       const target = this._findMonsterInRange(col, row, this.towerRange(def));
       if (target) {
         target.hp -= this.towerDamage(def);
-        if (target.hp <= 0) target.alive = false;
+        if (target.hp <= 0) {
+          target.alive = false;
+          this._maybeDropCorpse(target);
+        }
         this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
       }
     }
@@ -916,6 +919,24 @@ const GameState = {
       }
     }
     return closest;
+  },
+
+  // Cadavre de monstre (voir resourceNodes.corpse/buildings.recycler/config.monsters.
+  // corpseDropChance, demande utilisateur explicite) : un monstre qui vient de mourir a une
+  // chance d'en laisser un sur SA case, à la place de TOUT ce qui pouvait s'y trouver --
+  // ressource naturelle, bâtiment (même un Entrepôt), route, ruine... un vrai remplacement,
+  // sans butin ni ruine intermédiaire (contrairement à destroyTile, qui gère le piétinement
+  // "normal" de la horde, pas cette mort au combat).
+  _maybeDropCorpse(monster) {
+    if (Math.random() >= GameConfig.monsters.corpseDropChance) return;
+    const colWidth = GameConfig.hex.size * 1.5;
+    const col = HexUtils.wrapCol(Math.floor(monster.x / colWidth), this.cols);
+    const row = monster.row;
+    const key = this.key(col, row);
+    this.tiles.delete(key);
+    this.resourceTiles.set(key, { type: 'corpse', amount: 1 });
+    this.dirty = true;
+    this.buildingsDirty = true;
   },
 
   // Avance/expire les traits visuels des tirs de tour (voir GameScene.redrawShots).
