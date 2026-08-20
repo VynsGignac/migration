@@ -380,9 +380,9 @@ class GameScene extends Phaser.Scene {
   // "Main-d'œuvre : ..." : rappelle le nombre de travailleurs affectés à ce bâtiment et
   // l'efficacité qui en résulte (voir GameState.efficiencyForWorkers, une courbe par palier,
   // pas un tout-ou-rien).
-  laborStatusLine(col, row) {
+  laborStatusLine(col, row, def) {
     const workers = GameState.getAssignedWorkers(col, row);
-    const pct = Math.round(GameState.efficiencyForWorkers(workers) * 100);
+    const pct = Math.round(GameState.efficiencyForWorkers(workers, def.capMultiplier || 1) * 100);
     return workers > 0
       ? `Main-d'œuvre : ${workers} travailleur(s) affecté(s) (${pct} %)`
       : `Main-d'œuvre : aucun travailleur affecté (${pct} %)`;
@@ -402,11 +402,11 @@ class GameScene extends Phaser.Scene {
         }, 0);
       lines.push(`Ressource à proximité : ${Math.round(nearby)}`);
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
-      lines.push(this.laborStatusLine(col, row));
+      lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'processor') {
       lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
-      lines.push(this.laborStatusLine(col, row));
+      lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'house') {
       lines.push(`Habitants : ${tile.population}/${GameState.housePopulationCap(def)}`);
       lines.push(`Pain en réserve : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
@@ -415,7 +415,7 @@ class GameScene extends Phaser.Scene {
       const active = GameState._hasAdjacentRoad(col, row);
       lines.push(active ? 'Relié à une route : actif.' : 'Pas de route adjacente : inactif.');
       lines.push(`Portée : ${GameState.towerRange(def)}   Dégâts : ${GameState.towerDamage(def)}`);
-      if (active) lines.push(this.laborStatusLine(col, row));
+      if (active) lines.push(this.laborStatusLine(col, row, def));
       if (tile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie')) {
         lines.push('Peut être amélioré en Château (voir bouton ci-dessous).');
       }

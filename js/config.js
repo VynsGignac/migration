@@ -210,6 +210,13 @@ const GameConfig = {
     castle: {
       name: 'Château', cost: { planks: 25, stoneBlocks: 20 }, color: 0x3a2a4a,
       kind: 'tower', range: 6, fireInterval: 1.2, damage: 3,
+      // Accueille 2x plus de travailleurs qu'un Donjon (8 au lieu de 4) -- voir GameState.
+      // efficiencyForWorkers, seul bâtiment dont l'efficacité peut dépasser 100 % (demande
+      // utilisateur explicite). Les 4 premiers travailleurs comptent comme pour un Donjon normal
+      // (0 -> 50 %, ..., 4 -> 100 %) ; les 4 suivants ajoutent le même gain marginal une seconde
+      // fois (5e travailleur = même gain que le 1er, etc.), jusqu'à 150 % à 8 travailleurs -- pas
+      // un simple x2 (qui aurait aussi doublé le socle de 50 % à 0 travailleur, absurde).
+      capMultiplier: 2,
       ruinLoot: { planks: 15, stoneBlocks: 10 },
     },
     // kind: 'university' => pas de zone d'action, ne reçoit/n'expédie aucune ressource (pas de

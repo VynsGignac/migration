@@ -414,9 +414,14 @@ const GameState = {
   // population actuelle suffit à faire tourner l'économie à plein régime.
   neededWorkers() {
     if (!this.laborAssignment) return 0;
-    const fullStaff = GameConfig.population.efficiencyByWorkers.length - 1;
+    const baseFullStaff = GameConfig.population.efficiencyByWorkers.length - 1;
     let needed = 0;
-    for (const [, entry] of this.laborAssignment) {
+    for (const [key, entry] of this.laborAssignment) {
+      const def = GameConfig.buildings[this.tiles.get(key).type];
+      // Le Château (voir buildings.castle.capMultiplier) absorbe utilement 2x plus de
+      // travailleurs qu'un Donjon normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
+      // pourrait encore en accueillir 4 de plus (voir efficiencyForWorkers).
+      const fullStaff = baseFullStaff * (def.capMultiplier || 1);
       needed += Math.max(0, fullStaff - entry.workers);
     }
     return needed;
@@ -435,9 +440,23 @@ const GameState = {
   // Efficacité (0-1) selon le nombre de travailleurs affectés à un bâtiment (voir
   // GameConfig.population.efficiencyByWorkers) : une courbe, pas un tout-ou-rien. Au-delà du
   // dernier palier configuré, l'efficacité reste à sa dernière valeur (100 % par défaut).
-  efficiencyForWorkers(workers) {
+  // capMultiplier > 1 (voir buildings.castle) : au-delà du palier normal (les 4 premiers
+  // travailleurs, table[0..4] = 50-100 %), chaque palier de travailleurs SUPPLÉMENTAIRE ajoute le
+  // même gain marginal qu'à son équivalent dans le palier normal (le 5e travailleur apporte le
+  // même gain que le 1er, etc.) -- PAS un simple ×capMultiplier, qui doublerait aussi le socle de
+  // 50 % obtenu à 0 travailleur. Pour capMultiplier=1 (tout le reste), se comporte EXACTEMENT
+  // comme avant (aucun palier supplémentaire).
+  efficiencyForWorkers(workers, capMultiplier = 1) {
     const table = GameConfig.population.efficiencyByWorkers;
-    return table[Math.min(workers, table.length - 1)];
+    const maxIndex = table.length - 1;
+    const baseline = table[0];
+    let total = table[Math.min(workers, maxIndex)];
+    let remaining = workers - maxIndex;
+    for (let tier = 1; tier < capMultiplier && remaining > 0; tier++) {
+      total += table[Math.min(remaining, maxIndex)] - baseline;
+      remaining -= maxIndex;
+    }
+    return total;
   },
 
   tickProduction(dtSeconds) {
@@ -649,7 +668,7 @@ const GameState = {
       if (!this._hasAdjacentRoad(col, row)) continue;
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
-      const efficiency = this.efficiencyForWorkers(workers);
+      const efficiency = this.efficiencyForWorkers(workers, def.capMultiplier || 1);
 
       // Alphabétisation (voir techTree.nodes.rec_alphabetisation) : seule techno qui touche aussi
       // les tours, vu son intitulé "TOUS les bâtiments" -- contrairement à Expertise/Guilde/
