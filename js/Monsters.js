@@ -11,6 +11,10 @@
 const Monsters = {
   list: [], // { id, row, x (pixels, continu), hp, alive }
   nextId: 1,
+  // Distance totale parcourue par la horde depuis le début de la partie (pixels, jamais remise à
+  // zéro sauf init()) : sert à déterminer le tour du cylindre en cours (voir update()) pour la
+  // vitesse progressive, sans avoir besoin d'un compteur de tours séparé à tenir à jour à la main.
+  totalDistancePx: 0,
 
   // Peuple la horde : un bloc de depthCount monstres par rangée, le front (depth 0) démarrant à
   // la colonne 0, le reste s'étirant derrière (colonnes négatives, qui boucleront naturellement
@@ -23,6 +27,7 @@ const Monsters = {
     const depthSpacing = GameConfig.hex.size * cfg.depthSpacingFactor;
     this.list = [];
     this.nextId = 1;
+    this.totalDistancePx = 0;
     for (let row = 0; row < gameState.rows; row++) {
       for (let depth = 0; depth < cfg.depthCount; depth++) {
         this.list.push({
@@ -46,13 +51,24 @@ const Monsters = {
     const cfg = GameConfig.monsters;
     const colWidth = GameConfig.hex.size * 1.5;
     const worldWidthPx = colWidth * gameState.cols;
-    const speedPx = cfg.baseSpeed * colWidth;
+
+    // Vitesse progressive (voir demande utilisateur) : le 1er tour complet du cylindre dure
+    // lapOneSeconds, chaque tour suivant est lapSpeedMultiplier fois plus rapide que le précédent
+    // (racine de 2 par défaut, voir GameConfig.monsters : 2 multiplications = 3e tour 2x plus
+    // rapide, donc 2x plus court). "lap" ci-dessous = nombre de tours déjà complétés (0 = en train
+    // de faire le 1er).
+    const lap = Math.floor(this.totalDistancePx / worldWidthPx);
+    const speedCols = (gameState.cols / cfg.lapOneSeconds) * Math.pow(cfg.lapSpeedMultiplier, lap);
+    const speedPx = speedCols * colWidth;
+    const advance = speedPx * dt;
+    this.totalDistancePx += advance;
+
     const messages = [];
 
     for (const m of this.list) {
       if (!m.alive) continue;
       const prevCol = Math.floor(m.x / colWidth);
-      m.x += speedPx * dt;
+      m.x += advance;
       const newCol = Math.floor(m.x / colWidth);
 
       for (let c = prevCol + 1; c <= newCol; c++) {
@@ -70,11 +86,12 @@ const Monsters = {
   },
 
   serialize() {
-    return { list: this.list.map(m => ({ ...m })), nextId: this.nextId };
+    return { list: this.list.map(m => ({ ...m })), nextId: this.nextId, totalDistancePx: this.totalDistancePx };
   },
 
   deserialize(data) {
     this.list = (data.list || []).map(m => ({ ...m }));
     this.nextId = data.nextId || 1;
+    this.totalDistancePx = data.totalDistancePx || 0;
   },
 };

@@ -11,7 +11,8 @@ const GameConfig = {
   // Multiplicateur global de vitesse du jeu (production, croissance de la population, transport,
   // tirs des tours) — demande utilisateur : le jeu semblait globalement trop rapide. NE s'applique
   // PAS à la horde de monstres (voir GameScene.update, qui passe un dt non modifié à Monsters.update)
-  // : sa vitesse reste calée sur GameConfig.monsters.secondsToReachStart, en temps réel, exprès.
+  // : sa vitesse reste calée sur GameConfig.monsters.lapOneSeconds/lapSpeedMultiplier, en temps
+  // réel, exprès.
   // Centralisé ici plutôt qu'éparpillé pour pouvoir être retouché facilement si besoin.
   simulation: {
     speed: 0.5,
@@ -19,12 +20,14 @@ const GameConfig = {
   world: {
     // Nombre de colonnes de cases sur la largeur du cylindre
     // (une fois qu'on a parcouru "cols" colonnes vers la droite, on retombe sur la colonne 0)
-    cols: 1000,
+    cols: 500,
     // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement)
     rows: 23,
     // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
-    // pour laisser au joueur le temps de construire avant qu'elle n'arrive.
-    startCol: 25,
+    // pour laisser au joueur le temps de construire avant qu'elle n'arrive. À la moitié du tour
+    // (250/500) : la vague met 10 min à l'atteindre pour un 1er tour de 20 min (voir
+    // monsters.lapOneSeconds) -- ce ratio doit être conservé si l'un des deux change.
+    startCol: 250,
   },
   camera: {
     // zoomMin est un garde-fou absolu (jamais une valeur "confortable" à atteindre en pratique) :
@@ -46,8 +49,8 @@ const GameConfig = {
     monster: 0xff2222,
   },
   resources: {
-    // Stock de départ, volontairement généreux : sur une carte de 1000 colonnes, les premiers
-    // blobs de ressources peuvent être loin de l'Entrepôt de départ. Ce coussin doit suffire à
+    // Stock de départ, volontairement généreux : les premiers blobs de ressources peuvent être
+    // loin de l'Entrepôt de départ (voir world.cols/resourceNodes.startClearance). Ce coussin doit suffire à
     // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
     // codex volontairement énorme (voir demande utilisateur) : à terme les Codex se récupèrent sur
     // les cadavres de monstres tués (pas encore implémenté), en attendant les recherches doivent
@@ -84,8 +87,10 @@ const GameConfig = {
   },
   // Ressources naturelles posées sur la carte sous forme de "blobs" (amas irréguliers).
   // Les nombres de blobs gardent la même densité qu'à 80 colonnes (~1 blob d'arbres/6-7
-  // colonnes, ~1 blob de pierre/10 colonnes), remise à l'échelle pour une carte de 1000 colonnes,
-  // puis doublée (voir demande utilisateur : deux fois plus de ressource sur la carte).
+  // colonnes, ~1 blob de pierre/10 colonnes), doublée (voir demande utilisateur : deux fois plus
+  // de ressource sur la carte), puis mise à l'échelle du nombre de colonnes actuel (voir
+  // world.cols : ces comptes sont pour 500 colonnes -- à ajuster proportionnellement si world.cols
+  // change encore, sous peine de densité deux fois trop faible/forte).
   resourceNodes: {
     tree: { color: 0x1f6b3a, amountMin: 20, amountMax: 40 },
     stone: { color: 0x767a80, amountMin: 25, amountMax: 50 },
@@ -93,8 +98,8 @@ const GameConfig = {
     // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
     // au calcul de l'opacité (case bien mûre vs. presque récoltée).
     wheat: { color: 0xdbc245, amountMin: 8, amountMax: 8 },
-    blobCountTree: 300,
-    blobCountStone: 200,
+    blobCountTree: 150,
+    blobCountStone: 100,
     blobSizeMin: 4,
     blobSizeMax: 9,
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
@@ -423,11 +428,14 @@ const GameConfig = {
   // tout ce qui se trouve sur leur passage. Aucune interaction du joueur avec eux pour l'instant
   // (pas d'attaque) : la seule chose qui compte est "un monstre qui passe sur une case la détruit".
   monsters: {
-    // La vitesse est dérivée ci-dessous (après la définition de l'objet) à partir de
-    // secondsToReachStart et world.startCol, pour que le front de la horde atteigne toujours la
-    // colonne de départ exactement au bout de ce délai, quelle que soit la valeur de startCol.
-    secondsToReachStart: 600, // 10 minutes
-    baseSpeed: null, // calculé plus bas (colonnes/seconde)
+    // Vitesse PROGRESSIVE (voir demande utilisateur) : le 1er tour complet du cylindre dure
+    // lapOneSeconds: à ce rythme, le front met world.startCol / world.cols * lapOneSeconds pour
+    // atteindre l'Entrepôt de départ (10 min avec startCol au milieu du monde, voir world.startCol).
+    // Chaque tour suivant est lapSpeedMultiplier fois plus rapide que le précédent (voir
+    // Monsters.update) : racine de 2 par défaut, pour que le 3e tour (2 multiplications depuis le
+    // 1er) soit exactement 2x plus rapide, donc 2x plus court (20 min -> 10 min).
+    lapOneSeconds: 1200, // 20 minutes
+    lapSpeedMultiplier: Math.SQRT2,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
     // compacte plutôt qu'une simple ligne.
     depthCount: 20,
@@ -445,6 +453,3 @@ const GameConfig = {
     startingHp: 10,
   },
 };
-
-// Vitesse de la horde (colonnes/seconde) calculée pour atteindre startCol après secondsToReachStart.
-GameConfig.monsters.baseSpeed = GameConfig.world.startCol / GameConfig.monsters.secondsToReachStart;
