@@ -1257,30 +1257,28 @@ class GameScene extends Phaser.Scene {
 
       this.populationStatsText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
 
-      // Le bloc "construction" (Valider/Améliorer, onglets, liste de bâtiments) est ancré au BAS
-      // de la colonne plutôt qu'à une hauteur fixe (190px) collée sous le bandeau du haut : avec
-      // du texte de plusieurs lignes dans le panneau d'info (ex. une tour, avec portée/dégâts/
-      // main-d'œuvre/amélioration), ce bloc fixe finissait par en chevaucher le bas (bug vécu pour
-      // de vrai). Ancré en bas, le panneau d'info dispose de tout l'espace libre entre les deux
-      // pour respirer, quelle que soit la hauteur de la fenêtre (voir demande utilisateur).
-      const bottomPadding = 10;
-      const bottomBlockHeight = confirmRowHeight + desktopGap + catBlockHeight + desktopGap
-        + buttonIds.length * (desktopBtnHeight + desktopGap);
-      const bottomBlockY = h - bottomBlockHeight - bottomPadding;
+      // Les onglets de catégorie restent à une hauteur FIXE (environ mi-hauteur de la colonne),
+      // qu'ils ne bougent jamais selon le nombre de bâtiments de la catégorie active -- avant,
+      // tout le bloc (Valider + onglets + liste) était ancré en bas, donc les onglets sautaient
+      // de position à chaque changement d'onglet (Route, 1 bâtiment, vs Production, 6) (voir
+      // demande utilisateur). Le panneau d'info dispose toujours de tout l'espace entre les
+      // ressources et cette ligne pour respirer (voir la fois précédente : ne pas remettre une
+      // hauteur fixe proche du haut, qui avait fait chevaucher le panneau d'info sur les boutons).
+      const catBlockY = Math.round(h / 2);
+      const confirmY = catBlockY - desktopGap - confirmRowHeight;
 
       this.infoPanelText.setPosition(10, 10 + iconGridHeight + 34).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
 
       this.confirmButton
-        .setPosition(10, bottomBlockY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
+        .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(14).setVisible(showConfirm);
       this.upgradeCastleButton
-        .setPosition(10, bottomBlockY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
+        .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(13);
 
       // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
       // libellés comme "Production" dans les 220px de la colonne PC -- voir categoryButtons).
       const catTabWidth = (this.sidebarWidth - 20 - categoryGap) / catCols;
-      const catBlockY = bottomBlockY + confirmRowHeight + desktopGap;
       categoryIds.forEach((catId, i) => {
         const col = i % catCols, row = Math.floor(i / catCols);
         const active = catId === this.activeBuildCategory;
@@ -1340,33 +1338,49 @@ class GameScene extends Phaser.Scene {
     // neededWorkers/availableHousing), pas des ressources du stock central.
     this.populationStatsText.setPosition(8, barY + barIconSize + 4).setFontSize(12).setVisible(true);
 
+    // Tailles réduites (voir demande utilisateur : le pavé prenait la moitié de l'écran sur
+    // téléphone) : un bouton de 42-56px de haut avec 3 colonnes sur 2 rangées, plus l'onglet de
+    // catégorie au-dessus, ça grimpe vite -- ici volontairement plus compact, quitte à devoir
+    // regarder d'un peu plus près.
     const compact = h < 420;
-    const btnHeight = compact ? 42 : 56;
-    const gap = compact ? 6 : 8;
-    this.buildMenuToggle.setFontSize(compact ? 13 : 15);
+    const btnHeight = compact ? 30 : 36;
+    const gap = compact ? 4 : 6;
+    const mobileCategoryRowHeight = compact ? 18 : 20;
+    this.buildMenuToggle.setFontSize(compact ? 12 : 13);
     this.buildMenuToggle.setText(
       this.buildMode ? `✕ Annuler (${GameConfig.buildings[this.buildMode].name})`
         : (this.buildMenuOpen ? '✕ Fermer' : '🔨 Construire')
     );
-    this.buildMenuToggle.setPosition(w - this.buildMenuToggle.width - 10, h - this.buildMenuToggle.height - 10).setVisible(true);
+    this.buildMenuToggle.setPosition(w - this.buildMenuToggle.width - 8, h - this.buildMenuToggle.height - 8).setVisible(true);
 
-    this.confirmButton.setFontSize(compact ? 13 : 15);
+    this.confirmButton.setFontSize(compact ? 12 : 13);
     this.confirmButton
-      .setPosition(w - this.buildMenuToggle.width - this.confirmButton.width - 20, h - this.confirmButton.height - 10)
+      .setPosition(w - this.buildMenuToggle.width - this.confirmButton.width - 14, h - this.confirmButton.height - 8)
       .setVisible(showConfirm);
-    this.upgradeCastleButton.setFontSize(compact ? 11 : 13);
+    // Taille FIXE (pas juste une police plus petite) : contrairement à confirmButton (texte
+    // toujours "✓ Valider"), le texte ici change selon le coût affiché (voir updateInfoPanel,
+    // qui tourne à chaque frame) -- se positionner sur .width comme confirmButton utiliserait la
+    // largeur du texte PRÉCÉDENT au moment du calcul de position (layoutHud, pas appelé aussi
+    // souvent), et le bouton finissait par déborder par-dessus "Construire" (bug vécu pour de
+    // vrai). Une taille fixe + retour à la ligne rend la position toujours prévisible.
+    const upgradeBtnWidth = compact ? 150 : 180;
+    const upgradeBtnHeight = compact ? 34 : 38;
     this.upgradeCastleButton
-      .setPosition(w - this.buildMenuToggle.width - this.upgradeCastleButton.width - 20, h - this.upgradeCastleButton.height - 10);
+      .setFontSize(compact ? 10 : 11)
+      .setFixedSize(upgradeBtnWidth, upgradeBtnHeight)
+      .setWordWrapWidth(upgradeBtnWidth - 16)
+      .setPosition(w - this.buildMenuToggle.width - upgradeBtnWidth - 14, h - upgradeBtnHeight - 8);
 
     const cols = 3;
     const btnWidth = (w - gap * (cols + 1)) / cols;
     const rows = Math.ceil(buttonIds.length / cols);
     // Une seule rangée de catégories ici (contrairement à la grille 2x2 de la colonne PC) : en
     // paysage mobile, la largeur d'écran suffit largement pour 4 onglets côte à côte.
-    const menuHeight = categoryRowHeight + gap + rows * (btnHeight + gap) + gap;
-    // Ne descend jamais sous le bandeau du haut, même si en théorie ça manquerait de place :
-    // le pavé n'est de toute façon affiché que ponctuellement (replié par défaut).
-    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - this.buildMenuToggle.height - 24);
+    const menuHeight = mobileCategoryRowHeight + gap + rows * (btnHeight + gap) + gap;
+    // Ancré au ras du bas (petite marge de 6px) plutôt que laisser 24px de plus au-dessus du
+    // bouton "Construire" : c'est justement cette marge qui faisait "flotter" le pavé plus haut
+    // que nécessaire, façon fenêtre au milieu de l'écran plutôt que bandeau du bas.
+    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - this.buildMenuToggle.height - 6);
 
     this.buildMenuBg.setPosition(0, menuTop - gap).setSize(w, menuHeight + gap * 2).setVisible(this.buildMenuOpen);
 
@@ -1375,8 +1389,8 @@ class GameScene extends Phaser.Scene {
       const active = catId === this.activeBuildCategory;
       this.categoryButtons[catId]
         .setPosition(gap + i * (catTabWidth + gap), menuTop + gap)
-        .setFixedSize(catTabWidth, categoryRowHeight)
-        .setFontSize(compact ? 11 : 12).setAlign('center').setVisible(this.buildMenuOpen)
+        .setFixedSize(catTabWidth, mobileCategoryRowHeight)
+        .setFontSize(compact ? 10 : 11).setAlign('center').setVisible(this.buildMenuOpen)
         .setBackgroundColor(active ? '#ffd23f' : '#1b3322')
         .setColor(active ? '#10151a' : '#ffffff');
     });
