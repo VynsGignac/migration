@@ -947,7 +947,13 @@ const GameState = {
     for (const [key, tile] of this.tiles) {
       if (tile.type !== 'warehouse' || tile.underConstruction) continue;
       if (this.resources.bread <= 0) continue;
-      if (this.shipments.some(s => s.fromKey === key)) continue;
+      // PAS s.fromKey === key tout court (voir _spawnWarehouseConstructionDeliveries, qui a le
+      // même souci) : un Entrepôt doit pouvoir expédier du pain ET des matériaux de construction
+      // EN MÊME TEMPS -- sinon un besoin de pain permanent (plusieurs maisons à nourrir) monopolise
+      // indéfiniment l'unique "créneau" et les chantiers à portée ne reçoivent jamais rien (bug
+      // vécu pour de vrai : un Entrepôt en construction restait bloqué à 0/15 malgré du stock
+      // disponible). Chaque "voie" (pain vs construction) garde son propre garde-fou anti-doublon.
+      if (this.shipments.some(s => s.fromKey === key && !s.forConstruction)) continue;
 
       const [col, row] = key.split(',').map(Number);
       const found = this.findBestPathToBuildingType(col, row, ['house'], this.warehouseZoneRadius(), (t) => {
@@ -988,7 +994,10 @@ const GameState = {
     const batch = GameConfig.logistics.shipBatchSize;
     for (const [key, tile] of this.tiles) {
       if (tile.type !== 'warehouse' || tile.underConstruction) continue;
-      if (this.shipments.some(s => s.fromKey === key)) continue;
+      // Voie séparée de celle du pain (voir le commentaire équivalent dans _spawnWarehouseBread) :
+      // ignore les chargements de pain déjà en route, ne regarde que d'éventuels AUTRES chantiers
+      // déjà en cours de livraison depuis ce même Entrepôt.
+      if (this.shipments.some(s => s.fromKey === key && s.forConstruction)) continue;
 
       const [col, row] = key.split(',').map(Number);
       let found = null;
