@@ -469,7 +469,6 @@ const GameState = {
     const alphabetisationBonus = alphabetisationLevel > 0
       ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
     const formateurBonus = this.isTechUnlocked('rec_formateur') ? GameConfig.techTree.nodes.rec_formateur.zoneBonus : 0;
-    const imprimerieChance = this.isTechUnlocked('rec_imprimerie') ? GameConfig.techTree.nodes.rec_imprimerie.codexChance : 0;
 
     // 1. Extraction : les extracteurs remplissent leur propre outputBuffer depuis les cases
     //    de ressource dans leur rayon (les plus proches d'abord), indépendamment du réseau.
@@ -524,16 +523,6 @@ const GameState = {
       // entrepôt plutôt que d'exiger tout un second circuit de livraison pour un simple bonus.
       if (extracted > 0 && tile.type === 'minerCamp' && tunnelierChance > 0 && Math.random() < tunnelierChance) {
         this.resources.ore += extracted;
-        this.dirty = true;
-      }
-
-      // Imprimerie : chance de récupérer aussi un Codex lors de toute récolte (voir techTree.
-      // nodes.rec_imprimerie) -- même principe que le minerai de Tunnelier ci-dessus (droit au
-      // stock central), mais pour tous les extracteurs, pas seulement le Camp de Mineur. Montant
-      // fixe (1), contrairement au minerai : un Codex est plus une trouvaille qu'un sous-produit
-      // proportionnel à la quantité récoltée.
-      if (extracted > 0 && imprimerieChance > 0 && Math.random() < imprimerieChance) {
-        this.resources.codex += 1;
         this.dirty = true;
       }
     }

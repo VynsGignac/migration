@@ -70,8 +70,8 @@ const GameConfig = {
     // sur les routes (directement dépensée/gagnée dans le stock central) : à terme récupérée sur
     // les cadavres de monstres tués (pas encore implémenté, voir demande utilisateur) ; en
     // attendant le stock de départ est volontairement énorme (voir resources.starting) pour que
-    // les recherches restent quasi gratuites. Imprimerie (voir techTree.nodes.rec_imprimerie) en
-    // ajoute aussi un peu à chaque récolte, en plus de ce futur gain de guerre.
+    // les recherches restent quasi gratuites. Imprimerie (voir techTree.nodes.rec_imprimerie)
+    // bonifiera cette collecte, mais reste sans effet tant qu'elle n'existe pas.
     codex: { long: 'Codex', short: 'Codex', color: 0x6f5fa3 },
   },
   // Transport des ressources le long des routes.
@@ -301,7 +301,9 @@ const GameConfig = {
       },
       rec_imprimerie: {
         name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162,
-        description: 'Lors de la récolte, 10 % de chances de récupérer aussi un Codex, la monnaie des recherches.',
+        // Sans effet actif pour l'instant : s'applique à la récolte de Codex sur les monstres
+        // vaincus (voir resourceLabels.codex), pas encore implémentée (voir demande utilisateur).
+        description: 'Lors de la récupération de Codex sur les monstres vaincus, 10 % de chances d\'en récupérer un de plus.',
         codexChance: 0.10,
       },
 
