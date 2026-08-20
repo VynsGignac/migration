@@ -307,13 +307,33 @@ const GameConfig = {
         codexChance: 0.10,
       },
 
-      // Logistique (branche à 216°) : roue -> charrue -> {aménagement urbain, gestion des stocks, ?}.
-      log_roue: { name: 'Roue', parent: null, ring: 1, angle: 216, description: 'Une invention fondamentale pour le transport.' },
-      log_charrue: { name: 'Charrue', parent: 'log_roue', ring: 2, angle: 216, description: 'Facilite le travail de la terre et le transport lourd.' },
-      log_amenagement: { name: 'Aménagement urbain', parent: 'log_charrue', ring: 3, angle: 191, description: 'Optimise l\'agencement des constructions.' },
-      log_gestionStocks: { name: 'Gestion des stocks', parent: 'log_charrue', ring: 3, angle: 216, description: 'Améliore le stockage et la répartition des ressources.' },
-      // Nom provisoire : 3e branche de Logistique pas encore définie par le joueur (voir discussion).
-      log_tbd: { name: 'À déterminer', parent: 'log_charrue', ring: 3, angle: 241, description: 'Technologie à définir plus tard.' },
+      // Logistique (branche à 216°) : roue -> caisse de transport -> {aménagement urbain, gestion
+      // des stocks, centre-ville}. Les bonus par niveau (zone/capacité) ne sont PAS cumulatifs
+      // d'un niveau à l'autre (voir demande utilisateur) : le niveau 3 remplace le niveau 2, il ne
+      // s'y ajoute pas -- valable pour toute la branche Logistique, contrairement à Expertise/
+      // Guilde/Alphabétisation (Industrie/Recherche) qui, elles, s'additionnent à d'autres bonus.
+      log_roue: {
+        name: 'Roue', parent: null, ring: 1, angle: 216, maxLevel: 3,
+        description: 'Augmente la vitesse de transport de 5 % / 10 % / 15 %.',
+        speedBonusByLevel: [0.05, 0.10, 0.15],
+      },
+      log_charrue: {
+        name: 'Caisse de transport', parent: 'log_roue', ring: 2, angle: 216,
+        description: '5 % de chances d\'obtenir une unité de ressource supplémentaire à chaque livraison (arrivée d\'un chargement).',
+        bonusChance: 0.05,
+      },
+      log_amenagement: {
+        name: 'Aménagement urbain', parent: 'log_charrue', ring: 3, angle: 191, maxLevel: 3,
+        description: 'Augmente la zone d\'action des Entrepôts de 2 / 4 / 6 cases (pas cumulatif : le niveau 3 vaut 6 cases, pas 12).',
+        zoneBonusByLevel: [2, 4, 6],
+      },
+      log_gestionStocks: {
+        name: 'Gestion des stocks', parent: 'log_charrue', ring: 3, angle: 216, maxLevel: 3,
+        description: 'Augmente la capacité de stockage de chaque bâtiment de 5 / 10 / 20 (pas cumulatif).',
+        capBonusByLevel: [5, 10, 20],
+      },
+      // Nom provisoire : effet de la 3e branche de Logistique pas encore défini par le joueur.
+      log_tbd: { name: 'Centre-ville', parent: 'log_charrue', ring: 3, angle: 241, description: 'Technologie à définir plus tard.' },
 
       // Défense (branche à 288°) : explorateur -> donjon -> {armée de profession, service militaire, forgerie}.
       def_explorateur: { name: 'Explorateur', parent: null, ring: 1, angle: 288, description: 'Repousse les limites du territoire connu.' },

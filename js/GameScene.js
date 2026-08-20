@@ -390,15 +390,15 @@ class GameScene extends Phaser.Scene {
           return sum + (res && res.type === def.resource ? res.amount : 0);
         }, 0);
       lines.push(`Ressource à proximité : ${Math.round(nearby)}`);
-      lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap}`);
+      lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
       lines.push(this.laborStatusLine(col, row));
     } else if (def.kind === 'processor') {
-      lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap}`);
-      lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap}`);
+      lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
+      lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
       lines.push(this.laborStatusLine(col, row));
     } else if (def.kind === 'house') {
       lines.push(`Habitants : ${tile.population}/${GameState.housePopulationCap(def)}`);
-      lines.push(`Pain en réserve : ${Math.round(tile.inputBuffer)}/${def.inputCap}`);
+      lines.push(`Pain en réserve : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
       lines.push(tile.hadDeficit ? 'Manque de pain : la population va baisser.' : 'Bien nourrie.');
     } else if (def.kind === 'tower') {
       const active = GameState._hasAdjacentRoad(col, row);

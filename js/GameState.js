@@ -113,7 +113,7 @@ const GameState = {
     if (def.kind === 'processor') return def.linkRange;
     if (def.kind === 'house') return GameConfig.population.laborRadius;
     if (def.kind === 'tower') return def.range;
-    if (def === GameConfig.buildings.warehouse) return GameConfig.logistics.linkRange;
+    if (def === GameConfig.buildings.warehouse) return this.warehouseZoneRadius();
     // Même rayon que l'Entrepôt (voir plus haut), faute d'un rayon dédié à l'Université dans sa
     // config -- ne servait jusqu'ici à rien (l'Université ouvre l'arbre techno, pas de zone/
     // brouillard de guerre) ; sert maintenant à Formateur (voir computeUniversityZone ci-dessous).
@@ -147,7 +147,7 @@ const GameState = {
     for (const [key, tile] of this.tiles) {
       if (tile.type !== 'warehouse') continue;
       const [col, row] = key.split(',').map(Number);
-      for (const c of HexUtils.hexesInRange(col, row, GameConfig.logistics.linkRange, this.cols, this.rows)) {
+      for (const c of HexUtils.hexesInRange(col, row, this.warehouseZoneRadius(), this.cols, this.rows)) {
         zone.add(this.key(c.col, c.row));
       }
     }
@@ -484,7 +484,7 @@ const GameState = {
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
-      let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap - tile.outputBuffer);
+      let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap + this.capBonus() - tile.outputBuffer);
       if (toExtract <= 0) continue;
 
       const inRange = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows);
@@ -540,7 +540,7 @@ const GameState = {
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
-      const roomInOutput = def.outputCap - tile.outputBuffer;
+      const roomInOutput = def.outputCap + this.capBonus() - tile.outputBuffer;
       const actual = Math.min(def.rate * efficiency * speedMultiplier * dtSeconds, tile.inputBuffer, roomInOutput);
       if (actual <= 0) continue;
 
@@ -725,6 +725,25 @@ const GameState = {
     return def.populationCap + bonus;
   },
 
+  // Rayon d'action réel d'un Entrepôt, boosté par Aménagement urbain (voir GameConfig.techTree.
+  // nodes.log_amenagement) -- PAS cumulatif entre niveaux (voir le nœud), le niveau atteint
+  // REMPLACE GameConfig.logistics.linkRange plutôt que de s'y ajouter plusieurs fois.
+  warehouseZoneRadius() {
+    const level = this.techLevel('log_amenagement');
+    const node = GameConfig.techTree.nodes.log_amenagement;
+    const bonus = level > 0 ? node.zoneBonusByLevel[level - 1] : 0;
+    return GameConfig.logistics.linkRange + bonus;
+  },
+
+  // Bonus de capacité de stockage, boosté par Gestion des stocks (voir GameConfig.techTree.nodes.
+  // log_gestionStocks) -- pas cumulatif non plus, s'ajoute une seule fois à inputCap/outputCap
+  // partout où ils sont lus (voir les appels ci-dessous et dans tickProduction).
+  capBonus() {
+    const level = this.techLevel('log_gestionStocks');
+    const node = GameConfig.techTree.nodes.log_gestionStocks;
+    return level > 0 ? node.capBonusByLevel[level - 1] : 0;
+  },
+
   // Cherche le monstre vivant le plus proche (en cases) dont la position actuelle tombe dans le
   // rayon d'action d'une tour. La position d'un monstre étant continue (pixels), on la convertit
   // en colonne approximative pour la comparer à la zone (les mêmes cases que celles surlignées
@@ -775,7 +794,7 @@ const GameState = {
       for (const targetType of def.linkTargets) {
         found = this.findBestPathToBuildingType(col, row, [targetType], def.linkRange, (t) => {
           if (t.type === 'warehouse') return Infinity;
-          return GameConfig.buildings[t.type].inputCap - t.inputBuffer;
+          return GameConfig.buildings[t.type].inputCap + this.capBonus() - t.inputBuffer;
         });
         if (found) break;
       }
@@ -785,7 +804,7 @@ const GameState = {
       const destTile = this.tiles.get(destKey);
       const destDef = GameConfig.buildings[destTile.type];
 
-      const capacity = destTile.type === 'warehouse' ? Infinity : (destDef.inputCap - destTile.inputBuffer);
+      const capacity = destTile.type === 'warehouse' ? Infinity : (destDef.inputCap + this.capBonus() - destTile.inputBuffer);
       const amount = Math.min(batch, tile.outputBuffer, capacity);
       if (amount <= 0) continue;
 
@@ -817,15 +836,15 @@ const GameState = {
       if (this.shipments.some(s => s.fromKey === key)) continue;
 
       const [col, row] = key.split(',').map(Number);
-      const found = this.findBestPathToBuildingType(col, row, ['house'], GameConfig.logistics.linkRange, (t) => {
-        return GameConfig.buildings[t.type].inputCap - t.inputBuffer;
+      const found = this.findBestPathToBuildingType(col, row, ['house'], this.warehouseZoneRadius(), (t) => {
+        return GameConfig.buildings[t.type].inputCap + this.capBonus() - t.inputBuffer;
       });
       if (!found) continue;
 
       const destKey = this.key(found.targetCol, found.targetRow);
       const destTile = this.tiles.get(destKey);
       const destDef = GameConfig.buildings[destTile.type];
-      const capacity = destDef.inputCap - destTile.inputBuffer;
+      const capacity = destDef.inputCap + this.capBonus() - destTile.inputBuffer;
       const amount = Math.min(batch, this.resources.bread, capacity);
       if (amount <= 0) continue;
 
@@ -847,7 +866,14 @@ const GameState = {
   // Avance tous les chargements en transit ; livre ceux qui sont arrivés.
   // Appelé chaque frame (indépendamment du tick de production) pour un mouvement fluide.
   updateShipments(dtSeconds) {
-    const speed = GameConfig.logistics.shipSpeed;
+    // Roue (voir techTree.nodes.log_roue) : accélère TOUS les chargements, quelle que soit la
+    // ressource ou l'origine, puisqu'ils passent tous par cette même boucle.
+    const roueLevel = this.techLevel('log_roue');
+    const roueBonus = roueLevel > 0 ? GameConfig.techTree.nodes.log_roue.speedBonusByLevel[roueLevel - 1] : 0;
+    const speed = GameConfig.logistics.shipSpeed * (1 + roueBonus);
+    // Caisse de transport (voir techTree.nodes.log_charrue) : chance d'une unité de ressource en
+    // plus à chaque livraison qui arrive à bon port (pas sur un chargement perdu, voir plus bas).
+    const charrueChance = this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.bonusChance : 0;
     const stillTraveling = [];
     let delivered = false;
 
@@ -860,11 +886,12 @@ const GameState = {
       delivered = true;
       const destTile = this.tiles.get(s.toKey);
       if (destTile && destTile.type === s.toType) {
+        const amount = (charrueChance > 0 && Math.random() < charrueChance) ? s.amount + 1 : s.amount;
         if (s.toType === 'warehouse') {
-          this.resources[s.resource] = (this.resources[s.resource] || 0) + s.amount;
+          this.resources[s.resource] = (this.resources[s.resource] || 0) + amount;
         } else {
-          const cap = GameConfig.buildings[destTile.type].inputCap;
-          destTile.inputBuffer = Math.min(destTile.inputBuffer + s.amount, cap);
+          const cap = GameConfig.buildings[destTile.type].inputCap + this.capBonus();
+          destTile.inputBuffer = Math.min(destTile.inputBuffer + amount, cap);
         }
       }
       // Sinon : le bâtiment de destination a été détruit entre-temps, le chargement est perdu.
