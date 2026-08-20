@@ -918,16 +918,23 @@ class GameScene extends Phaser.Scene {
     const node = GameConfig.techTree.nodes[id];
     const level = GameState.techLevel(id);
     const maxLevel = GameState.maxTechLevel(id);
-    const researchable = GameState.canResearchTech(id);
     const unlocked = level > 0;
+    const maxedOut = level >= maxLevel;
+    const parentOk = !node.parent || GameState.isTechUnlocked(node.parent);
+    const cost = maxedOut ? null : GameState.researchCostFor(id);
+    const affordable = cost ? GameState.canAfford(cost) : false;
+    const researchable = !maxedOut && parentOk && affordable;
     let status;
-    if (unlocked && !researchable) {
+    if (maxedOut) {
       status = maxLevel > 1 ? 'Niveau maximum atteint.' : 'Déjà débloqué.';
-    } else if (researchable) {
-      status = unlocked ? `Amélioration disponible (niveau ${level}/${maxLevel}).` : 'Débloquable.';
-    } else {
+    } else if (!parentOk) {
       const parentName = node.parent ? GameConfig.techTree.nodes[node.parent].name : '?';
       status = `Débloque d'abord "${parentName}".`;
+    } else {
+      const costText = this.formatResources(cost, true);
+      status = affordable
+        ? `${unlocked ? `Amélioration disponible (niveau ${level}/${maxLevel})` : 'Débloquable'}. Coût : ${costText}.`
+        : `Pas assez de ressources (${costText} nécessaire).`;
     }
     const showBtn = researchable;
 
@@ -2258,6 +2265,7 @@ class GameScene extends Phaser.Scene {
     if (GameState.buildingsDirty) {
       GameState.computeRevealedTiles();
       GameState.computeGuildZone();
+      GameState.computeUniversityZone();
       GameState.buildingsDirty = false;
     }
     this.redrawFog();

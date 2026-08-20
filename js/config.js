@@ -49,7 +49,7 @@ const GameConfig = {
     // Stock de départ, volontairement généreux : sur une carte de 1000 colonnes, les premiers
     // blobs de ressources peuvent être loin de l'Entrepôt de départ. Ce coussin doit suffire à
     // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
-    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0 },
+    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, codex: 0 },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
   // qui voyage sur les routes, pour chaque ressource.
@@ -63,6 +63,9 @@ const GameConfig = {
     // Introduit par la techno Tunnelier (voir techTree.nodes.ind_tunnelier) : pas encore de
     // bâtiment qui la consomme, s'accumule simplement dans le stock central pour l'instant.
     ore: { long: 'Minerai', short: 'Minerai', color: 0x8a6d4f },
+    // Introduit par la techno Imprimerie (voir techTree.nodes.rec_imprimerie) : mise de côté pour
+    // un usage futur (voir demande utilisateur), pas encore affichée dans le bandeau de ressources.
+    codex: { long: 'Codex', short: 'Codex', color: 0x6f5fa3 },
   },
   // Transport des ressources le long des routes.
   logistics: {
@@ -207,6 +210,12 @@ const GameConfig = {
     // jamais faire se toucher les nœuds, le diagramme peut dépasser la zone visible — on peut
     // alors le faire glisser (voir GameScene.techTreeCamX/Y) pour voir le reste.
     ringSpacing: 70,
+    // Coût d'une recherche, par niveau acheté (1er niveau = 1x, 2e = 2x, etc.), avant la réduction
+    // de Scolarisation (voir GameState.researchCostFor/techTree.nodes.rec_scolarisation) — identique
+    // pour tous les nœuds de l'arbre, quelle que soit leur branche. En minerai (voir
+    // techTree.nodes.ind_tunnelier) : donne enfin un débouché à une ressource qui, sinon, ne fait
+    // que s'accumuler sans jamais être dépensée (voir resourceLabels.ore).
+    researchCostPerLevel: { ore: 10 },
     nodes: {
       // Population (branche à 0°) : nutrition -> urbanisme -> {immigration, mariage, colocation}.
       // Nœuds à plusieurs niveaux (maxLevel > 1) : cliquables plusieurs fois, un niveau par clic sur
@@ -268,10 +277,26 @@ const GameConfig = {
       },
 
       // Recherche (branche à 144°) : alphabétisation -> scolarisation -> {formateur, imprimerie}.
-      rec_alphabetisation: { name: 'Alphabétisation', parent: null, ring: 1, angle: 144, description: 'Apprend à lire et écrire à la population.' },
-      rec_scolarisation: { name: 'Scolarisation', parent: 'rec_alphabetisation', ring: 2, angle: 144, description: 'Met en place un enseignement structuré.' },
-      rec_formateur: { name: 'Formateur', parent: 'rec_scolarisation', ring: 3, angle: 126, description: 'Forme des experts capables d\'enseigner à leur tour.' },
-      rec_imprimerie: { name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162, description: 'Diffuse le savoir plus largement et plus vite.' },
+      rec_alphabetisation: {
+        name: 'Alphabétisation', parent: null, ring: 1, angle: 144, maxLevel: 3,
+        description: 'Tous les bâtiments (production ET tours) sont 5 % / 10 % / 15 % plus efficaces.',
+        efficiencyBonusByLevel: [0.05, 0.10, 0.15],
+      },
+      rec_scolarisation: {
+        name: 'Scolarisation', parent: 'rec_alphabetisation', ring: 2, angle: 144, maxLevel: 3,
+        description: 'Réduit de 10 % / 20 % / 30 % le coût en minerai de toute recherche (celle-ci comprise).',
+        costReductionByLevel: [0.10, 0.20, 0.30],
+      },
+      rec_formateur: {
+        name: 'Formateur', parent: 'rec_scolarisation', ring: 3, angle: 126,
+        description: 'Les bâtiments de production dans la zone d\'action de l\'Université sont 15 % plus efficaces.',
+        zoneBonus: 0.15,
+      },
+      rec_imprimerie: {
+        name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162,
+        description: 'Lors de la récolte, 10 % de chances de récupérer aussi un Codex (nouvelle ressource, usage prévu plus tard).',
+        codexChance: 0.10,
+      },
 
       // Logistique (branche à 216°) : roue -> charrue -> {aménagement urbain, gestion des stocks, ?}.
       log_roue: { name: 'Roue', parent: null, ring: 1, angle: 216, description: 'Une invention fondamentale pour le transport.' },

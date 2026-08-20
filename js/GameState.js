@@ -9,7 +9,7 @@ const GameState = {
   cols: GameConfig.world.cols,
   rows: GameConfig.world.rows,
   // Stock central : seuls les Entrepôts y déposent (via une expédition qui arrive à destination).
-  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0 }, GameConfig.resources.starting),
+  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, codex: 0 }, GameConfig.resources.starting),
   // Clé "col,row" -> { type, outputBuffer?, inputBuffer?, ruinLoot? }
   // Une case absente de la Map est considérée "vide".
   tiles: new Map(),
@@ -38,6 +38,9 @@ const GameState = {
   // Cases à portée d'au moins un Entrepôt (voir computeGuildZone/techTree.nodes.ind_guilde),
   // recalculé au même moment que revealedTiles (voir GameScene, sur buildingsDirty).
   guildZone: new Set(),
+  // Cases à portée d'au moins une Université (voir computeUniversityZone/techTree.nodes.
+  // rec_formateur), même principe que guildZone ci-dessus.
+  universityZone: new Set(),
   // Mis à true par toute méthode qui change l'état visuel, lu puis remis à false par GameScene.
   dirty: true,
   // Mis à true seulement par les méthodes qui posent/détruisent un bâtiment (voir zoneRadiusFor/
@@ -111,6 +114,10 @@ const GameState = {
     if (def.kind === 'house') return GameConfig.population.laborRadius;
     if (def.kind === 'tower') return def.range;
     if (def === GameConfig.buildings.warehouse) return GameConfig.logistics.linkRange;
+    // Même rayon que l'Entrepôt (voir plus haut), faute d'un rayon dédié à l'Université dans sa
+    // config -- ne servait jusqu'ici à rien (l'Université ouvre l'arbre techno, pas de zone/
+    // brouillard de guerre) ; sert maintenant à Formateur (voir computeUniversityZone ci-dessous).
+    if (def.kind === 'university') return GameConfig.logistics.linkRange;
     return null;
   },
 
@@ -145,6 +152,20 @@ const GameState = {
       }
     }
     this.guildZone = zone;
+  },
+
+  // Cases à portée d'au moins une Université (voir techTree.nodes.rec_formateur) : même principe
+  // que computeGuildZone ci-dessus.
+  computeUniversityZone() {
+    const zone = new Set();
+    for (const [key, tile] of this.tiles) {
+      if (tile.type !== 'university') continue;
+      const [col, row] = key.split(',').map(Number);
+      for (const c of HexUtils.hexesInRange(col, row, GameConfig.logistics.linkRange, this.cols, this.rows)) {
+        zone.add(this.key(c.col, c.row));
+      }
+    }
+    this.universityZone = zone;
   },
 
   // Peuple la carte de zones d'arbres et de pierre, à distance de l'Entrepôt de départ.
@@ -444,6 +465,11 @@ const GameState = {
       ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
     const forestierUnlocked = this.isTechUnlocked('ind_forestier');
     const tunnelierChance = this.isTechUnlocked('ind_tunnelier') ? GameConfig.techTree.nodes.ind_tunnelier.oreChance : 0;
+    const alphabetisationLevel = this.techLevel('rec_alphabetisation');
+    const alphabetisationBonus = alphabetisationLevel > 0
+      ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
+    const formateurBonus = this.isTechUnlocked('rec_formateur') ? GameConfig.techTree.nodes.rec_formateur.zoneBonus : 0;
+    const imprimerieChance = this.isTechUnlocked('rec_imprimerie') ? GameConfig.techTree.nodes.rec_imprimerie.codexChance : 0;
 
     // 1. Extraction : les extracteurs remplissent leur propre outputBuffer depuis les cases
     //    de ressource dans leur rayon (les plus proches d'abord), indépendamment du réseau.
@@ -456,7 +482,9 @@ const GameState = {
       const [col, row] = key.split(',').map(Number);
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers);
-      const speedMultiplier = 1 + expertiseBonus + (this.guildZone.has(key) ? guildBonusValue : 0);
+      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
+        + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (this.universityZone.has(key) ? formateurBonus : 0);
       let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap - tile.outputBuffer);
       if (toExtract <= 0) continue;
 
@@ -498,6 +526,16 @@ const GameState = {
         this.resources.ore += extracted;
         this.dirty = true;
       }
+
+      // Imprimerie : chance de récupérer aussi un Codex lors de toute récolte (voir techTree.
+      // nodes.rec_imprimerie) -- même principe que le minerai de Tunnelier ci-dessus (droit au
+      // stock central), mais pour tous les extracteurs, pas seulement le Camp de Mineur. Montant
+      // fixe (1), contrairement au minerai : un Codex est plus une trouvaille qu'un sous-produit
+      // proportionnel à la quantité récoltée.
+      if (extracted > 0 && imprimerieChance > 0 && Math.random() < imprimerieChance) {
+        this.resources.codex += 1;
+        this.dirty = true;
+      }
     }
 
     // 2. Transformation : les processeurs consomment leur inputBuffer local pour remplir leur
@@ -510,7 +548,9 @@ const GameState = {
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers);
-      const speedMultiplier = 1 + expertiseBonus + (this.guildZone.has(key) ? guildBonusValue : 0);
+      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
+        + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (this.universityZone.has(key) ? formateurBonus : 0);
       const roomInOutput = def.outputCap - tile.outputBuffer;
       const actual = Math.min(def.rate * efficiency * speedMultiplier * dtSeconds, tile.inputBuffer, roomInOutput);
       if (actual <= 0) continue;
@@ -598,7 +638,10 @@ const GameState = {
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers);
 
-      tile.fireCooldown -= dtSeconds * efficiency;
+      // Alphabétisation (voir techTree.nodes.rec_alphabetisation) : seule techno qui touche aussi
+      // les tours, vu son intitulé "TOUS les bâtiments" -- contrairement à Expertise/Guilde/
+      // Formateur, qui ne parlent que des bâtiments de PRODUCTION.
+      tile.fireCooldown -= dtSeconds * efficiency * (1 + alphabetisationBonus);
       if (tile.fireCooldown > 0) continue;
       tile.fireCooldown = def.fireInterval;
 
@@ -626,8 +669,9 @@ const GameState = {
   },
 
   // Arbre technologique (voir GameConfig.techTree) : un nœud n'est débloquable que si son parent
-  // l'est déjà (chaîne de prérequis, au niveau 1 suffit). Gratuit — seul le mécanisme de déblocage/
-  // progression est limité par les prérequis, pas par un coût en ressources.
+  // l'est déjà (chaîne de prérequis, au niveau 1 suffit). Chaque niveau coûte des ressources (voir
+  // researchCostFor) depuis la techno Scolarisation (voir techTree.nodes.rec_scolarisation) --
+  // avant elle, ce n'était limité que par les prérequis.
   techLevel(id) {
     return this.unlockedTech.get(id) || 0;
   },
@@ -641,9 +685,26 @@ const GameState = {
     return (node && node.maxLevel) || 1;
   },
 
-  // Vrai s'il reste un niveau à rechercher : soit le tout premier (nécessite le parent débloqué),
-  // soit un niveau supérieur d'un nœud à plusieurs niveaux déjà débloqué (pas de nouveau prérequis).
-  canResearchTech(id) {
+  // Coût du PROCHAIN niveau de ce nœud (celui que canResearchTech/researchTech achèteraient) :
+  // researchCostPerLevel × le niveau visé (1er niveau = 1x, 2e = 2x...), réduit par Scolarisation.
+  // Renvoie null si le nœud est déjà à son niveau maximum (rien à acheter).
+  researchCostFor(id) {
+    const level = this.techLevel(id);
+    if (level >= this.maxTechLevel(id)) return null;
+    const targetLevel = level + 1;
+    const scolarisationLevel = this.techLevel('rec_scolarisation');
+    const discount = scolarisationLevel > 0
+      ? GameConfig.techTree.nodes.rec_scolarisation.costReductionByLevel[scolarisationLevel - 1] : 0;
+    const cost = {};
+    for (const res in GameConfig.techTree.researchCostPerLevel) {
+      cost[res] = Math.round(GameConfig.techTree.researchCostPerLevel[res] * targetLevel * (1 - discount));
+    }
+    return cost;
+  },
+
+  // Vrai si un prérequis bloque le prochain niveau (parent pas débloqué, ou déjà au maximum) --
+  // indépendant du coût, pour distinguer "verrouillé" de "juste trop cher" dans l'UI.
+  techPrereqMet(id) {
     const node = GameConfig.techTree.nodes[id];
     if (!node) return false;
     const level = this.techLevel(id);
@@ -652,8 +713,16 @@ const GameState = {
     return true;
   },
 
+  // Vrai s'il reste un niveau à rechercher ET qu'on peut se le payer : soit le tout premier
+  // (nécessite le parent débloqué), soit un niveau supérieur d'un nœud déjà débloqué (pas de
+  // nouveau prérequis, juste le coût).
+  canResearchTech(id) {
+    return this.techPrereqMet(id) && this.canAfford(this.researchCostFor(id));
+  },
+
   researchTech(id) {
     if (!this.canResearchTech(id)) return false;
+    this.spend(this.researchCostFor(id));
     this.unlockedTech.set(id, this.techLevel(id) + 1);
     return true;
   },
@@ -856,7 +925,7 @@ const GameState = {
   },
 
   deserialize(data) {
-    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0 }, data.resources);
+    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, codex: 0 }, data.resources);
     this.tiles = new Map(data.tiles.map(([k, t]) => [k, { ...t }]));
     this.resourceTiles = new Map(data.resourceTiles.map(([k, t]) => [k, { ...t }]));
     this.shipments = data.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) }));
