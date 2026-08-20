@@ -1202,6 +1202,13 @@ class GameScene extends Phaser.Scene {
     const activeCategoryIds = GameConfig.buildingCategories[this.activeBuildCategory].ids;
     const buttonIds = Object.keys(this.buildButtons)
       .filter((id) => this.isBuildingUnlocked(id) && activeCategoryIds.includes(id));
+    // Cache explicitement tout bouton qui n'est PAS dans la catégorie active : les boucles PC/
+    // mobile plus bas ne font que .setVisible(true) sur les ids DE buttonIds, elles ne touchent
+    // jamais à ceux d'une autre catégorie -- sans ce passage, changer d'onglet empilait les
+    // boutons de tous les onglets déjà visités les uns sur les autres (bug vécu pour de vrai).
+    for (const id in this.buildButtons) {
+      if (!buttonIds.includes(id)) this.buildButtons[id].setVisible(false);
+    }
     const categoryRowHeight = 26, categoryGap = 4;
     const catCols = 2; // grille 2x2 en colonne PC (voir plus bas) : 4 catégories -> 2 rangées
     const catTabRows = Math.ceil(categoryIds.length / catCols);
