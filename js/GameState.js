@@ -320,7 +320,12 @@ const GameState = {
         houses.push({ col, row, population: tile.population });
       } else if (def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower') {
         const [col, row] = key.split(',').map(Number);
-        producers.set(key, { col, row, workers: 0 });
+        // Apprentissage (voir techTree.nodes.ind_apprentissage) : les bâtiments de raffinage
+        // démarrent avec 1 travailleur déjà compté, avant même la répartition des habitants
+        // ci-dessous -- l'algorithme glouton (le moins staffé d'abord) leur envoie donc
+        // naturellement moins d'habitants réels pour atteindre le même plein rendement.
+        const freeWorker = (def.kind === 'processor' && this.isTechUnlocked('ind_apprentissage')) ? 1 : 0;
+        producers.set(key, { col, row, workers: freeWorker });
       }
     }
 
@@ -437,7 +442,6 @@ const GameState = {
     const guildLevel = this.techLevel('ind_guilde');
     const guildBonusValue = guildLevel > 0
       ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
-    const apprentissageUnlocked = this.isTechUnlocked('ind_apprentissage');
     const forestierUnlocked = this.isTechUnlocked('ind_forestier');
     const tunnelierChance = this.isTechUnlocked('ind_tunnelier') ? GameConfig.techTree.nodes.ind_tunnelier.oreChance : 0;
 
@@ -498,14 +502,13 @@ const GameState = {
 
     // 2. Transformation : les processeurs consomment leur inputBuffer local pour remplir leur
     //    outputBuffer, limités par ce qui leur a été livré (plus de réseau global instantané).
-    //    Même courbe d'efficacité selon la main-d'œuvre affectée (efficiencyForWorkers), plus
-    //    Apprentissage (+1 ouvrier gratuit, jamais compté ailleurs) et Expertise/Guilde.
+    //    Même courbe d'efficacité selon la main-d'œuvre affectée (efficiencyForWorkers -- le
+    //    travailleur gratuit d'Apprentissage y est déjà inclus, voir allocateLabor) et Expertise/Guilde.
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
       if (!def || def.kind !== 'processor') continue;
 
-      let workers = labor.get(key) ? labor.get(key).workers : 0;
-      if (apprentissageUnlocked) workers += 1;
+      const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers);
       const speedMultiplier = 1 + expertiseBonus + (this.guildZone.has(key) ? guildBonusValue : 0);
       const roomInOutput = def.outputCap - tile.outputBuffer;
