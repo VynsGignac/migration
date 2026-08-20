@@ -494,7 +494,15 @@ const GameState = {
     const baseFullStaff = GameConfig.population.efficiencyByWorkers.length - 1;
     let needed = 0;
     for (const [key, entry] of this.laborAssignment) {
-      const def = GameConfig.buildings[this.tiles.get(key).type];
+      // laborAssignment est un instantané du dernier tick de production (voir tickProduction,
+      // pas recalculé à chaque frame) : un bâtiment qu'il référence a pu être détruit depuis
+      // (démolition, horde...) sans que cette Map soit rafraîchie avant le prochain tick --
+      // jusque-là sa case pointe vers une ruine (voire plus aucune entrée) plutôt qu'un vrai
+      // bâtiment. Bug vécu pour de vrai : ça faisait planter tout le jeu, cette fonction étant
+      // appelée à chaque frame par le HUD (voir GameScene.update).
+      const tile = this.tiles.get(key);
+      const def = tile && GameConfig.buildings[tile.type];
+      if (!def) continue;
       // Le Château (voir buildings.castle.capMultiplier) absorbe utilement 2x plus de
       // travailleurs qu'un Donjon normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
       // pourrait encore en accueillir 4 de plus (voir efficiencyForWorkers).
