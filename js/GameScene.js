@@ -525,6 +525,28 @@ class GameScene extends Phaser.Scene {
       this.uiElements.push(t);
     }
 
+    // Gain/perte par minute (demande utilisateur), pour les 3 ressources finales principales
+    // seulement (planches/pierre taillée/pain -- pas ore/codex, trop secondaires). Une seule ligne
+    // combinée (comme populationStatsText juste en dessous) plutôt qu'un texte par icône : la
+    // bande de ressources est déjà calée sur des emplacements de largeur fixe (voir
+    // resourceValueTexts ci-dessus, PC ET mobile) bien trop justes pour y ajouter un suffixe --
+    // surtout sur téléphone, où la largeur d'écran est parfois à peine plus grande que la bande
+    // elle-même. Positionnée juste sous la bande d'icônes, voir layoutHud.
+    this.mainRateResources = ['planks', 'stoneBlocks', 'bread'];
+    this.resourceRateText = this.add.text(0, 0, '', {
+      font: '12px sans-serif', color: '#c9e8ff',
+    }).setDepth(1000).setVisible(false);
+    this.uiElements.push(this.resourceRateText);
+    // Valeur courante (voir update(), qui la rafraîchit) : une PROJECTION du régime actuel
+    // (GameState.estimateResourceRates), pas une moyenne sur un historique -- demande utilisateur
+    // explicite. Recalculée seulement une fois par seconde réelle (rateRefreshAccum), pas chaque
+    // frame : cette estimation refait un BFS par producteur/Entrepôt éligible, inutile de la
+    // répéter à 60 i/s pour un nombre qui n'a de toute façon aucune raison de changer entre deux
+    // frames.
+    this.resourceRates = {};
+    for (const res of this.mainRateResources) this.resourceRates[res] = 0;
+    this.rateRefreshAccum = 999; // force un premier calcul dès la 1ère frame
+
     // Panneau d'info : contenu variable (aide de construction / infos du bâtiment sélectionné /
     // dernière case tapée). Sur PC toujours à la même position ; sur mobile, n'apparaît que
     // quand il y a quelque chose à montrer, pour ne pas manger l'écran en permanence.
@@ -1422,7 +1444,7 @@ class GameScene extends Phaser.Scene {
     const desktopSidebarWidth = 220;
     const desktopBtnHeight = 38, desktopGap = 6;
     const confirmRowHeight = 42;
-    const desktopNeededHeight = 190 + confirmRowHeight + catBlockHeight + desktopGap
+    const desktopNeededHeight = 210 + confirmRowHeight + catBlockHeight + desktopGap
       + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
@@ -1465,7 +1487,8 @@ class GameScene extends Phaser.Scene {
       });
       const iconGridHeight = Math.ceil(this.resourceOrder.length / pcCols) * (pcIconSize + pcRowGap);
 
-      this.populationStatsText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
+      this.resourceRateText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
+      this.populationStatsText.setPosition(10, 10 + iconGridHeight + 22).setFontSize(12).setVisible(true);
 
       // Les onglets de catégorie restent à une hauteur FIXE (environ mi-hauteur de la colonne),
       // qu'ils ne bougent jamais selon le nombre de bâtiments de la catégorie active -- avant,
@@ -1477,7 +1500,7 @@ class GameScene extends Phaser.Scene {
       const catBlockY = Math.round(h / 2);
       const confirmY = catBlockY - desktopGap - confirmRowHeight;
 
-      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 34).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
+      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 50).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
 
       this.confirmButton
         .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
@@ -1537,7 +1560,8 @@ class GameScene extends Phaser.Scene {
     const barIconSize = 18, numberSlotWidth = 34, groupGap = 6, iconGap = 3;
     const barY = 8;
     const statsRowHeight = 18;
-    const topBarHeight = barIconSize + statsRowHeight + 18;
+    const rateRowHeight = 16;
+    const topBarHeight = barIconSize + rateRowHeight + statsRowHeight + 18;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
     // monde sans réduire la hauteur de caméra elle-même, il faut donc le soustraire à part.
@@ -1554,9 +1578,12 @@ class GameScene extends Phaser.Scene {
       this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, barY + 1).setVisible(true);
       bx += barIconSize + iconGap + numberSlotWidth + groupGap;
     }
-    // Deuxième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
+    // Deuxième ligne du bandeau : gain/perte par minute (voir mainRateResources/
+    // GameState.estimateResourceRates) pour les 3 ressources finales principales.
+    this.resourceRateText.setPosition(8, barY + barIconSize + 3).setFontSize(11).setVisible(true);
+    // Troisième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
     // neededWorkers/availableHousing), pas des ressources du stock central.
-    this.populationStatsText.setPosition(8, barY + barIconSize + 4).setFontSize(12).setVisible(true);
+    this.populationStatsText.setPosition(8, barY + barIconSize + rateRowHeight + 4).setFontSize(12).setVisible(true);
 
     // Tailles réduites (voir demande utilisateur : le pavé prenait la moitié de l'écran sur
     // téléphone) : un bouton de 42-56px de haut avec 3 colonnes sur 2 rangées, plus l'onglet de
@@ -2815,6 +2842,13 @@ class GameScene extends Phaser.Scene {
     if (!this.paused) {
       this.elapsed += dt;
 
+      this.rateRefreshAccum += dt;
+      if (this.rateRefreshAccum >= 1) {
+        this.rateRefreshAccum = 0;
+        const rates = GameState.estimateResourceRates();
+        for (const res of this.mainRateResources) this.resourceRates[res] = rates[res];
+      }
+
       // GameConfig.simulation.speed ralentit tout SAUF la horde (voir Monsters.update ci-dessous,
       // qui reçoit dt non modifié) : production, croissance de la population, transport, tours.
       const simDt = dt * GameConfig.simulation.speed;
@@ -2866,6 +2900,15 @@ class GameScene extends Phaser.Scene {
     // que resourceText (texte brut, resté pour référence mais toujours invisible).
     const r = GameState.resources;
     for (const res of this.resourceOrder) this.resourceValueTexts[res].setText(String(Math.floor(r[res])));
+    // Gain/perte par minute (voir this.resourceRates, rafraîchi plus haut, une fois par seconde) :
+    // arrondi à l'entier, signe explicite même pour un gain (+12/min).
+    const rateLabels = { planks: GameConfig.resourceLabels.planks.short, stoneBlocks: GameConfig.resourceLabels.stoneBlocks.short, bread: GameConfig.resourceLabels.bread.short };
+    const rateParts = this.mainRateResources.map((res) => {
+      const rate = Math.round(this.resourceRates[res]);
+      const sign = rate > 0 ? '+' : '';
+      return `${rateLabels[res]} ${sign}${rate}/min`;
+    });
+    this.resourceRateText.setText(rateParts.join('   '));
     this.populationStatsText.setText(
       `Main-d'œuvre nécessaire : ${GameState.neededWorkers()}   Logements libres : ${GameState.availableHousing()}`
     );
