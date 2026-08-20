@@ -9,7 +9,7 @@ const GameState = {
   cols: GameConfig.world.cols,
   rows: GameConfig.world.rows,
   // Stock central : seuls les Entrepôts y déposent (via une expédition qui arrive à destination).
-  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0 }, GameConfig.resources.starting),
+  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0 }, GameConfig.resources.starting),
   // Clé "col,row" -> { type, outputBuffer?, inputBuffer?, ruinLoot? }
   // Une case absente de la Map est considérée "vide".
   tiles: new Map(),
@@ -35,6 +35,9 @@ const GameState = {
   // bâtiments (voir buildingsDirty) plutôt que mémorisé au fil du temps : ce n'est pas "déjà vu",
   // c'est "actuellement couvert" — un bâtiment détruit cesse donc immédiatement de révéler sa zone.
   revealedTiles: new Set(),
+  // Cases à portée d'au moins un Entrepôt (voir computeGuildZone/techTree.nodes.ind_guilde),
+  // recalculé au même moment que revealedTiles (voir GameScene, sur buildingsDirty).
+  guildZone: new Set(),
   // Mis à true par toute méthode qui change l'état visuel, lu puis remis à false par GameScene.
   dirty: true,
   // Mis à true seulement par les méthodes qui posent/détruisent un bâtiment (voir zoneRadiusFor/
@@ -126,6 +129,22 @@ const GameState = {
       }
     }
     this.revealedTiles = revealed;
+  },
+
+  // Cases à portée d'au moins un Entrepôt (voir techTree.nodes.ind_guilde) : recalculé au même
+  // moment que revealedTiles ci-dessus (seuls les bâtiments posés/détruits peuvent le changer),
+  // pas à chaque tick de production. GameConfig.logistics.linkRange, pas zoneRadiusFor(warehouse)
+  // (qui inclut +2 de marge pour le brouillard de guerre — ici on veut le rayon d'action réel).
+  computeGuildZone() {
+    const zone = new Set();
+    for (const [key, tile] of this.tiles) {
+      if (tile.type !== 'warehouse') continue;
+      const [col, row] = key.split(',').map(Number);
+      for (const c of HexUtils.hexesInRange(col, row, GameConfig.logistics.linkRange, this.cols, this.rows)) {
+        zone.add(this.key(c.col, c.row));
+      }
+    }
+    this.guildZone = zone;
   },
 
   // Peuple la carte de zones d'arbres et de pierre, à distance de l'Entrepôt de départ.
@@ -381,7 +400,12 @@ const GameState = {
       if (!def || !def.plants) continue;
 
       tile.plantTimer += dtSeconds;
-      if (tile.plantTimer < def.plantInterval) continue;
+      // Labourage (voir techTree.nodes.ind_labourage) : vise explicitement "les champs de blé",
+      // donc seulement la Ferme -- pas un bonus générique à tout bâtiment plants:true.
+      const plantSpeedBonus = (tile.type === 'farm' && this.isTechUnlocked('ind_labourage'))
+        ? GameConfig.techTree.nodes.ind_labourage.plantSpeedBonus : 0;
+      const effectivePlantInterval = def.plantInterval / (1 + plantSpeedBonus);
+      if (tile.plantTimer < effectivePlantInterval) continue;
       tile.plantTimer = 0;
 
       const [col, row] = key.split(',').map(Number);
@@ -405,9 +429,22 @@ const GameState = {
     const labor = this.allocateLabor();
     this.laborAssignment = labor;
 
+    // Bonus de la branche Industrie de l'arbre techno (voir GameConfig.techTree.nodes), calculés
+    // une fois avant les boucles d'extraction/transformation ci-dessous plutôt qu'à chaque bâtiment.
+    const expertiseLevel = this.techLevel('ind_expertise');
+    const expertiseBonus = expertiseLevel > 0
+      ? GameConfig.techTree.nodes.ind_expertise.speedBonusByLevel[expertiseLevel - 1] : 0;
+    const guildLevel = this.techLevel('ind_guilde');
+    const guildBonusValue = guildLevel > 0
+      ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
+    const apprentissageUnlocked = this.isTechUnlocked('ind_apprentissage');
+    const forestierUnlocked = this.isTechUnlocked('ind_forestier');
+    const tunnelierChance = this.isTechUnlocked('ind_tunnelier') ? GameConfig.techTree.nodes.ind_tunnelier.oreChance : 0;
+
     // 1. Extraction : les extracteurs remplissent leur propre outputBuffer depuis les cases
     //    de ressource dans leur rayon (les plus proches d'abord), indépendamment du réseau.
-    //    Le rythme dépend du nombre de travailleurs affectés (efficiencyForWorkers).
+    //    Le rythme dépend du nombre de travailleurs affectés (efficiencyForWorkers) ET, désormais,
+    //    d'Expertise/Guilde (voir speedMultiplier) -- Guilde seulement si à portée d'un Entrepôt.
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
       if (!def || def.kind !== 'extractor') continue;
@@ -415,10 +452,12 @@ const GameState = {
       const [col, row] = key.split(',').map(Number);
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers);
-      let toExtract = Math.min(def.extractRate * efficiency * dtSeconds, def.outputCap - tile.outputBuffer);
+      const speedMultiplier = 1 + expertiseBonus + (this.guildZone.has(key) ? guildBonusValue : 0);
+      let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap - tile.outputBuffer);
       if (toExtract <= 0) continue;
 
       const inRange = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows);
+      let extracted = 0;
 
       for (const pos of inRange) {
         if (toExtract <= 0) break;
@@ -430,22 +469,47 @@ const GameState = {
         resTile.amount -= take;
         toExtract -= take;
         tile.outputBuffer += take;
+        extracted += take;
         this.dirty = true;
         if (resTile.amount <= 0.0001) this.resourceTiles.delete(resKey);
+      }
+
+      // Forestier : le Camp de Bûcheron replante immédiatement ce qu'il vient d'abattre, sur une
+      // autre case libre du même rayon (voir techTree.nodes.ind_forestier) -- au rythme réel de
+      // sa récolte de ce tick, pas un calendrier fixe comme la plantation "0." plus haut.
+      if (extracted > 0 && tile.type === 'lumberjackCamp' && forestierUnlocked) {
+        const emptySpots = inRange.filter(p => this._tileIsFreeForResource(p.col, p.row));
+        if (emptySpots.length > 0) {
+          const spot = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+          this.resourceTiles.set(this.key(spot.col, spot.row), { type: 'tree', amount: extracted });
+          this.dirty = true;
+        }
+      }
+
+      // Tunnelier : chance de produire aussi du minerai (voir techTree.nodes.ind_tunnelier),
+      // ajouté directement au stock central -- le Camp de Mineur n'a qu'un seul type de sortie
+      // (outputBuffer/linkTargets, voir buildings.minerCamp), le minerai "saute" donc l'étape
+      // entrepôt plutôt que d'exiger tout un second circuit de livraison pour un simple bonus.
+      if (extracted > 0 && tile.type === 'minerCamp' && tunnelierChance > 0 && Math.random() < tunnelierChance) {
+        this.resources.ore += extracted;
+        this.dirty = true;
       }
     }
 
     // 2. Transformation : les processeurs consomment leur inputBuffer local pour remplir leur
     //    outputBuffer, limités par ce qui leur a été livré (plus de réseau global instantané).
-    //    Même courbe d'efficacité selon la main-d'œuvre affectée (efficiencyForWorkers).
+    //    Même courbe d'efficacité selon la main-d'œuvre affectée (efficiencyForWorkers), plus
+    //    Apprentissage (+1 ouvrier gratuit, jamais compté ailleurs) et Expertise/Guilde.
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
       if (!def || def.kind !== 'processor') continue;
 
-      const workers = labor.get(key) ? labor.get(key).workers : 0;
+      let workers = labor.get(key) ? labor.get(key).workers : 0;
+      if (apprentissageUnlocked) workers += 1;
       const efficiency = this.efficiencyForWorkers(workers);
+      const speedMultiplier = 1 + expertiseBonus + (this.guildZone.has(key) ? guildBonusValue : 0);
       const roomInOutput = def.outputCap - tile.outputBuffer;
-      const actual = Math.min(def.rate * efficiency * dtSeconds, tile.inputBuffer, roomInOutput);
+      const actual = Math.min(def.rate * efficiency * speedMultiplier * dtSeconds, tile.inputBuffer, roomInOutput);
       if (actual <= 0) continue;
 
       tile.inputBuffer -= actual;
@@ -789,7 +853,7 @@ const GameState = {
   },
 
   deserialize(data) {
-    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0 }, data.resources);
+    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0 }, data.resources);
     this.tiles = new Map(data.tiles.map(([k, t]) => [k, { ...t }]));
     this.resourceTiles = new Map(data.resourceTiles.map(([k, t]) => [k, { ...t }]));
     this.shipments = data.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) }));

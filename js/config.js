@@ -49,7 +49,7 @@ const GameConfig = {
     // Stock de départ, volontairement généreux : sur une carte de 1000 colonnes, les premiers
     // blobs de ressources peuvent être loin de l'Entrepôt de départ. Ce coussin doit suffire à
     // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
-    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30 },
+    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0 },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
   // qui voyage sur les routes, pour chaque ressource.
@@ -60,6 +60,9 @@ const GameConfig = {
     stoneBlocks: { long: 'Pierre taillée', short: 'PT', color: 0xb0b0b0 },
     wheat: { long: 'Blé', short: 'Blé', color: 0xdbc245 },
     bread: { long: 'Pain', short: 'Pain', color: 0xe8a33d },
+    // Introduit par la techno Tunnelier (voir techTree.nodes.ind_tunnelier) : pas encore de
+    // bâtiment qui la consomme, s'accumule simplement dans le stock central pour l'instant.
+    ore: { long: 'Minerai', short: 'Minerai', color: 0x8a6d4f },
   },
   // Transport des ressources le long des routes.
   logistics: {
@@ -235,12 +238,34 @@ const GameConfig = {
       },
 
       // Industrie (branche à 72°) : apprentissage -> expertise -> guilde -> {forestier, tunnelier, labourage}.
-      ind_apprentissage: { name: 'Apprentissage', parent: null, ring: 1, angle: 72, description: 'Forme les premiers artisans qualifiés.' },
-      ind_expertise: { name: 'Expertise', parent: 'ind_apprentissage', ring: 2, angle: 72, description: 'Perfectionne les techniques de production.' },
-      ind_guilde: { name: 'Guilde', parent: 'ind_expertise', ring: 3, angle: 72, description: 'Organise les artisans en corporations.' },
-      ind_forestier: { name: 'Forestier', parent: 'ind_guilde', ring: 4, angle: 47, description: 'Améliore l\'exploitation du bois.' },
-      ind_tunnelier: { name: 'Tunnelier', parent: 'ind_guilde', ring: 4, angle: 72, description: 'Améliore l\'extraction de la pierre.' },
-      ind_labourage: { name: 'Labourage', parent: 'ind_guilde', ring: 4, angle: 97, description: 'Améliore le rendement agricole.' },
+      ind_apprentissage: {
+        name: 'Apprentissage', parent: null, ring: 1, angle: 72,
+        description: 'Chaque bâtiment de raffinage (Scierie, Tailleur de pierre, Boulangerie) gagne 1 ouvrier gratuit, en plus de la main-d\'œuvre affectée.',
+      },
+      ind_expertise: {
+        name: 'Expertise', parent: 'ind_apprentissage', ring: 2, angle: 72, maxLevel: 3,
+        description: 'Les bâtiments de production fonctionnent 10 % / 20 % / 30 % plus vite.',
+        speedBonusByLevel: [0.10, 0.20, 0.30],
+      },
+      ind_guilde: {
+        name: 'Guilde', parent: 'ind_expertise', ring: 3, angle: 72, maxLevel: 3,
+        description: 'Les Entrepôts augmentent de 5 % / 10 % / 15 % la production des bâtiments dans leur rayon d\'action.',
+        productionBonusByLevel: [0.05, 0.10, 0.15],
+      },
+      ind_forestier: {
+        name: 'Forestier', parent: 'ind_guilde', ring: 4, angle: 47,
+        description: 'Les Camps de Bûcheron replantent du bois sur une autre case, au rythme même où ils l\'abattent.',
+      },
+      ind_tunnelier: {
+        name: 'Tunnelier', parent: 'ind_guilde', ring: 4, angle: 72,
+        description: 'Les Camps de Mineur ont 10 % de chances de produire aussi du minerai, en plus de la pierre.',
+        oreChance: 0.10,
+      },
+      ind_labourage: {
+        name: 'Labourage', parent: 'ind_guilde', ring: 4, angle: 97,
+        description: 'Les champs de blé de la Ferme sont créés 50 % plus vite.',
+        plantSpeedBonus: 0.50,
+      },
 
       // Recherche (branche à 144°) : alphabétisation -> scolarisation -> {formateur, imprimerie}.
       rec_alphabetisation: { name: 'Alphabétisation', parent: null, ring: 1, angle: 144, description: 'Apprend à lire et écrire à la population.' },

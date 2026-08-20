@@ -37,6 +37,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('stoneBlocksIcon', GameAssets.stoneBlocksIcon);
     this.load.image('wheatIcon', GameAssets.wheatIcon);
     this.load.image('breadIcon', GameAssets.breadIcon);
+    this.load.image('oreIcon', GameAssets.oreIcon);
   }
 
   create() {
@@ -434,11 +435,14 @@ class GameScene extends Phaser.Scene {
     this.uiElements.push(this.resourceBarIconsGraphics);
     // Uniquement les produits finaux (voir demande utilisateur) : le bois, la pierre brute et le
     // blé restent des ressources internes (production/stock) mais ne s'affichent plus ici.
-    this.resourceOrder = ['planks', 'stoneBlocks', 'bread'];
+    // "ore" (minerai) reste affiché même à 0 tant que Tunnelier n'est pas débloqué (voir
+    // techTree.nodes.ind_tunnelier) : ni plus clair ni plus simple de faire apparaître/disparaître
+    // un emplacement du bandeau selon l'état de l'arbre techno, pour un seul cas.
+    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ore'];
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
     // dessinée ci-dessus (drawResourceBarIcon).
     this.resourceBarIconTextureKeys = {
-      planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon',
+      planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon', ore: 'oreIcon',
     };
     this.resourceBarIconImages = {};
     for (const res in this.resourceBarIconTextureKeys) {
@@ -2253,6 +2257,7 @@ class GameScene extends Phaser.Scene {
 
     if (GameState.buildingsDirty) {
       GameState.computeRevealedTiles();
+      GameState.computeGuildZone();
       GameState.buildingsDirty = false;
     }
     this.redrawFog();
