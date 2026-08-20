@@ -368,6 +368,7 @@ class GameScene extends Phaser.Scene {
     if (this.buildMenuToggle.visible && Phaser.Geom.Rectangle.Contains(this.buildMenuToggle.getBounds(), pointer.x, pointer.y)) return true;
     if (this.confirmButton.visible && Phaser.Geom.Rectangle.Contains(this.confirmButton.getBounds(), pointer.x, pointer.y)) return true;
     if (this.upgradeCastleButton.visible && Phaser.Geom.Rectangle.Contains(this.upgradeCastleButton.getBounds(), pointer.x, pointer.y)) return true;
+    if (this.demolishButton.visible && Phaser.Geom.Rectangle.Contains(this.demolishButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.pauseButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.menuButton.getBounds(), pointer.x, pointer.y)) return true;
     for (const id in this.buildButtons) {
@@ -557,6 +558,15 @@ class GameScene extends Phaser.Scene {
     }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
     this.upgradeCastleButton.on('pointerup', () => this.upgradeSelectedToCastle());
     this.uiElements.push(this.upgradeCastleButton);
+
+    // Visible dès qu'un bâtiment/route est sélectionné (voir updateInfoPanel) : partage la même
+    // rangée que upgradeCastleButton (voir layoutHud, qui les divise en deux quand les deux
+    // s'appliquent en même temps -- un Donjon peut être à la fois démoli ET amélioré).
+    this.demolishButton = this.add.text(0, 0, '✕ Démolir', {
+      font: 'bold 13px sans-serif', color: '#ffffff', backgroundColor: '#8a3a3a', padding: { x: 12, y: 9 },
+    }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.demolishButton.on('pointerup', () => this.demolishSelectedBuilding());
+    this.uiElements.push(this.demolishButton);
 
     // Icône + coût en pictos plutôt que nom + texte ("Scierie — 10 Pl") : trop de texte pour la
     // place dispo, surtout sur téléphone (voir demande utilisateur). Le nom reste consultable une
@@ -1363,12 +1373,16 @@ class GameScene extends Phaser.Scene {
     const desktopNeededHeight = 190 + confirmRowHeight + catBlockHeight + desktopGap
       + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
-    // Château (voir GameState.upgradeToCastle) : upgradeCastleButton partage le même emplacement
-    // que confirmButton ci-dessous (les deux états sont mutuellement exclusifs, voir
-    // updateInfoPanel). Seules la position/taille sont fixées ici (dépendent de w/h, recalculées
-    // au resize) ; la VISIBILITÉ et le TEXTE dépendent du bâtiment sélectionné, qui peut changer
-    // sans resize -- gérés dans updateInfoPanel (appelé chaque frame) pour rester à jour tout de
-    // suite, PAS ici (setVisible ci-dessous volontairement absent pour upgradeCastleButton).
+    // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
+    // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
+    // updateInfoPanel) parce que layoutHud a en plus besoin de savoir si les DEUX s'appliquent à
+    // la fois (Donjon sélectionné + Forgerie) pour diviser la rangée en deux -- recalculé à chaque
+    // appel de layoutHud, et un appel est déclenché explicitement à chaque changement de sélection
+    // (voir handleTap) pour que ça reste à jour sans attendre un resize. La VISIBILITÉ/le TEXTE
+    // réels restent gérés dans updateInfoPanel (chaque frame), pas ici.
+    const layoutSelectedTile = this.selectedBuildingKey ? GameState.tiles.get(this.selectedBuildingKey) : null;
+    const layoutShowUpgrade = !!(layoutSelectedTile && layoutSelectedTile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie'));
+    const layoutShowDemolish = !!layoutSelectedTile;
 
     this.mobileLayout = w < 640 || desktopNeededHeight > h;
 
@@ -1416,9 +1430,18 @@ class GameScene extends Phaser.Scene {
       this.confirmButton
         .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(14).setVisible(showConfirm);
-      this.upgradeCastleButton
-        .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
-        .setFontSize(13);
+      // Démolir/Améliorer partagent la même rangée que Valider (jamais en même temps que
+      // showConfirm, voir updateInfoPanel) : divisée en deux quand un Donjon sélectionné rend les
+      // DEUX possibles à la fois, sinon celui qui s'applique prend toute la largeur.
+      const layoutBothActions = layoutShowDemolish && layoutShowUpgrade;
+      if (layoutBothActions) {
+        const halfW = (this.sidebarWidth - 20 - desktopGap) / 2;
+        this.demolishButton.setPosition(10, confirmY).setFixedSize(halfW, confirmRowHeight).setFontSize(11);
+        this.upgradeCastleButton.setPosition(10 + halfW + desktopGap, confirmY).setFixedSize(halfW, confirmRowHeight).setFontSize(10);
+      } else {
+        this.demolishButton.setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight).setFontSize(13);
+        this.upgradeCastleButton.setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight).setFontSize(13);
+      }
 
       // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
       // libellés comme "Production" dans les 220px de la colonne PC -- voir categoryButtons).
@@ -1510,11 +1533,23 @@ class GameScene extends Phaser.Scene {
     // vrai). Une taille fixe + retour à la ligne rend la position toujours prévisible.
     const upgradeBtnWidth = compact ? 150 : 180;
     const upgradeBtnHeight = compact ? 34 : 38;
+    const upgradeX = w - this.buildMenuToggle.width - upgradeBtnWidth - 14;
     this.upgradeCastleButton
       .setFontSize(compact ? 10 : 11)
       .setFixedSize(upgradeBtnWidth, upgradeBtnHeight)
       .setWordWrapWidth(upgradeBtnWidth - 16)
-      .setPosition(w - this.buildMenuToggle.width - upgradeBtnWidth - 14, h - upgradeBtnHeight - 8);
+      .setPosition(upgradeX, h - upgradeBtnHeight - 8);
+
+    // Démolir : même emplacement que "Améliorer" quand lui seul s'applique, sinon poussé à sa
+    // gauche (voir layoutShowUpgrade, calculé plus haut) -- même taille fixe pour la même raison
+    // (voir le commentaire ci-dessus sur upgradeCastleButton : texte variable = position calculée
+    // sur une largeur obsolète si on se fie à .width).
+    const demolishBtnWidth = compact ? 100 : 120;
+    const demolishX = layoutShowUpgrade ? upgradeX - demolishBtnWidth - 8 : upgradeX + upgradeBtnWidth - demolishBtnWidth;
+    this.demolishButton
+      .setFontSize(compact ? 11 : 12)
+      .setFixedSize(demolishBtnWidth, upgradeBtnHeight)
+      .setPosition(demolishX, h - upgradeBtnHeight - 8);
 
     const cols = 3;
     const btnWidth = (w - gap * (cols + 1)) / cols;
@@ -1639,6 +1674,23 @@ class GameScene extends Phaser.Scene {
     } else if (result.reason === 'cost') {
       this.showToast('Pas assez de ressources');
     }
+    this.layoutHud();
+  }
+
+  // Démolit le bâtiment/route actuellement sélectionné (voir demolishButton) : réutilise
+  // GameState.destroyTile telle quelle, exactement le même chemin que la horde de monstres --
+  // même ruine (rejouable via un tap, voir handleTap/harvestRuin, "pour l'instant sans effet")
+  // avec le même butin partiel (ruinLoot), même vérification de défaite si c'était le dernier
+  // Entrepôt (voir update(), sur buildingsDirty).
+  demolishSelectedBuilding() {
+    if (this.paused || !this.selectedBuildingKey) return;
+    const [col, row] = this.selectedBuildingKey.split(',').map(Number);
+    const tile = GameState.tiles.get(this.selectedBuildingKey);
+    const name = tile ? (GameConfig.buildings[tile.type]?.name || 'Bâtiment') : 'Bâtiment';
+    GameState.destroyTile(col, row);
+    this.selectedBuildingKey = null;
+    this.redrawActionZone();
+    this.showToast(`${name} démoli`);
     this.layoutHud();
   }
 
@@ -2498,6 +2550,10 @@ class GameScene extends Phaser.Scene {
         }
       }
       this.redrawActionZone();
+      // Démolir/Améliorer partagent une rangée dont la mise en page dépend de la sélection (voir
+      // layoutShowDemolish/layoutShowUpgrade dans layoutHud) : sans cet appel explicite, elle ne
+      // se rafraîchirait qu'au prochain resize, pas tout de suite au moment de la sélection.
+      this.layoutHud();
       return;
     }
 
@@ -2513,6 +2569,7 @@ class GameScene extends Phaser.Scene {
     if (tile.type !== 'empty') {
       this.selectedBuildingKey = GameState.key(wrappedCol, row);
       this.redrawActionZone();
+      this.layoutHud(); // voir le commentaire équivalent plus haut (branche "en pause")
       return;
     }
     const resTile = GameState.getResourceTile(wrappedCol, row);
@@ -2529,10 +2586,13 @@ class GameScene extends Phaser.Scene {
   // prend de la place que quand il y a effectivement quelque chose à montrer.
   updateInfoPanel() {
     let text = null;
-    // Château (voir upgradeCastleButton/GameState.upgradeToCastle) : recalculé chaque frame (voir
+    // Château/Démolir (voir upgradeCastleButton/demolishButton) : recalculés chaque frame (voir
     // update() plus bas) pour réagir tout de suite à un changement de sélection, contrairement à
-    // sa position/taille (fixées dans layoutHud, qui ne tourne que sur resize).
+    // leur position/taille (fixées dans layoutHud -- qui les divise aussi en deux quand les DEUX
+    // s'appliquent à la fois, voir layoutShowUpgrade/layoutShowDemolish, recalculé sur chaque
+    // appel de layoutHud, lui-même déclenché explicitement à chaque changement de sélection).
     let showUpgrade = false;
+    let showDemolish = false;
 
     if (this.buildMode === 'road') {
       text = 'Construction : Route\nGlisse sur la carte pour tracer.\nTape "Annuler" pour arrêter.';
@@ -2552,6 +2612,7 @@ class GameScene extends Phaser.Scene {
         const [col, row] = this.selectedBuildingKey.split(',').map(Number);
         text = this.buildingInfoText(col, row, tile);
         showUpgrade = tile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie');
+        showDemolish = true;
       } else {
         this.selectedBuildingKey = null;
         this.redrawActionZone();
@@ -2578,6 +2639,8 @@ class GameScene extends Phaser.Scene {
         .setText(`Améliorer en Château — ${this.formatResources(GameConfig.buildings.castle.cost, true)}`)
         .setAlpha(this.paused ? 0.4 : (affordable ? 1 : 0.5));
     }
+
+    this.demolishButton.setVisible(showDemolish).setAlpha(this.paused ? 0.4 : 1);
   }
 
   update(time, delta) {
