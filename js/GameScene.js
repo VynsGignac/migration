@@ -434,6 +434,9 @@ class GameScene extends Phaser.Scene {
       lines.push(`Ressource à proximité : ${Math.round(nearby)}`);
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
       lines.push(this.laborStatusLine(col, row, def));
+      if (tile.type === 'recycler') {
+        lines.push('Codex versé directement au stock central (pas de livraison par la route).');
+      }
     } else if (def.kind === 'processor') {
       lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
@@ -1972,12 +1975,44 @@ class GameScene extends Phaser.Scene {
         const res = GameState.resourceTiles.get(key);
         if (res) {
           const textureKey = resourceKeyByType[res.type];
-          if (!textureKey) continue;
-          // Même indice visuel d'épuisement qu'avant (voir l'ancien redrawResources) : la case
-          // s'éclaircit vers la transparence à mesure que le stock baisse.
-          const nodeCfg = GameConfig.resourceNodes[res.type];
-          const fraction = Phaser.Math.Clamp(res.amount / nodeCfg.amountMax, 0, 1);
-          drawTile(col, row, textureKey, 0.35 + 0.65 * fraction);
+          if (textureKey) {
+            // Même indice visuel d'épuisement qu'avant (voir l'ancien redrawResources) : la case
+            // s'éclaircit vers la transparence à mesure que le stock baisse.
+            const nodeCfg = GameConfig.resourceNodes[res.type];
+            const fraction = Phaser.Math.Clamp(res.amount / nodeCfg.amountMax, 0, 1);
+            drawTile(col, row, textureKey, 0.35 + 0.65 * fraction);
+          } else {
+            // Pas d'illustration photo pour cette ressource (voir js/assets.js -- ex. le cadavre
+            // de monstre) : repli vectoriel simple (fond uni + pictogramme), même esprit que le
+            // repli des bâtiments sans art (redrawBuildings), mais dessiné directement sur ce
+            // canvas 2D plutôt qu'un Graphics Phaser.
+            const { x: wx, y: wy } = HexUtils.offsetToPixel(col, row, this.hexSize);
+            const { x: sx, y: sy } = worldToScreen(wx, wy);
+            const size = this.hexSize * zoom;
+            if (sx >= -size - 4 && sx <= tex.width + size + 4 && sy >= -size - 4 && sy <= tex.height + size + 4) {
+              const nodeCfg = GameConfig.resourceNodes[res.type];
+              ctx.save();
+              hexPathAt(sx, sy, size);
+              ctx.fillStyle = '#' + nodeCfg.color.toString(16).padStart(6, '0');
+              ctx.fill();
+              if (res.type === 'corpse') {
+                // Crâne stylisé : deux orbites sombres sur un disque clair, reconnaissable même
+                // en petit sans dépendre d'une illustration dédiée.
+                ctx.fillStyle = '#e8e8e8';
+                ctx.beginPath();
+                ctx.arc(sx, sy, size * 0.32, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#2a2a2a';
+                ctx.beginPath();
+                ctx.arc(sx - size * 0.13, sy - size * 0.05, size * 0.09, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(sx + size * 0.13, sy - size * 0.05, size * 0.09, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              ctx.restore();
+            }
+          }
           continue;
         }
         const tile = GameState.tiles.get(key);
@@ -2229,6 +2264,23 @@ class GameScene extends Phaser.Scene {
           this.tracePoly(g, [[cx - 0.03, -0.04], [cx + 0.03, -0.04], [cx + 0.03, 0.30], [cx - 0.03, 0.30]], x, y, s);
           g.fillPath();
         }
+        break;
+      }
+      case 'recycler': {
+        // Crâne stylisé (recycle les cadavres de monstres en Codex) : même pictogramme que le
+        // repli vectoriel des cases "cadavre" sur la carte (voir redrawTileArt), pour rester
+        // reconnaissable d'un coup d'œil.
+        g.fillStyle(0xe8e8e8, 1);
+        g.lineStyle(s * 0.03, ink, 0.85);
+        g.fillCircle(x, y - s * 0.04, s * 0.26);
+        g.strokeCircle(x, y - s * 0.04, s * 0.26);
+        g.fillStyle(ink, 0.95);
+        g.fillCircle(x - s * 0.10, y - s * 0.08, s * 0.06);
+        g.fillCircle(x + s * 0.10, y - s * 0.08, s * 0.06);
+        g.fillStyle(0xe8e8e8, 1);
+        this.tracePoly(g, [[-0.16, 0.18], [0.16, 0.18], [0.12, 0.30], [-0.12, 0.30]], x, y, s);
+        g.fillPath();
+        g.strokePath();
         break;
       }
       case 'road': {
@@ -2579,7 +2631,7 @@ class GameScene extends Phaser.Scene {
       } else {
         const resTile = GameState.getResourceTile(wrappedCol, row);
         if (resTile) {
-          const label = resTile.type === 'tree' ? 'Arbres' : (resTile.type === 'stone' ? 'Pierre' : 'Blé');
+          const label = resTile.type === 'tree' ? 'Arbres' : (resTile.type === 'stone' ? 'Pierre' : (resTile.type === 'wheat' ? 'Blé' : 'Cadavre de monstre'));
           this.infoPanelOverrideText = `${label} (${Math.round(resTile.amount)} restant)`;
         }
       }

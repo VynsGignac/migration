@@ -98,12 +98,20 @@ const GameConfig = {
     // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
     // au calcul de l'opacité (case bien mûre vs. presque récoltée).
     wheat: { color: 0xdbc245, amountMin: 8, amountMax: 8 },
+    // Cadavre de monstre (voir buildings.recycler/demande utilisateur) : amount toujours 1 --
+    // "une ressource donne un codex", pas un stock qui s'épuise progressivement comme les autres.
+    corpse: { color: 0x6b1f3a, amountMin: 1, amountMax: 1 },
     blobCountTree: 150,
     blobCountStone: 100,
     blobSizeMin: 4,
     blobSizeMax: 9,
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
     startClearance: 4,
+    // Cadavre de monstre : PAS un blob (voir _spawnSingleTiles) -- une case isolée et rare,
+    // dispersée sur toute la carte. Cible ~1 par écran plein à dézoom maximum (le monde montre
+    // toujours ses 23 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur un écran 16:9
+    // typique ça correspond à environ 45 colonnes visibles) : 500 colonnes / 45 ≈ 11.
+    corpseCount: 11,
   },
   // Regroupe les bâtiments par onglet dans le menu de construction (voir GameScene.layoutHud/
   // activeBuildCategory) : la liste à plat est devenue trop longue pour tenir sans scroller une
@@ -111,7 +119,7 @@ const GameConfig = {
   // onglets ; l'ordre de "ids" = l'ordre dans la liste de cet onglet. Château n'y figure pas : il
   // ne se construit pas depuis ce menu (voir buildings.castle).
   buildingCategories: {
-    production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery'] },
+    production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery', 'recycler'] },
     civil: { label: 'Civil', ids: ['warehouse', 'university', 'house'] },
     defense: { label: 'Défense', ids: ['donjon', 'watchtower'] },
     route: { label: 'Route', ids: ['road'] },
@@ -184,6 +192,19 @@ const GameConfig = {
       // est Boulangerie -> Entrepôt -> Maison en deux temps (voir GameState._spawnWarehouseBread
       // pour le second segment, Entrepôt -> Maison, qui puise dans le stock central).
       linkTargets: ['warehouse'], linkRange: 6,
+      ruinLoot: { planks: 5 },
+    },
+    // Récolte les cadavres de monstre (voir resourceNodes.corpse/demande utilisateur), rares et
+    // dispersés sur la carte plutôt qu'en blobs. Un extracteur classique (même mécanique que
+    // Camp de Bûcheron/Mineur, voir tickProduction), MAIS sans linkTargets : le Codex ne se
+    // transporte jamais sur les routes (voir resourceLabels.codex) -- chaque tick, tout
+    // outputBuffer accumulé ici est versé directement au stock central (cas spécial dans
+    // tickProduction, juste après celui du Tunnelier/minerai, même principe). extractRate = 1/60 :
+    // un cadavre (amount toujours 1) prend environ 1 minute à recycler à pleine main-d'œuvre.
+    recycler: {
+      name: 'Recycleur', cost: { planks: 10, stoneBlocks: 4 }, color: 0x6b1f3a,
+      kind: 'extractor', resource: 'corpse', outputResource: 'codex',
+      extractRadius: 3, extractRate: 1 / 60, outputCap: 3,
       ruinLoot: { planks: 5 },
     },
     // kind: 'house' => héberge des habitants (jusqu'à populationCap) qui consomment du pain

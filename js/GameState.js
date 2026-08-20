@@ -235,6 +235,26 @@ const GameState = {
     const cfg = GameConfig.resourceNodes;
     this._spawnBlobs('tree', cfg.blobCountTree, cfg);
     this._spawnBlobs('stone', cfg.blobCountStone, cfg);
+    this._spawnSingleTiles('corpse', cfg.corpseCount, cfg);
+  },
+
+  // Cadavre de monstre (voir resourceNodes.corpseCount/buildings.recycler) : contrairement aux
+  // amas de _spawnBlobs ci-dessous, une seule case isolée par occurrence -- rare et dispersée
+  // plutôt que groupée.
+  _spawnSingleTiles(type, count, cfg) {
+    const clearance = cfg.startClearance;
+    let placed = 0;
+    let attempts = 0;
+    while (placed < count && attempts < count * 30) {
+      attempts++;
+      const col = Math.floor(Math.random() * this.cols);
+      const row = Math.floor(Math.random() * this.rows);
+      if (this._withinStartClearance(col, clearance)) continue;
+      if (!this._tileIsFreeForResource(col, row)) continue;
+      const amount = cfg[type].amountMin + Math.floor(Math.random() * (cfg[type].amountMax - cfg[type].amountMin + 1));
+      this.resourceTiles.set(this.key(col, row), { type, amount });
+      placed++;
+    }
   },
 
   _spawnBlobs(type, count, cfg) {
@@ -620,6 +640,16 @@ const GameState = {
       // entrepôt plutôt que d'exiger tout un second circuit de livraison pour un simple bonus.
       if (extracted > 0 && tile.type === 'minerCamp' && tunnelierChance > 0 && Math.random() < tunnelierChance) {
         this.resources.ore += extracted;
+        this.dirty = true;
+      }
+
+      // Recycleur : même principe que le Tunnelier ci-dessus -- le Codex ne se transporte jamais
+      // sur les routes (voir buildings.recycler/resourceLabels.codex), donc tout outputBuffer
+      // accumulé ici est versé directement au stock central plutôt que d'attendre un linkTargets
+      // (que ce bâtiment n'a d'ailleurs pas).
+      if (tile.type === 'recycler' && tile.outputBuffer > 0) {
+        this.resources.codex += tile.outputBuffer;
+        tile.outputBuffer = 0;
         this.dirty = true;
       }
     }
