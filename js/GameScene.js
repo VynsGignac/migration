@@ -356,7 +356,7 @@ class GameScene extends Phaser.Scene {
   // ces vues bloquent toute interaction avec la carte en dessous, comme isPointerOverHud le fait
   // déjà pour les éléments du HUD classique.
   isModalOpen() {
-    return this.saveMenuOpen || this.techTreeOpen;
+    return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen;
   }
 
   // Vrai si le pointeur est actuellement au-dessus d'un élément du HUD (bandeau/colonne, pavé de
@@ -523,6 +523,7 @@ class GameScene extends Phaser.Scene {
 
     this.buildSaveMenu();
     this.buildTechTree();
+    this.buildGameOver();
 
     // Bouton unique qui ouvre/ferme le pavé de construction en mode mobile, et sert aussi de
     // bouton d'annulation quand un mode de construction est actif (pas besoin de rouvrir le pavé).
@@ -624,14 +625,21 @@ class GameScene extends Phaser.Scene {
     }
 
     this.layoutHud();
-    this.scale.on('resize', (size) => {
+    // Nommée (pas une fléchée anonyme) + retirée au shutdown : this.scale (ScaleManager) est un
+    // objet de NIVEAU JEU qui survit à un scene.restart() (voir restartGame), contrairement au
+    // reste de la scène -- sans ce nettoyage, chaque "Recommencer" accumulerait un abonnement
+    // 'resize' de plus, chacun référençant une scène déjà détruite.
+    this._onResize = (size) => {
       this.uiCamera?.setSize(size.width, size.height);
       if (this.tileArtTexture) this.resizeTileArtLayer();
       this.layoutHud();
       this.layoutSaveMenu();
       this.layoutTechTree();
+      this.layoutGameOver();
       this.clampZoomAndCamera();
-    });
+    };
+    this.scale.on('resize', this._onResize);
+    this.events.once('shutdown', () => this.scale.off('resize', this._onResize));
   }
 
   // Panneau modal Sauvegardes : un fond plein écran (bloque tout clic vers la carte en dessous)
@@ -708,6 +716,7 @@ class GameScene extends Phaser.Scene {
   // veut pas pouvoir sauvegarder/charger pendant que la simulation continue de tourner) ; le
   // fermer laisse le jeu en pause, à reprendre explicitement avec le bouton Pause.
   toggleSaveMenu(forceState) {
+    if (this.gameOverOpen) return; // partie terminée : pas de sauvegarde/chargement par-dessus
     this.saveMenuOpen = forceState !== undefined ? forceState : !this.saveMenuOpen;
     const visible = this.saveMenuOpen;
     this.saveMenuOverlay.setVisible(visible);
@@ -912,6 +921,119 @@ class GameScene extends Phaser.Scene {
     );
 
     this.positionTechTreeNodes();
+  }
+
+  // Écran de défaite (voir triggerGameOver/GameState.hasAnyWarehouse) : plein écran, mais SANS le
+  // clic-sur-le-fond-pour-fermer des autres panneaux modaux (saveMenuOverlay/techTreeOverlay) --
+  // la partie est terminée, pas juste en pause, seul le bouton "Recommencer" doit avoir un effet.
+  buildGameOver() {
+    this.gameOverOpen = false;
+
+    this.gameOverOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.8)
+      .setOrigin(0, 0).setDepth(1020).setVisible(false).setInteractive();
+    this.uiElements.push(this.gameOverOverlay);
+
+    this.gameOverPanel = this.add.rectangle(0, 0, 10, 10, 0x14202b, 0.97)
+      .setOrigin(0, 0).setDepth(1021).setStrokeStyle(2, 0xff6b6b).setVisible(false);
+    this.uiElements.push(this.gameOverPanel);
+
+    this.gameOverTitle = this.add.text(0, 0, 'Partie perdue', {
+      font: 'bold 22px sans-serif', color: '#ff6b6b',
+    }).setOrigin(0.5, 0).setDepth(1022).setVisible(false);
+    this.uiElements.push(this.gameOverTitle);
+
+    this.gameOverSubtitle = this.add.text(0, 0, 'Tous les Entrepôts ont été détruits.', {
+      font: '13px sans-serif', color: '#ffffff',
+    }).setOrigin(0.5, 0).setDepth(1022).setVisible(false);
+    this.uiElements.push(this.gameOverSubtitle);
+
+    this.gameOverStatsText = this.add.text(0, 0, '', {
+      font: '14px sans-serif', color: '#ffffff', lineSpacing: 8, align: 'left',
+    }).setDepth(1022).setVisible(false);
+    this.uiElements.push(this.gameOverStatsText);
+
+    this.gameOverRestartBtn = this.add.text(0, 0, '↻ Recommencer', {
+      font: 'bold 15px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 16, y: 10 },
+    }).setOrigin(0.5, 0).setDepth(1022).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.gameOverRestartBtn.on('pointerup', () => this.restartGame());
+    this.uiElements.push(this.gameOverRestartBtn);
+  }
+
+  layoutGameOver() {
+    const w = this.scale.width, h = this.scale.height;
+    this.gameOverOverlay.setSize(w, h);
+
+    const panelWidth = Math.min(w - 32, 420);
+    const panelHeight = Math.min(h - 32, 320);
+    const px = (w - panelWidth) / 2, py = (h - panelHeight) / 2;
+    this.gameOverPanel.setPosition(px, py).setSize(panelWidth, panelHeight);
+
+    const cx = px + panelWidth / 2;
+    this.gameOverTitle.setPosition(cx, py + 18);
+    this.gameOverSubtitle.setPosition(cx, py + 50);
+    this.gameOverStatsText.setPosition(px + 24, py + 84).setWordWrapWidth(panelWidth - 48);
+    this.gameOverRestartBtn.setPosition(cx, py + panelHeight - 50);
+  }
+
+  // Bilan affiché sur l'écran de défaite : uniquement des chiffres déjà disponibles quelque part
+  // (rien de suivi spécialement pour l'occasion), calculés au moment de la défaite seulement --
+  // pas besoin de les tenir à jour en continu.
+  computeGameOverStats() {
+    let population = 0, buildings = 0;
+    for (const [, tile] of GameState.tiles) {
+      if (tile.type === 'ruin') continue;
+      buildings++;
+      if (tile.population) population += tile.population;
+    }
+    let techLevels = 0;
+    for (const [, level] of GameState.unlockedTech) techLevels += level;
+
+    const colWidth = this.hexSize * 1.5;
+    const worldWidthPx = colWidth * GameState.cols;
+    const laps = Math.floor(Monsters.totalDistancePx / worldWidthPx);
+
+    const totalSeconds = Math.floor(this.elapsed);
+    const mm = Math.floor(totalSeconds / 60), ss = totalSeconds % 60;
+    const time = `${mm}:${String(ss).padStart(2, '0')}`;
+
+    return { time, population, buildings, laps, techLevels };
+  }
+
+  // Déclenché depuis update() dès qu'il ne reste plus aucun Entrepôt (voir GameState.
+  // hasAnyWarehouse, vérifié seulement sur buildingsDirty). Fige la partie comme une pause qu'on
+  // ne peut plus lever soi-même (voir togglePause, qui refuse tant que gameOverOpen).
+  triggerGameOver() {
+    this.paused = true;
+    this.gameOverOpen = true;
+    this.setBuildMode(null);
+    this.pauseButton.setText('▶');
+
+    const stats = this.computeGameOverStats();
+    this.gameOverStatsText.setText(
+      `Temps de survie : ${stats.time}\n`
+      + `Population totale : ${stats.population}\n`
+      + `Bâtiments construits : ${stats.buildings}\n`
+      + `Tours de la horde survécus : ${stats.laps}\n`
+      + `Niveaux de recherche débloqués : ${stats.techLevels}`
+    );
+
+    this.gameOverOverlay.setVisible(true);
+    this.gameOverPanel.setVisible(true);
+    this.gameOverTitle.setVisible(true);
+    this.gameOverSubtitle.setVisible(true);
+    this.gameOverStatsText.setVisible(true);
+    this.gameOverRestartBtn.setVisible(true);
+    this.layoutGameOver();
+  }
+
+  // Relance une partie neuve (voir gameOverRestartBtn) : ne réinitialise QUE GameState (Monsters
+  // l'est déjà par create(), voir plus bas) -- ni l'un ni l'autre n'est un objet de scène, ils
+  // survivraient tels quels à un scene.restart() sinon. Ensuite, laisser Phaser reconstruire toute
+  // la scène via create() est plus sûr que reproduire à la main chacune de ses étapes (Entrepôt de
+  // départ, routes, blobs de ressources, caméra, HUD...).
+  restartGame() {
+    GameState.reset();
+    this.scene.restart();
   }
 
   // Place chaque nœud selon sa position radiale (ring/angle, espacement FIXE — voir
@@ -1156,6 +1278,7 @@ class GameScene extends Phaser.Scene {
   // la construction désactivée, mais la caméra reste libre et les cases restent cliquables pour
   // consulter leurs infos (voir update() et handleTap()).
   togglePause() {
+    if (this.gameOverOpen) return; // partie terminée : ne peut plus être levée soi-même
     this.paused = !this.paused;
     if (this.paused) {
       this.setBuildMode(null);
@@ -1604,6 +1727,10 @@ class GameScene extends Phaser.Scene {
       }
     }
 
+    // this.textures (TextureManager) survit à un scene.restart() (voir restartGame) contrairement
+    // au reste de la scène : sans ce retrait, la clé existe déjà au 2e lancement et addCanvas
+    // échoue silencieusement (avertissement, texture jamais mise à jour avec le nouveau canvas).
+    if (this.textures.exists('hexTerrainTile')) this.textures.remove('hexTerrainTile');
     this.textures.addCanvas('hexTerrainTile', canvas);
 
     // worldWidthPx (1000 colonnes) et le padding vertical sont choisis multiples exacts de la
@@ -2532,6 +2659,10 @@ class GameScene extends Phaser.Scene {
       GameState.computeGuildZone();
       GameState.computeUniversityZone();
       GameState.buildingsDirty = false;
+      // Condition de défaite (voir demande utilisateur) : vérifiée seulement ici (un bâtiment a
+      // vraiment changé), pas à chaque frame -- plus aucun Entrepôt debout, quelle qu'en soit la
+      // raison (pas seulement un Entrepôt "englouti" par la horde).
+      if (!this.gameOverOpen && !GameState.hasAnyWarehouse()) this.triggerGameOver();
     }
     this.redrawFog();
 

@@ -976,6 +976,16 @@ const GameState = {
     return warehouseLost;
   },
 
+  // Vrai si au moins un Entrepôt tient encore debout (voir GameScene, condition de défaite : la
+  // partie est perdue dès qu'il n'y en a plus aucun -- vérifié seulement quand buildingsDirty,
+  // pas à chaque frame, voir l'appelant).
+  hasAnyWarehouse() {
+    for (const [, tile] of this.tiles) {
+      if (tile.type === 'warehouse') return true;
+    }
+    return false;
+  },
+
   harvestRuin(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
@@ -986,6 +996,30 @@ const GameState = {
     this.dirty = true;
     this.buildingsDirty = true;
     return loot;
+  },
+
+  // Remet tout à zéro pour une partie neuve (voir GameScene.restartGame, bouton "Recommencer"
+  // après une défaite) -- mêmes valeurs que la déclaration initiale de l'objet en haut du fichier,
+  // pas un simple deserialize() : il n'y a pas de sauvegarde de "partie neuve" à recharger.
+  reset() {
+    this.cols = GameConfig.world.cols;
+    this.rows = GameConfig.world.rows;
+    this.resources = Object.assign(
+      { wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, codex: 0 },
+      GameConfig.resources.starting
+    );
+    this.tiles = new Map();
+    this.resourceTiles = new Map();
+    this.shipments = [];
+    this.nextShipmentId = 1;
+    this.laborAssignment = null;
+    this.shots = [];
+    this.unlockedTech = new Map();
+    this.revealedTiles = new Set();
+    this.guildZone = new Set();
+    this.universityZone = new Set();
+    this.dirty = true;
+    this.buildingsDirty = true;
   },
 
   // Instantané complet de l'état sauvegardable (tout ce qui n'est pas dérivable de GameConfig).
