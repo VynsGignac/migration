@@ -557,36 +557,51 @@ class GameScene extends Phaser.Scene {
     this.upgradeCastleButton.on('pointerup', () => this.upgradeSelectedToCastle());
     this.uiElements.push(this.upgradeCastleButton);
 
-    const buildDefs = [
-      { id: 'road', label: 'Route' },
-      { id: 'lumberjackCamp', label: 'Camp Bûcheron' },
-      { id: 'sawmill', label: 'Scierie' },
-      { id: 'minerCamp', label: 'Camp Mineur' },
-      { id: 'stonecutter', label: 'Tailleur pierre' },
-      { id: 'farm', label: 'Ferme' },
-      { id: 'bakery', label: 'Boulangerie' },
-      { id: 'house', label: 'Maison' },
-      { id: 'warehouse', label: 'Entrepôt' },
-      { id: 'donjon', label: 'Donjon' },
-      { id: 'watchtower', label: 'Tour de Guet' },
-      { id: 'university', label: 'Université' },
+    // Icône + coût en pictos plutôt que nom + texte ("Scierie — 10 Pl") : trop de texte pour la
+    // place dispo, surtout sur téléphone (voir demande utilisateur). Le nom reste consultable une
+    // fois le bâtiment choisi (voir updateInfoPanel, "Construction : <nom>"), juste plus dans le
+    // bouton lui-même. buildButtons devient un simple rectangle interactif (fond + zone de clic) ;
+    // l'icône et le coût sont des objets à part, positionnés par-dessus (voir
+    // positionBuildButtonContents, appelé depuis layoutHud).
+    const buildIds = [
+      'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery',
+      'house', 'warehouse', 'donjon', 'watchtower', 'university',
     ];
     this.buildButtons = {};
-    buildDefs.forEach((def) => {
-      const cost = GameConfig.buildings[def.id].cost;
-      const text = `${def.label}  —  ${this.formatResources(cost, true)}`;
-      const btn = this.add.text(0, 0, text, {
-        font: '13px sans-serif', color: '#ffffff', backgroundColor: '#2e5339',
-        padding: { x: 10, y: 9 }, align: 'left',
-      })
-        // Caché par défaut : layoutHud() ne rend visible que les bâtiments débloqués (voir
-        // isBuildingUnlocked) -- sans ce setVisible(false) initial, un bâtiment pas encore
-        // débloqué au premier layoutHud() resterait affiché tel quel à sa position par défaut (0,0).
+    this.buildButtonIcons = {};
+    this.buildButtonCostIcons = {};
+    buildIds.forEach((id) => {
+      const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339).setOrigin(0, 0)
+        // Caché par défaut : layoutHud() ne rend visible que les bâtiments débloqués de la
+        // catégorie active (voir isBuildingUnlocked/activeBuildCategory) -- sans ce setVisible(false)
+        // initial, un bâtiment pas encore débloqué/hors-onglet resterait affiché à sa position
+        // par défaut (0,0) jusqu'au premier layoutHud() qui le concerne.
         .setVisible(false)
         .setDepth(1000).setInteractive({ useHandCursor: true });
-      btn.on('pointerup', () => this.setBuildMode(this.buildMode === def.id ? null : def.id));
-      this.buildButtons[def.id] = btn;
+      btn.on('pointerup', () => this.setBuildMode(this.buildMode === id ? null : id));
+      this.buildButtons[id] = btn;
       this.uiElements.push(btn);
+
+      // Dessinée UNE fois à l'origine locale (0,0) -- repositionnée ensuite via setPosition à
+      // chaque layoutHud(), jamais redessinée (même trick que resourceBarIconImages).
+      const icon = this.add.graphics().setDepth(1001).setVisible(false);
+      this.drawBuildingIcon(icon, id, 0, 0, 30);
+      this.buildButtonIcons[id] = icon;
+      this.uiElements.push(icon);
+
+      // 1 ou 2 ressources par coût (jamais plus, voir GameConfig.buildings) : une icône + un
+      // nombre par ressource. Toujours une vraie image (planks/stoneBlocks, les deux seules
+      // ressources jamais utilisées comme coût) -- pas besoin du dessin vectoriel de secours ici.
+      const cost = GameConfig.buildings[id].cost;
+      this.buildButtonCostIcons[id] = Object.entries(cost).map(([resKey, amount]) => {
+        const img = this.add.image(0, 0, this.resourceBarIconTextureKeys[resKey])
+          .setOrigin(0, 0.5).setDepth(1001).setVisible(false);
+        const txt = this.add.text(0, 0, String(Math.round(amount)), {
+          font: 'bold 11px sans-serif', color: '#ffd23f',
+        }).setOrigin(0, 0.5).setDepth(1001).setVisible(false);
+        this.uiElements.push(img, txt);
+        return { img, txt };
+      });
     });
 
     // Onglets de catégorie (voir GameConfig.buildingCategories/activeBuildCategory) : au-dessus de
@@ -1153,11 +1168,14 @@ class GameScene extends Phaser.Scene {
 
   // Grise les boutons de construction (et les rend non cliquables) pendant la pause.
   setBuildButtonsEnabled(enabled) {
+    const alpha = enabled ? 1 : 0.4;
     for (const id in this.buildButtons) {
-      this.buildButtons[id].setAlpha(enabled ? 1 : 0.4);
+      this.buildButtons[id].setAlpha(alpha);
+      this.buildButtonIcons[id].setAlpha(alpha);
+      for (const { img, txt } of this.buildButtonCostIcons[id]) { img.setAlpha(alpha); txt.setAlpha(alpha); }
     }
-    this.buildMenuToggle.setAlpha(enabled ? 1 : 0.4);
-    this.confirmButton.setAlpha(enabled ? 1 : 0.4);
+    this.buildMenuToggle.setAlpha(alpha);
+    this.confirmButton.setAlpha(alpha);
   }
 
   // Zoom minimum effectif pour cette taille d'écran : exactement ce qu'il faut pour que le monde
@@ -1207,7 +1225,10 @@ class GameScene extends Phaser.Scene {
     // jamais à ceux d'une autre catégorie -- sans ce passage, changer d'onglet empilait les
     // boutons de tous les onglets déjà visités les uns sur les autres (bug vécu pour de vrai).
     for (const id in this.buildButtons) {
-      if (!buttonIds.includes(id)) this.buildButtons[id].setVisible(false);
+      if (buttonIds.includes(id)) continue;
+      this.buildButtons[id].setVisible(false);
+      this.buildButtonIcons[id].setVisible(false);
+      for (const { img, txt } of this.buildButtonCostIcons[id]) { img.setVisible(false); txt.setVisible(false); }
     }
     const categoryRowHeight = 26, categoryGap = 4;
     const catCols = 2; // grille 2x2 en colonne PC (voir plus bas) : 4 catégories -> 2 rangées
@@ -1292,9 +1313,10 @@ class GameScene extends Phaser.Scene {
 
       let y = catBlockY + catBlockHeight + desktopGap;
       for (const id of buttonIds) {
+        const btnW = this.sidebarWidth - 20;
         this.buildButtons[id]
-          .setPosition(10, y).setFixedSize(this.sidebarWidth - 20, desktopBtnHeight)
-          .setFontSize(13).setAlign('left').setWordWrapWidth(0).setVisible(true);
+          .setPosition(10, y).setSize(btnW, desktopBtnHeight).setVisible(true);
+        this.positionBuildButtonContents(id, 10, y, btnW, desktopBtnHeight);
         y += desktopBtnHeight + desktopGap;
       }
 
@@ -1395,14 +1417,16 @@ class GameScene extends Phaser.Scene {
         .setColor(active ? '#10151a' : '#ffffff');
     });
 
-    const gridTop = menuTop + gap + categoryRowHeight + gap;
+    const gridTop = menuTop + gap + mobileCategoryRowHeight + gap;
     buttonIds.forEach((id, i) => {
       const col = i % cols, row = Math.floor(i / cols);
-      this.buildButtons[id]
-        .setPosition(gap + col * (btnWidth + gap), gridTop + row * (btnHeight + gap))
-        .setFixedSize(btnWidth, btnHeight)
-        .setFontSize(compact ? 12 : 14).setAlign('center').setWordWrapWidth(btnWidth - 12)
-        .setVisible(this.buildMenuOpen);
+      const bx = gap + col * (btnWidth + gap), by = gridTop + row * (btnHeight + gap);
+      this.buildButtons[id].setPosition(bx, by).setSize(btnWidth, btnHeight).setVisible(this.buildMenuOpen);
+      this.positionBuildButtonContents(id, bx, by, btnWidth, btnHeight);
+      if (!this.buildMenuOpen) {
+        this.buildButtonIcons[id].setVisible(false);
+        for (const { img, txt } of this.buildButtonCostIcons[id]) { img.setVisible(false); txt.setVisible(false); }
+      }
     });
 
     // Le panneau d'info flotte juste sous le bandeau du haut ; sa visibilité/contenu réel est
@@ -1412,13 +1436,34 @@ class GameScene extends Phaser.Scene {
     this.toastText.setPosition(w / 2 - this.toastText.width / 2, menuTop - 50);
   }
 
+  // Positionne l'icône du bâtiment + les pictos de coût par-dessus son bouton rectangle (voir
+  // buildButtonIcons/buildButtonCostIcons, créés une fois dans buildHud) : icône à gauche, coûts
+  // à sa suite, le tout centré verticalement dans le rectangle (x, y, w, h) du bouton. Appelé
+  // depuis layoutHud (PC ET mobile, même recette) à chaque fois qu'un bouton visible est repositionné.
+  positionBuildButtonContents(id, x, y, w, h) {
+    const iconSize = Math.min(h - 6, 26);
+    this.buildButtonIcons[id]
+      .setPosition(x + 6 + iconSize / 2, y + h / 2)
+      .setScale(iconSize / 30) // dessinée à s=30 en référence, voir buildHud
+      .setVisible(true);
+
+    const costImgSize = Math.min(h - 12, 15);
+    const fontSize = Math.max(10, Math.min(13, h - 20));
+    let cx = x + 6 + iconSize + 10;
+    for (const { img, txt } of this.buildButtonCostIcons[id]) {
+      img.setPosition(cx, y + h / 2).setDisplaySize(costImgSize, costImgSize).setVisible(true);
+      cx += costImgSize + 3;
+      txt.setPosition(cx, y + h / 2).setFontSize(fontSize).setVisible(true);
+      cx += txt.width + 10;
+    }
+  }
+
   setBuildMode(mode) {
     if (this.paused && mode) return; // pas de construction pendant la pause
     this.buildMode = mode;
     this.buildGhostHex = null;
     for (const id in this.buildButtons) {
-      this.buildButtons[id].setBackgroundColor(id === mode ? '#ffd23f' : '#2e5339');
-      this.buildButtons[id].setColor(id === mode ? '#10151a' : '#ffffff');
+      this.buildButtons[id].setFillStyle(id === mode ? 0xffd23f : 0x2e5339);
     }
     if (mode) {
       // Activer un mode de construction remplace l'inspection en cours : on ne veut pas mélanger
@@ -1970,6 +2015,19 @@ class GameScene extends Phaser.Scene {
         for (const cx of [-0.16, -0.055, 0.055, 0.16]) {
           this.tracePoly(g, [[cx - 0.03, -0.04], [cx + 0.03, -0.04], [cx + 0.03, 0.30], [cx - 0.03, 0.30]], x, y, s);
           g.fillPath();
+        }
+        break;
+      }
+      case 'road': {
+        // Chemin pavé : bande en diagonale + ligne de joints, pour rester lisible même en tout
+        // petit (icône de bouton) plutôt que la texture photo utilisée sur la carte (roadTile).
+        g.fillStyle(0x8a8a8a, 0.95);
+        this.tracePoly(g, [[-0.32, 0.22], [-0.10, -0.30], [0.10, -0.30], [0.32, 0.22]], x, y, s);
+        g.fillPath();
+        g.lineStyle(s * 0.04, ink, 0.6);
+        for (const t of [-0.14, 0, 0.14]) {
+          this.tracePoly(g, [[t * 1.6, 0.20], [t * 0.5, -0.24]], x, y, s, false);
+          g.strokePath();
         }
         break;
       }
