@@ -1,0 +1,4 @@
+@echo off
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build-apk.ps1"
+echo.
+pause

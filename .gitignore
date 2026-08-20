@@ -1,0 +1,22 @@
+# Dépendances npm (Capacitor/CLI) — réinstallées via `npm install`, voir package.json
+node_modules/
+
+# Projet Android généré par Capacitor (`npx cap add android`, voir build-apk.ps1) — régénérable,
+# pas besoin de le versionner.
+android/
+
+# Dossier de synchronisation Capacitor (copie de index.html/js/icons pour l'APK) — régénéré à
+# chaque build, voir build-apk.ps1.
+www/
+
+# Image source utilisée une fois pour générer les icônes de l'app (voir historique) — pas
+# nécessaire au jeu lui-même.
+assets-src/
+
+# Art source brut (illustrations "_source.png") utilisé pour composer les tuiles de bâtiments,
+# déjà intégré en base64 dans js/assets.js — inutile au runtime, volumineux (~24 Mo).
+assets/
+
+# APK compilée — régénérable via build-apk.ps1, ne se prête pas bien à git (gros binaire qui
+# change entièrement à chaque build).
+*.apk

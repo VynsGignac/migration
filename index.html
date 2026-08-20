@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Migration</title>
+
+<!-- PWA : installable ("Ajouter à l'écran d'accueil"), icône, lancement plein écran, hors-ligne
+     après premier chargement (voir sw.js). -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#10151a">
+<link rel="icon" href="icons/icon-192.png">
+<!-- iOS ignore manifest.json pour l'installation : ces balises sont le seul moyen d'obtenir un
+     lancement plein écran (sans Safari) et une icône correcte sur Safari/iOS. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Migration">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #10151a;
+    width: 100%;
+    height: 100%;
+    touch-action: none; /* empêche le navigateur de scroller/zoomer au lieu du jeu */
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+  /* position: fixed + inset: 0 plutôt que 100vw/100vh : sur mobile, 100vh inclut souvent la
+     zone que la barre d'adresse du navigateur recouvre/libère en scrollant, ce qui coupait
+     l'interface ou changeait la taille du canvas au mauvais moment. fixed+inset colle toujours
+     exactement à la fenêtre visible réelle. */
+  #game-container {
+    position: fixed;
+    inset: 0;
+  }
+</style>
+</head>
+<body>
+  <div id="game-container"></div>
+
+  <!-- Moteur de jeu Phaser, en local (voir js/vendor/) pour fonctionner hors-ligne dans l'APK. -->
+  <script src="js/vendor/phaser.min.js"></script>
+
+  <!-- Nos scripts, dans l'ordre de dépendance -->
+  <script src="js/assets.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/HexUtils.js"></script>
+  <script src="js/GameState.js"></script>
+  <script src="js/Monsters.js"></script>
+  <script src="js/GameScene.js"></script>
+  <script src="js/main.js"></script>
+
+  <!-- Enregistrement du service worker (voir sw.js) : silencieux si indisponible (ex. chargé
+       depuis file:// ou un navigateur trop ancien), le jeu marche identiquement sans lui. -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>

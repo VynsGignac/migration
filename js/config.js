@@ -1,0 +1,316 @@
+// ============================================================
+// CONFIGURATION DU JEU
+// Modifie ces valeurs pour ajuster le jeu sans toucher au reste du code.
+// ============================================================
+
+const GameConfig = {
+  hex: {
+    // Taille d'une case hexagonale en pixels (rayon du centre à un coin)
+    size: 34,
+  },
+  // Multiplicateur global de vitesse du jeu (production, croissance de la population, transport,
+  // tirs des tours) — demande utilisateur : le jeu semblait globalement trop rapide. NE s'applique
+  // PAS à la horde de monstres (voir GameScene.update, qui passe un dt non modifié à Monsters.update)
+  // : sa vitesse reste calée sur GameConfig.monsters.secondsToReachStart, en temps réel, exprès.
+  // Centralisé ici plutôt qu'éparpillé pour pouvoir être retouché facilement si besoin.
+  simulation: {
+    speed: 0.5,
+  },
+  world: {
+    // Nombre de colonnes de cases sur la largeur du cylindre
+    // (une fois qu'on a parcouru "cols" colonnes vers la droite, on retombe sur la colonne 0)
+    cols: 1000,
+    // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement)
+    rows: 23,
+    // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
+    // pour laisser au joueur le temps de construire avant qu'elle n'arrive.
+    startCol: 25,
+  },
+  camera: {
+    // zoomMin est un garde-fou absolu (jamais une valeur "confortable" à atteindre en pratique) :
+    // le vrai zoom minimum utilisable est calculé dynamiquement (GameScene.getEffectiveZoomMin)
+    // pour toujours montrer exactement les 22 rangées du monde, quelle que soit la hauteur d'écran.
+    zoomMin: 0.05,
+    zoomMax: 2.0,
+    zoomStart: 1,
+  },
+  colors: {
+    hexFill: 0x2e5339,
+    hexStroke: 0x1b3322,
+    // Opacité du liseré entre cases (terrain ET bâtiments/ruines) : volontairement discret,
+    // juste assez pour deviner la grille sans qu'elle domine visuellement le décor/les
+    // illustrations de case (voir GameScene.createTerrainTileSprite et redrawBuildings).
+    hexStrokeAlpha: 0.25,
+    background: 0x10151a,
+    ruin: 0x4a4a4a,
+    monster: 0xff2222,
+  },
+  resources: {
+    // Stock de départ, volontairement généreux : sur une carte de 1000 colonnes, les premiers
+    // blobs de ressources peuvent être loin de l'Entrepôt de départ. Ce coussin doit suffire à
+    // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
+    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30 },
+  },
+  // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
+  // qui voyage sur les routes, pour chaque ressource.
+  resourceLabels: {
+    wood: { long: 'Bois', short: 'Bois', color: 0x8b5a2b },
+    planks: { long: 'Planches', short: 'Pl', color: 0xc9974f },
+    stone: { long: 'Pierre', short: 'Roche', color: 0x5a5a70 },
+    stoneBlocks: { long: 'Pierre taillée', short: 'PT', color: 0xb0b0b0 },
+    wheat: { long: 'Blé', short: 'Blé', color: 0xdbc245 },
+    bread: { long: 'Pain', short: 'Pain', color: 0xe8a33d },
+  },
+  // Transport des ressources le long des routes.
+  logistics: {
+    shipSpeed: 2, // cases par seconde
+    shipBatchSize: 3, // quantité expédiée par voyage
+    // Portée par défaut affichée pour la zone d'action d'un Entrepôt (lui-même n'expédie rien,
+    // mais c'est la portée typique à laquelle un producteur peut le trouver).
+    linkRange: 6,
+  },
+  // Ressources naturelles posées sur la carte sous forme de "blobs" (amas irréguliers).
+  // Les nombres de blobs gardent la même densité qu'à 80 colonnes (~1 blob d'arbres/6-7
+  // colonnes, ~1 blob de pierre/10 colonnes), remise à l'échelle pour une carte de 1000 colonnes,
+  // puis doublée (voir demande utilisateur : deux fois plus de ressource sur la carte).
+  resourceNodes: {
+    tree: { color: 0x1f6b3a, amountMin: 20, amountMax: 40 },
+    stone: { color: 0x767a80, amountMin: 25, amountMax: 50 },
+    // Le blé n'apparaît pas en blobs au démarrage : ce sont les Fermes qui le plantent
+    // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
+    // au calcul de l'opacité (case bien mûre vs. presque récoltée).
+    wheat: { color: 0xdbc245, amountMin: 8, amountMax: 8 },
+    blobCountTree: 300,
+    blobCountStone: 200,
+    blobSizeMin: 4,
+    blobSizeMax: 9,
+    // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
+    startClearance: 4,
+  },
+  // Chaque bâtiment producteur a son propre stock local (inputBuffer/outputBuffer), pas un
+  // pool global : les ressources doivent être physiquement acheminées d'un bâtiment à l'autre.
+  // kind: 'extractor' récolte une ressource de terrain (tree/stone) dans extractRadius autour de lui
+  //   et stocke le résultat dans son outputBuffer (jusqu'à outputCap).
+  // kind: 'processor' transforme inputBuffer en outputBuffer au rythme de "rate"/s (jusqu'à outputCap).
+  // linkTargets/linkRange : quand l'outputBuffer n'est pas vide, le bâtiment cherche le plus proche
+  //   bâtiment d'un type de linkTargets, à au plus linkRange cases par la route/le réseau bâti, et
+  //   lui expédie un chargement (visible en train de voyager sur la route).
+  // Coûts pensés par thème : les routes se pavent de pierre, les bâtiments se charpentent
+  // surtout en bois, et seul l'Entrepôt (la structure la plus importante) demande les deux.
+  buildings: {
+    road: { name: 'Route', cost: { stoneBlocks: 1 }, color: 0x8a8a8a, ruinLoot: { stoneBlocks: 1 } },
+    lumberjackCamp: {
+      name: 'Camp de Bûcheron', cost: { planks: 6 }, color: 0x8b5a2b,
+      kind: 'extractor', resource: 'tree', outputResource: 'wood',
+      extractRadius: 2, extractRate: 0.5, outputCap: 20,
+      linkTargets: ['sawmill'], linkRange: 6,
+      ruinLoot: { planks: 3 },
+    },
+    sawmill: {
+      name: 'Scierie', cost: { planks: 10 }, color: 0xc9974f,
+      kind: 'processor', inputResource: 'wood', outputResource: 'planks', rate: 1.5,
+      inputCap: 15, outputCap: 15,
+      linkTargets: ['warehouse'], linkRange: 6,
+      ruinLoot: { planks: 5 },
+    },
+    minerCamp: {
+      name: 'Camp de Mineur', cost: { planks: 6 }, color: 0x5a5a70,
+      kind: 'extractor', resource: 'stone', outputResource: 'stone',
+      extractRadius: 2, extractRate: 0.5, outputCap: 20,
+      linkTargets: ['stonecutter'], linkRange: 6,
+      ruinLoot: { planks: 3 },
+    },
+    stonecutter: {
+      name: 'Tailleur de pierre', cost: { planks: 10 }, color: 0xb0b0b0,
+      kind: 'processor', inputResource: 'stone', outputResource: 'stoneBlocks', rate: 1.5,
+      inputCap: 15, outputCap: 15,
+      linkTargets: ['warehouse'], linkRange: 6,
+      ruinLoot: { planks: 5 },
+    },
+    warehouse: {
+      name: 'Entrepôt', cost: { planks: 15, stoneBlocks: 8 }, color: 0xffd23f,
+      ruinLoot: { planks: 8, stoneBlocks: 4 },
+    },
+    // plants: true => en plus de récolter comme un extracteur classique, ce bâtiment crée
+    // lui-même de nouvelles cases de sa ressource dans son rayon (voir GameState.tickProduction) :
+    // au lieu d'épuiser des cases naturelles existantes, il cultive et récolte en boucle continue.
+    // Rythme choisi pour qu'à efficacité "de base" (50 %, sans aucun travailleur affecté — voir
+    // population.efficiencyByWorkers), 2 Fermes suffisent tout juste à alimenter 1 Boulangerie à
+    // plein régime (2 * 1,2 * 0,5 = 1,2 = bakery.rate * 0,5), qui elle-même nourrit exactement 2
+    // Maisons pleines (1,2 pain/s = 2 * 4 hab. * 0,15, voir house.consumptionPerPerson) — demande
+    // utilisateur : la chaîne alimentaire ne doit plus dévorer la main-d'œuvre qu'elle nourrit.
+    farm: {
+      name: 'Ferme', cost: { planks: 6 }, color: 0xd4b106,
+      kind: 'extractor', resource: 'wheat', outputResource: 'wheat',
+      extractRadius: 2, extractRate: 1.2, outputCap: 15,
+      plants: true, plantInterval: 4, maxPatches: 5, patchAmount: 8,
+      linkTargets: ['bakery'], linkRange: 6,
+      ruinLoot: { planks: 3 },
+    },
+    bakery: {
+      name: 'Boulangerie', cost: { planks: 10 }, color: 0xdda15e,
+      kind: 'processor', inputResource: 'wheat', outputResource: 'bread', rate: 2.4,
+      inputCap: 15, outputCap: 15,
+      // Le pain part TOUJOURS vers l'Entrepôt, jamais directement vers une Maison : le cycle voulu
+      // est Boulangerie -> Entrepôt -> Maison en deux temps (voir GameState._spawnWarehouseBread
+      // pour le second segment, Entrepôt -> Maison, qui puise dans le stock central).
+      linkTargets: ['warehouse'], linkRange: 6,
+      ruinLoot: { planks: 5 },
+    },
+    // kind: 'house' => héberge des habitants (jusqu'à populationCap) qui consomment du pain
+    // livré ici (inputBuffer, comme un processeur). Toutes les growthInterval secondes : si le
+    // pain a suffi tout du long, la population augmente d'un ; sinon elle baisse (1 minimum).
+    // C'est cette population, à portée des bâtiments de production (voir population.laborRadius),
+    // qui leur permet de tourner à plein rendement plutôt qu'à 50 %.
+    house: {
+      name: 'Maison', cost: { planks: 8 }, color: 0xaf6f4d,
+      kind: 'house', inputResource: 'bread', inputCap: 8,
+      populationCap: 4, startPopulation: 1,
+      consumptionPerPerson: 0.15, growthInterval: 6,
+      ruinLoot: { planks: 4 },
+    },
+    // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval
+    // secondes à pleine main-d'œuvre (même système que les extracteurs/processeurs : un
+    // travailleur affecté = plein régime, sinon le délai entre deux tirs double). N'est actif
+    // que s'il touche une route (voir GameState._hasAdjacentRoad) : un Donjon posé isolé ne
+    // tire pas, il faut le relier au réseau.
+    donjon: {
+      name: 'Donjon', cost: { planks: 20, stoneBlocks: 15 }, color: 0x5a2a3a,
+      kind: 'tower', range: 4, fireInterval: 2, damage: 1,
+      ruinLoot: { planks: 10, stoneBlocks: 6 },
+    },
+    // kind: 'university' => pas de zone d'action, ne reçoit/n'expédie aucune ressource (pas de
+    // outputBuffer/inputBuffer, pas de linkTargets). Un clic dessus ouvre l'arbre technologique
+    // (voir GameScene.openTechTree) plutôt que d'afficher un panneau d'info classique. N'est
+    // utilisable que si reliée à une route (même vérification que le Donjon).
+    university: {
+      name: 'Université', cost: { planks: 15, stoneBlocks: 10 }, color: 0x2f4d63,
+      kind: 'university',
+      ruinLoot: { planks: 8, stoneBlocks: 5 },
+    },
+  },
+  // Arbre technologique : 5 branches indépendantes (pas de nœud central commun — chacune part
+  // directement du milieu du diagramme, voir GameScene.positionTechTreeNodes) disposées en éventail
+  // (angle de base espacé de 360/5 degrés), chacune une chaîne linéaire qui se termine en 2-3
+  // choix parallèles (angle de base ± un petit écart, voir GameScene.updateTechTreeBubble pour le
+  // rayon/angle -> position). Pour l'instant de simples emplacements gratuits et sans effet (voir
+  // GameState.unlockTech) — seul le mécanisme de déblocage (un nœud n'est débloquable que si son
+  // parent l'est déjà, ou n'a pas de parent) et l'affichage radial sont testés.
+  techTree: {
+    nodeRadius: 22,
+    // Espacement FIXE entre deux anneaux (pas recalculé selon la taille du panneau) : sur un
+    // écran de téléphone en paysage (peu de hauteur disponible), essayer de tout faire tenir
+    // écrasait les nœuds les uns sur les autres. Avec un espacement fixe assez généreux pour ne
+    // jamais faire se toucher les nœuds, le diagramme peut dépasser la zone visible — on peut
+    // alors le faire glisser (voir GameScene.techTreeCamX/Y) pour voir le reste.
+    ringSpacing: 70,
+    nodes: {
+      // Population (branche à 0°) : nutrition -> urbanisme -> {immigration, mariage, colocation}.
+      // Nœuds à plusieurs niveaux (maxLevel > 1) : cliquables plusieurs fois, un niveau par clic sur
+      // "Rechercher" (voir GameState.researchTech). Débloquer le NIVEAU 1 suffit à déverrouiller les
+      // enfants — les niveaux suivants n'ouvrent rien de plus dans l'arbre, ils renforcent juste l'effet.
+      pop_nutrition: {
+        name: 'Nutrition', parent: null, ring: 1, angle: 0, maxLevel: 3,
+        description: 'Réduit les besoins en pain de la population de 10 % / 20 % / 30 %.',
+        breadReductionByLevel: [0.10, 0.20, 0.30],
+      },
+      pop_urbanisme: {
+        name: 'Urbanisme', parent: 'pop_nutrition', ring: 2, angle: 0,
+        description: 'Les maisons gardent toujours au moins 1 habitant, même en cas de famine prolongée.',
+      },
+      pop_immigration: {
+        name: 'Immigration', parent: 'pop_urbanisme', ring: 3, angle: -25, maxLevel: 3,
+        description: 'La population croît 50 % / 75 % / 100 % plus vite (le déclin garde sa vitesse normale).',
+        growthBonusByLevel: [0.50, 0.75, 1.00],
+      },
+      pop_mariage: {
+        name: 'Mariage', parent: 'pop_urbanisme', ring: 3, angle: 0,
+        description: 'Le temps nécessaire pour accueillir un nouvel habitant diminue de 5 % par habitant déjà présent.',
+        growthDiscountPerCapita: 0.05,
+      },
+      pop_colocation: {
+        name: 'Colocation', parent: 'pop_urbanisme', ring: 3, angle: 25, maxLevel: 2,
+        description: 'Augmente la capacité des maisons de 1 / 2 habitant(s).',
+        extraCapByLevel: [1, 2],
+      },
+
+      // Industrie (branche à 72°) : apprentissage -> expertise -> guilde -> {forestier, tunnelier, labourage}.
+      ind_apprentissage: { name: 'Apprentissage', parent: null, ring: 1, angle: 72, description: 'Forme les premiers artisans qualifiés.' },
+      ind_expertise: { name: 'Expertise', parent: 'ind_apprentissage', ring: 2, angle: 72, description: 'Perfectionne les techniques de production.' },
+      ind_guilde: { name: 'Guilde', parent: 'ind_expertise', ring: 3, angle: 72, description: 'Organise les artisans en corporations.' },
+      ind_forestier: { name: 'Forestier', parent: 'ind_guilde', ring: 4, angle: 47, description: 'Améliore l\'exploitation du bois.' },
+      ind_tunnelier: { name: 'Tunnelier', parent: 'ind_guilde', ring: 4, angle: 72, description: 'Améliore l\'extraction de la pierre.' },
+      ind_labourage: { name: 'Labourage', parent: 'ind_guilde', ring: 4, angle: 97, description: 'Améliore le rendement agricole.' },
+
+      // Recherche (branche à 144°) : alphabétisation -> scolarisation -> {formateur, imprimerie}.
+      rec_alphabetisation: { name: 'Alphabétisation', parent: null, ring: 1, angle: 144, description: 'Apprend à lire et écrire à la population.' },
+      rec_scolarisation: { name: 'Scolarisation', parent: 'rec_alphabetisation', ring: 2, angle: 144, description: 'Met en place un enseignement structuré.' },
+      rec_formateur: { name: 'Formateur', parent: 'rec_scolarisation', ring: 3, angle: 126, description: 'Forme des experts capables d\'enseigner à leur tour.' },
+      rec_imprimerie: { name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162, description: 'Diffuse le savoir plus largement et plus vite.' },
+
+      // Logistique (branche à 216°) : roue -> charrue -> {aménagement urbain, gestion des stocks, ?}.
+      log_roue: { name: 'Roue', parent: null, ring: 1, angle: 216, description: 'Une invention fondamentale pour le transport.' },
+      log_charrue: { name: 'Charrue', parent: 'log_roue', ring: 2, angle: 216, description: 'Facilite le travail de la terre et le transport lourd.' },
+      log_amenagement: { name: 'Aménagement urbain', parent: 'log_charrue', ring: 3, angle: 191, description: 'Optimise l\'agencement des constructions.' },
+      log_gestionStocks: { name: 'Gestion des stocks', parent: 'log_charrue', ring: 3, angle: 216, description: 'Améliore le stockage et la répartition des ressources.' },
+      // Nom provisoire : 3e branche de Logistique pas encore définie par le joueur (voir discussion).
+      log_tbd: { name: 'À déterminer', parent: 'log_charrue', ring: 3, angle: 241, description: 'Technologie à définir plus tard.' },
+
+      // Défense (branche à 288°) : explorateur -> donjon -> {armée de profession, service militaire, forgerie}.
+      def_explorateur: { name: 'Explorateur', parent: null, ring: 1, angle: 288, description: 'Repousse les limites du territoire connu.' },
+      def_donjon: { name: 'Donjon', parent: 'def_explorateur', ring: 2, angle: 288, description: 'Établit les bases de la défense du territoire.' },
+      def_armee: { name: 'Armée de profession', parent: 'def_donjon', ring: 3, angle: 263, description: 'Forme des soldats entraînés à plein temps.' },
+      def_service: { name: 'Service militaire', parent: 'def_donjon', ring: 3, angle: 288, description: 'Mobilise la population pour la défense.' },
+      def_forgerie: { name: 'Forgerie', parent: 'def_donjon', ring: 3, angle: 313, description: 'Produit des armes et armures de meilleure qualité.' },
+    },
+    // Chaque description ci-dessus est un placeholder thématique (voir GameState.unlockTech) :
+    // le texte suggère un effet plausible, mais rien n'est réellement appliqué pour l'instant.
+  },
+  // Main-d'œuvre : chaque habitant d'une Maison ne peut occuper qu'UN SEUL poste à la fois dans un
+  // bâtiment de production (extracteur ou processeur) à laborRadius cases (distance à vol d'oiseau -
+  // c'est la zone visualisée en jeu). L'affectation (GameState.allocateLabor) répartit les habitants
+  // disponibles en priorisant d'abord les bâtiments avec le moins de travailleurs déjà affectés, puis
+  // en cas d'égalité les plus proches PAR LA ROUTE (chemin réel à travers routes/bâtiments, pas à vol
+  // d'oiseau). Le taux d'extraction/traitement dépend ensuite du nombre de travailleurs affectés à
+  // CE bâtiment précis (voir GameState.efficiencyForWorkers) : pas de tout-ou-rien, une courbe.
+  population: {
+    laborRadius: 5,
+    // Distance maximale (en pas) explorée par la route pour départager deux bâtiments à égalité de
+    // travailleurs ; volontairement plus grande que laborRadius car un chemin pavé peut serpenter.
+    laborRoadSearchRange: 18,
+    // Efficacité selon le nombre de travailleurs affectés à un bâtiment : index 0 = 0 travailleur,
+    // index 1 = 1 travailleur, etc. Au-delà du dernier index (4 travailleurs), l'efficacité reste
+    // à 100 % (voir GameState.efficiencyForWorkers, qui borne l'index).
+    efficiencyByWorkers: [0.5, 0.65, 0.8, 0.9, 1],
+  },
+  // La horde de monstres : un bloc dense de petits monstres individuels (carrés, voir
+  // GameScene.drawMonster) qui avancent chacun en ligne droite, à vitesse constante, sans
+  // contourner aucun obstacle ni suivre la grille hexagonale — ils traversent (et détruisent)
+  // tout ce qui se trouve sur leur passage. Aucune interaction du joueur avec eux pour l'instant
+  // (pas d'attaque) : la seule chose qui compte est "un monstre qui passe sur une case la détruit".
+  monsters: {
+    // La vitesse est dérivée ci-dessous (après la définition de l'objet) à partir de
+    // secondsToReachStart et world.startCol, pour que le front de la horde atteigne toujours la
+    // colonne de départ exactement au bout de ce délai, quelle que soit la valeur de startCol.
+    secondsToReachStart: 600, // 10 minutes
+    baseSpeed: null, // calculé plus bas (colonnes/seconde)
+    // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
+    // compacte plutôt qu'une simple ligne.
+    depthCount: 20,
+    // Espacement entre deux monstres consécutifs d'une même rangée (voir Monsters.init) : plus
+    // petit que la largeur d'une case pour que le bloc ait l'air d'une horde tassée plutôt que
+    // d'un quadrillage clairsemé. Indépendant de la largeur de case réelle utilisée pour détecter
+    // le franchissement des colonnes (Monsters.update) : ceci n'affecte que le rendu/l'espacement.
+    depthSpacingFactor: 0.8, // fraction de hexSize.size
+    // Taille du carré de chaque monstre (voir GameScene.redrawMonsters), en fraction de hexSize.
+    // Assez grand pour presque se toucher horizontalement (avec depthSpacingFactor) et verticalement
+    // (avec la hauteur d'une rangée) : c'est ça qui donne l'effet de horde compacte.
+    sizeFactor: 1.3,
+    // Vie de départ de chaque monstre (voir GameState.tickProduction, section tir de tour, pour
+    // les dégâts infligés par un Donjon).
+    startingHp: 10,
+  },
+};
+
+// Vitesse de la horde (colonnes/seconde) calculée pour atteindre startCol après secondsToReachStart.
+GameConfig.monsters.baseSpeed = GameConfig.world.startCol / GameConfig.monsters.secondsToReachStart;

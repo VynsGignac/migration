@@ -1,0 +1,8 @@
+{
+  "appId": "com.migration.game",
+  "appName": "Migration",
+  "webDir": "www",
+  "android": {
+    "webContentsDebuggingEnabled": true
+  }
+}
