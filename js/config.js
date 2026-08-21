@@ -48,6 +48,10 @@ const GameConfig = {
     background: 0x10151a,
     ruin: 0x4a4a4a,
     monster: 0xff2222,
+    // Monstre blessé (hp < monsters.startingHp, voir GameScene.redrawMonsters) : teinte plus
+    // claire/orangée pour rester lisible à la taille minuscule d'un monstre sans dépendre d'une
+    // jauge ou d'une icône séparée -- demande utilisateur explicite.
+    monsterWounded: 0xffb347,
   },
   resources: {
     // Stock de départ, volontairement généreux : les premiers blobs de ressources peuvent être
@@ -140,31 +144,38 @@ const GameConfig = {
   //   lui expédie un chargement (visible en train de voyager sur la route).
   // Coûts pensés par thème : les routes se pavent de pierre, les bâtiments se charpentent
   // surtout en bois, et seul l'Entrepôt (la structure la plus importante) demande les deux.
+  // Bâtiments de PRODUCTION (voir buildingCategories.production) : 25 % de leur coût en planches
+  // d'origine transféré vers un coût en pierre taillée (demande utilisateur explicite) --
+  // arrondi à l'entier le plus proche par bâtiment, pas une simple règle de trois globale.
   buildings: {
     road: { name: 'Route', cost: { stoneBlocks: 1 }, color: 0x8a8a8a, ruinLoot: { stoneBlocks: 1 } },
     lumberjackCamp: {
-      name: 'Camp de Bûcheron', cost: { planks: 6 }, color: 0x8b5a2b,
+      // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
+      name: 'Camp de Bûcheron', cost: { planks: 4, stoneBlocks: 2 }, color: 0x8b5a2b,
       kind: 'extractor', resource: 'tree', outputResource: 'wood',
       extractRadius: 2, extractRate: 0.5, outputCap: 20,
       linkTargets: ['sawmill'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
     sawmill: {
-      name: 'Scierie', cost: { planks: 10 }, color: 0xc9974f,
+      // 25 % de 10 planches (2,5, arrondi à 3) transféré en pierre taillée.
+      name: 'Scierie', cost: { planks: 7, stoneBlocks: 3 }, color: 0xc9974f,
       kind: 'processor', inputResource: 'wood', outputResource: 'planks', rate: 1.5,
       inputCap: 15, outputCap: 15,
       linkTargets: ['warehouse'], linkRange: 6,
       ruinLoot: { planks: 5 },
     },
     minerCamp: {
-      name: 'Camp de Mineur', cost: { planks: 6 }, color: 0x5a5a70,
+      // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
+      name: 'Camp de Mineur', cost: { planks: 4, stoneBlocks: 2 }, color: 0x5a5a70,
       kind: 'extractor', resource: 'stone', outputResource: 'stone',
       extractRadius: 2, extractRate: 0.5, outputCap: 20,
       linkTargets: ['stonecutter'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
     stonecutter: {
-      name: 'Tailleur de pierre', cost: { planks: 10 }, color: 0xb0b0b0,
+      // 25 % de 10 planches (2,5, arrondi à 3) transféré en pierre taillée.
+      name: 'Tailleur de pierre', cost: { planks: 7, stoneBlocks: 3 }, color: 0xb0b0b0,
       kind: 'processor', inputResource: 'stone', outputResource: 'stoneBlocks', rate: 1.5,
       inputCap: 15, outputCap: 15,
       linkTargets: ['warehouse'], linkRange: 6,
@@ -183,7 +194,8 @@ const GameConfig = {
     // Maisons pleines (1,2 pain/s = 2 * 4 hab. * 0,15, voir house.consumptionPerPerson) — demande
     // utilisateur : la chaîne alimentaire ne doit plus dévorer la main-d'œuvre qu'elle nourrit.
     farm: {
-      name: 'Ferme', cost: { planks: 6 }, color: 0xd4b106,
+      // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
+      name: 'Ferme', cost: { planks: 4, stoneBlocks: 2 }, color: 0xd4b106,
       kind: 'extractor', resource: 'wheat', outputResource: 'wheat',
       extractRadius: 2, extractRate: 1.2, outputCap: 15,
       plants: true, plantInterval: 4, maxPatches: 5, patchAmount: 8,
@@ -191,7 +203,8 @@ const GameConfig = {
       ruinLoot: { planks: 3 },
     },
     bakery: {
-      name: 'Boulangerie', cost: { planks: 10 }, color: 0xdda15e,
+      // 25 % de 10 planches (2,5, arrondi à 3) transféré en pierre taillée.
+      name: 'Boulangerie', cost: { planks: 7, stoneBlocks: 3 }, color: 0xdda15e,
       kind: 'processor', inputResource: 'wheat', outputResource: 'bread', rate: 2.4,
       inputCap: 15, outputCap: 15,
       // Le pain part TOUJOURS vers l'Entrepôt, jamais directement vers une Maison : le cycle voulu
@@ -209,7 +222,9 @@ const GameConfig = {
     // tickProduction juste après celui du Tunnelier/minerai. extractRate = 1/60 : un cadavre
     // (amount toujours 1) prend environ 1 minute à recycler à pleine main-d'œuvre.
     recycler: {
-      name: 'Recycleur', cost: { planks: 3, stoneBlocks: 3 }, color: 0x6b1f3a,
+      // 25 % de 3 planches (0,75, arrondi à 1) transféré en pierre taillée, en plus de son coût
+      // en pierre taillée déjà existant.
+      name: 'Recycleur', cost: { planks: 2, stoneBlocks: 4 }, color: 0x6b1f3a,
       kind: 'extractor', resource: 'corpse', outputResource: 'codex',
       extractRadius: 3, extractRate: 1 / 60, outputCap: 3,
       // PAS de main-d'œuvre (voir allocateLabor/tickProduction, cas spécial "recycler") :
@@ -242,7 +257,9 @@ const GameConfig = {
     // que s'il touche une route (voir GameState._hasAdjacentRoad) : un Donjon posé isolé ne
     // tire pas, il faut le relier au réseau.
     donjon: {
-      name: 'Donjon', cost: { planks: 20, stoneBlocks: 15 }, color: 0x5a2a3a,
+      // Coût divisé par 2 (demande utilisateur explicite) par rapport à l'original (planks: 20,
+      // stoneBlocks: 15) : moitié de 15 arrondie à 8 pour un chiffre entier propre plutôt que 7.5.
+      name: 'Donjon', cost: { planks: 10, stoneBlocks: 8 }, color: 0x5a2a3a,
       kind: 'tower', range: 4, fireInterval: 2, damage: 1,
       ruinLoot: { planks: 10, stoneBlocks: 6 },
     },
@@ -492,8 +509,10 @@ const GameConfig = {
     // (avec la hauteur d'une rangée) : c'est ça qui donne l'effet de horde compacte.
     sizeFactor: 1.3,
     // Vie de départ de chaque monstre (voir GameState.tickProduction, section tir de tour, pour
-    // les dégâts infligés par un Donjon).
-    startingHp: 10,
+    // les dégâts infligés par un Donjon) -- demande utilisateur explicite (voir aussi
+    // GameScene.redrawMonsters : un monstre à hp < startingHp est affiché "blessé", couleur plus
+    // claire, pour qu'on distingue au coup d'œil ceux qui vont mourir au prochain tir).
+    startingHp: 2,
     // Chance qu'un monstre tué (par une tour, voir tickProduction/_maybeDropCorpse) laisse un
     // cadavre sur sa case -- voir resourceNodes.corpse/buildings.recycler, demande utilisateur.
     corpseDropChance: 0.1,

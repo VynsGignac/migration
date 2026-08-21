@@ -2428,7 +2428,11 @@ class GameScene extends Phaser.Scene {
 
     const size = this.hexSize * GameConfig.monsters.sizeFactor * zoom;
     const colWidth = this.hexSize * 1.5;
-    ctx.fillStyle = '#' + GameConfig.colors.monster.toString(16).padStart(6, '0');
+    const colorFull = '#' + GameConfig.colors.monster.toString(16).padStart(6, '0');
+    // Blessé (hp < startingHp, voir config.monsters.startingHp/demande utilisateur explicite) :
+    // couleur plus claire plutôt qu'une jauge ou une icône séparée -- reste lisible même à la
+    // taille minuscule d'un monstre dézoomé, et se voit tout de suite dans le tas de la horde.
+    const colorWounded = '#' + GameConfig.colors.monsterWounded.toString(16).padStart(6, '0');
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.lineWidth = 1;
 
@@ -2441,6 +2445,7 @@ class GameScene extends Phaser.Scene {
       const wy = HexUtils.rowHeight(this.hexSize) * (m.row + 0.25);
       const { x: sx, y: sy } = worldToScreen(m.x, wy);
       const x = sx - size / 2, y = sy - size / 2;
+      ctx.fillStyle = m.hp < GameConfig.monsters.startingHp ? colorWounded : colorFull;
       ctx.fillRect(x, y, size, size);
       ctx.strokeRect(x, y, size, size);
     }
