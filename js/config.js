@@ -81,9 +81,15 @@ const GameConfig = {
   logistics: {
     shipSpeed: 2, // cases par seconde
     shipBatchSize: 3, // quantité expédiée par voyage
-    // Portée par défaut affichée pour la zone d'action d'un Entrepôt (lui-même n'expédie rien,
-    // mais c'est la portée typique à laquelle un producteur peut le trouver).
+    // Portée par défaut à laquelle un producteur peut trouver un Entrepôt/une Université, ET
+    // base de la zone d'action RÉELLE de l'Entrepôt (voir warehouseExtraRange ci-dessous, séparé
+    // exprès : agrandir seulement l'Entrepôt sans toucher à la portée des autres bâtiments).
     linkRange: 6,
+    // Bonus dédié à la zone d'action de l'Entrepôt (voir GameState.warehouseZoneRadius, demande
+    // utilisateur explicite : "+2 cases"), en plus de linkRange -- distinct de linkRange pour ne
+    // PAS agrandir en même temps la portée de l'Université (qui réutilise linkRange directement,
+    // voir zoneRadiusFor) ni celle des producteurs (chacun son propre linkRange dans buildings).
+    warehouseExtraRange: 2,
   },
   // Ressources naturelles posées sur la carte sous forme de "blobs" (amas irréguliers).
   // Les nombres de blobs gardent la même densité qu'à 80 colonnes (~1 blob d'arbres/6-7

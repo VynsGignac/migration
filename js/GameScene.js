@@ -421,7 +421,12 @@ class GameScene extends Phaser.Scene {
       for (const res in tile.constructionNeeded) {
         lines.push(`  ${GameConfig.resourceLabels[res].long} : ${Math.round(tile.constructionDelivered[res])}/${tile.constructionNeeded[res]}`);
       }
-      lines.push('Livré depuis un Entrepôt à portée par la route.');
+      // Prévient le "pourquoi ça n'avance jamais" (demande utilisateur explicite) : soit ça livre
+      // normalement, soit AUCUN Entrepôt n'est à portée et ça ne bougera jamais tant que le réseau
+      // de routes n'est pas étendu (voir GameState.hasWarehouseInRange/_spawnWarehouseConstructionDeliveries).
+      lines.push(GameState.hasWarehouseInRange(col, row)
+        ? 'Livré depuis un Entrepôt à portée par la route.'
+        : 'Aucun Entrepôt à portée : ce chantier ne recevra rien tant qu\'un Entrepôt n\'est pas relié par la route.');
       return lines.join('\n');
     }
 
@@ -2700,8 +2705,7 @@ class GameScene extends Phaser.Scene {
       } else {
         const resTile = GameState.getResourceTile(wrappedCol, row);
         if (resTile) {
-          const label = resTile.type === 'tree' ? 'Arbres' : (resTile.type === 'stone' ? 'Pierre' : (resTile.type === 'wheat' ? 'Blé' : 'Cadavre de monstre'));
-          this.infoPanelOverrideText = `${label} (${Math.round(resTile.amount)} restant)`;
+          this.infoPanelOverrideText = `${this.resourceTileLabel(resTile.type)} (${Math.round(resTile.amount)} restant)`;
         }
       }
       this.redrawActionZone();
@@ -2729,10 +2733,21 @@ class GameScene extends Phaser.Scene {
     }
     const resTile = GameState.getResourceTile(wrappedCol, row);
     if (resTile) {
-      const label = resTile.type === 'tree' ? 'Arbres' : (resTile.type === 'stone' ? 'Pierre' : 'Blé');
-      this.infoPanelOverrideText = `${label} (${Math.round(resTile.amount)} restant)`;
+      this.infoPanelOverrideText = `${this.resourceTileLabel(resTile.type)} (${Math.round(resTile.amount)} restant)`;
     }
     this.redrawActionZone();
+  }
+
+  // Nom affiché pour une case de ressource naturelle (voir handleTap, les deux branches
+  // pause/hors-pause) -- centralisé ici après un bug vécu : les deux endroits avaient chacun leur
+  // propre ternaire, un seul avait été mis à jour à l'ajout du cadavre de monstre, l'autre
+  // retombait sur "Blé" par défaut pour un type qu'il ne reconnaissait pas.
+  resourceTileLabel(type) {
+    if (type === 'tree') return 'Arbres';
+    if (type === 'stone') return 'Pierre';
+    if (type === 'wheat') return 'Blé';
+    if (type === 'corpse') return 'Cadavre de monstre';
+    return type;
   }
 
   // Contenu du panneau d'info : aide de construction en priorité, sinon les infos vivantes du

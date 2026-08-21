@@ -427,6 +427,14 @@ const GameState = {
     return this.findBestPath(fromCol, fromRow, (tile) => targetTypes.includes(tile.type) && !tile.underConstruction, maxRange, scoreFn);
   },
 
+  // Vrai si au moins un Entrepôt opérationnel est à portée par la route (voir
+  // warehouseZoneRadius) -- utilisé par l'UI (voir GameScene.buildingInfoText) pour prévenir
+  // qu'un chantier hors de portée de tout Entrepôt ne recevra jamais rien (voir
+  // _spawnWarehouseConstructionDeliveries, demande utilisateur explicite).
+  hasWarehouseInRange(col, row) {
+    return !!this.findBestPathToBuildingType(col, row, ['warehouse'], this.warehouseZoneRadius(), () => 1);
+  },
+
   // Distance en pas par la route (BFS le long des ROUTES uniquement, voir findBestPathToBuildingType)
   // entre deux cases précises. Contrairement à findBestPathToBuildingType (qui cherche le
   // MEILLEUR score d'un TYPE), ici on mesure la distance vers une case précise, pour départager deux candidats à
@@ -1009,14 +1017,16 @@ const GameState = {
     return def.populationCap + bonus;
   },
 
-  // Rayon d'action réel d'un Entrepôt, boosté par Aménagement urbain (voir GameConfig.techTree.
-  // nodes.log_amenagement) -- PAS cumulatif entre niveaux (voir le nœud), le niveau atteint
-  // REMPLACE GameConfig.logistics.linkRange plutôt que de s'y ajouter plusieurs fois.
+  // Rayon d'action réel d'un Entrepôt : linkRange de base + warehouseExtraRange (bonus dédié,
+  // demande utilisateur explicite : "+2 cases", voir GameConfig.logistics), boosté par
+  // Aménagement urbain (voir GameConfig.techTree.nodes.log_amenagement) -- PAS cumulatif entre
+  // niveaux (voir le nœud), le niveau atteint REMPLACE le bonus du niveau précédent plutôt que de
+  // s'y ajouter plusieurs fois.
   warehouseZoneRadius() {
     const level = this.techLevel('log_amenagement');
     const node = GameConfig.techTree.nodes.log_amenagement;
     const bonus = level > 0 ? node.zoneBonusByLevel[level - 1] : 0;
-    return GameConfig.logistics.linkRange + bonus;
+    return GameConfig.logistics.linkRange + GameConfig.logistics.warehouseExtraRange + bonus;
   },
 
   // Bonus de capacité de stockage, boosté par Gestion des stocks (voir GameConfig.techTree.nodes.
@@ -1208,10 +1218,19 @@ const GameState = {
   // autre chargement), chacun une ressource différente si besoin.
   _spawnWarehouseConstructionDeliveries() {
     const batch = GameConfig.logistics.shipBatchSize;
+    // Busy PAR (Entrepôt, ressource) et non plus juste par Entrepôt (demande utilisateur
+    // explicite) : un Entrepôt peut désormais expédier planches ET pierre taillée EN PARALLÈLE
+    // pour la construction, plutôt que la seconde ressource devant attendre que la première
+    // finisse son trajet.
     const busy = new Set();
     for (const s of this.shipments) {
-      if (s.forConstruction) busy.add(s.fromKey);
+      if (s.forConstruction) busy.add(s.fromKey + '|' + s.resource);
     }
+    // Décalage de 0,5 s (voir updateShipments/s.delay) sur la SECONDE expédition d'un même
+    // Entrepôt décidée dans CET appel : évite que les deux partent visuellement confondues (même
+    // case, même instant) sur la carte. Local à cet appel -- un Entrepôt déjà en train d'expédier
+    // depuis un appel précédent n'a pas besoin de ce décalage, il n'est déjà plus simultané.
+    const dispatchedThisCall = new Set();
 
     for (const [destKey, tile] of this.tiles) {
       if (!tile.underConstruction) continue;
@@ -1223,7 +1242,7 @@ const GameState = {
         if (this.resources[res] <= 0) continue;
 
         const candidate = this.findBestPath(destCol, destRow, (t, key) => {
-          return t.type === 'warehouse' && !t.underConstruction && !busy.has(key);
+          return t.type === 'warehouse' && !t.underConstruction && !busy.has(key + '|' + res);
         }, this.warehouseZoneRadius(), () => 1);
         if (!candidate) continue;
 
@@ -1240,12 +1259,14 @@ const GameState = {
           amount,
           path: [...candidate.path].reverse(),
           progress: 0,
+          delay: dispatchedThisCall.has(fromKey) ? 0.5 : 0,
           fromKey,
           toKey: destKey,
           toType: tile.type,
           forConstruction: true,
         });
-        busy.add(fromKey);
+        busy.add(fromKey + '|' + res);
+        dispatchedThisCall.add(fromKey);
         this.dirty = true;
       }
     }
@@ -1270,7 +1291,21 @@ const GameState = {
     let delivered = false;
 
     for (const s of this.shipments) {
-      s.progress += speed * dtSeconds;
+      // Décalage de départ (voir _spawnWarehouseConstructionDeliveries/s.delay, demande
+      // utilisateur : deux expéditions "construction" simultanées depuis le même Entrepôt ne
+      // doivent pas voyager parfaitement confondues) : consomme le délai en premier, avance quand
+      // même du reliquat de dtSeconds une fois écoulé plutôt que de perdre cette fraction de tick.
+      let dt = dtSeconds;
+      if (s.delay > 0) {
+        const consumed = Math.min(s.delay, dt);
+        s.delay -= consumed;
+        dt -= consumed;
+        if (s.delay > 0 || dt <= 0) {
+          stillTraveling.push(s);
+          continue;
+        }
+      }
+      s.progress += speed * dt;
       if (s.progress < s.path.length - 1) {
         stillTraveling.push(s);
         continue;
