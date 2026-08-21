@@ -547,10 +547,10 @@ const GameState = {
   neededWorkers() {
     if (!this.laborAssignment) return 0;
     const baseFullStaff = GameConfig.population.efficiencyByWorkers.length - 1;
-    // Les extracteurs plafonnent à 3 travailleurs, pas 4 (voir population.
-    // efficiencyByWorkersExtractor/tickProduction) -- sinon ce compteur réclamerait toujours 1
-    // travailleur de trop pour un Camp/une Ferme déjà à 100 %.
-    const extractorFullStaff = GameConfig.population.efficiencyByWorkersExtractor.length - 1;
+    // Les bâtiments de Production plafonnent à 3 travailleurs, pas 4 (voir population.
+    // efficiencyByWorkersProduction/tickProduction) -- sinon ce compteur réclamerait toujours 1
+    // travailleur de trop pour un Camp/une Ferme/une Scierie déjà à 100 %.
+    const productionFullStaff = GameConfig.population.efficiencyByWorkersProduction.length - 1;
     let needed = 0;
     for (const [key, entry] of this.laborAssignment) {
       // laborAssignment est un instantané du dernier tick de production (voir tickProduction,
@@ -565,7 +565,8 @@ const GameState = {
       // Le Château (voir buildings.castle.capMultiplier) absorbe utilement 2x plus de
       // travailleurs qu'un Donjon normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
       // pourrait encore en accueillir 4 de plus (voir efficiencyForWorkers).
-      const fullStaff = (def.kind === 'extractor' ? extractorFullStaff : baseFullStaff) * (def.capMultiplier || 1);
+      const isProduction = def.kind === 'extractor' || def.kind === 'processor';
+      const fullStaff = (isProduction ? productionFullStaff : baseFullStaff) * (def.capMultiplier || 1);
       needed += Math.max(0, fullStaff - entry.workers);
     }
     return needed;
@@ -760,14 +761,14 @@ const GameState = {
 
       const [col, row] = key.split(',').map(Number);
       // Recycleur : pas de main-d'œuvre (voir allocateLabor/buildings.recycler), toujours 100 %.
-      // Les autres extracteurs (production brute) utilisent leur propre courbe, 100 % atteint à
-      // 3 travailleurs plutôt que 4 (voir population.efficiencyByWorkersExtractor, demande
-      // utilisateur explicite -- NE s'applique PAS aux processeurs de raffinage, qui gardent
-      // efficiencyByWorkers/4 travailleurs, voir la boucle de transformation plus bas).
+      // Les autres extracteurs (catégorie Production) utilisent leur propre courbe, 100 % atteint
+      // à 3 travailleurs plutôt que 4 (voir population.efficiencyByWorkersProduction, demande
+      // utilisateur explicite -- s'applique aussi aux processeurs de raffinage, voir la boucle de
+      // transformation plus bas, mais pas aux tours qui gardent efficiencyByWorkers/4).
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = tile.type === 'recycler'
         ? 1
-        : this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersExtractor);
+        : this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
@@ -831,14 +832,17 @@ const GameState = {
 
     // 2. Transformation : les processeurs consomment leur inputBuffer local pour remplir leur
     //    outputBuffer, limités par ce qui leur a été livré (plus de réseau global instantané).
-    //    Même courbe d'efficacité selon la main-d'œuvre affectée (efficiencyForWorkers -- le
-    //    travailleur gratuit d'Apprentissage y est déjà inclus, voir allocateLabor) et Expertise/Guilde.
+    //    Même courbe d'efficacité que les extracteurs (voir plus haut/population.
+    //    efficiencyByWorkersProduction, 100 % à 3 travailleurs -- tous les bâtiments de la
+    //    catégorie Production, extraction ET raffinage, demande utilisateur explicite) selon la
+    //    main-d'œuvre affectée (le travailleur gratuit d'Apprentissage y est déjà inclus, voir
+    //    allocateLabor) et Expertise/Guilde.
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
       if (!def || def.kind !== 'processor' || tile.underConstruction) continue;
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
-      const efficiency = this.efficiencyForWorkers(workers);
+      const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);

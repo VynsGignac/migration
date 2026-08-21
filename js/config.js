@@ -121,10 +121,11 @@ const GameConfig = {
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
     startClearance: 4,
     // Cadavre de monstre : PAS un blob (voir _spawnSingleTiles) -- une case isolée et rare,
-    // dispersée sur toute la carte. Cible ~1 par écran plein à dézoom maximum (le monde montre
-    // toujours ses 23 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur un écran 16:9
-    // typique ça correspond à environ 45 colonnes visibles) : 500 colonnes / 45 ≈ 11.
-    corpseCount: 11,
+    // dispersée sur toute la carte. Densité de base ~1 par écran plein à dézoom maximum (le
+    // monde montre toujours ses 23 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur
+    // un écran 16:9 typique ça correspond à environ 45 colonnes visibles, 500/45 ≈ 11), doublée
+    // (demande utilisateur explicite).
+    corpseCount: 22,
   },
   // Regroupe les bâtiments par onglet dans le menu de construction (voir GameScene.layoutHud/
   // activeBuildCategory) : la liste à plat est devenue trop longue pour tenir sans scroller une
@@ -480,13 +481,15 @@ const GameConfig = {
     // Efficacité selon le nombre de travailleurs affectés à un bâtiment : index 0 = 0 travailleur,
     // index 1 = 1 travailleur, etc. Au-delà du dernier index (4 travailleurs), l'efficacité reste
     // à 100 % (voir GameState.efficiencyForWorkers, qui borne l'index). Utilisée par les
-    // processeurs (Scierie/Tailleur de pierre/Boulangerie) et les tours.
+    // tours (Donjon/Château) -- voir efficiencyByWorkersProduction ci-dessous pour les bâtiments
+    // de la catégorie Production (extracteurs ET processeurs).
     efficiencyByWorkers: [0.5, 0.65, 0.8, 0.9, 1],
-    // Même principe, mais pour les bâtiments de PRODUCTION BRUTE (extracteurs : Camp de
-    // Bûcheron/Mineur, Ferme -- PAS les processeurs de raffinage, voir efficiencyByWorkers
-    // ci-dessus) : 100 % atteint à 3 travailleurs au lieu de 4 (demande utilisateur explicite).
-    // Courbe à progression décroissante analogue, juste recalée sur 3 paliers plutôt que 4.
-    efficiencyByWorkersExtractor: [0.5, 0.7, 0.85, 1],
+    // Même principe, mais pour TOUS les bâtiments de la catégorie Production (voir
+    // buildingCategories.production : extracteurs ET processeurs de raffinage -- Camp de
+    // Bûcheron/Mineur, Ferme, Scierie, Tailleur de pierre, Boulangerie ; PAS le Recycleur, qui
+    // n'a pas de main-d'œuvre du tout) : 100 % atteint à 3 travailleurs au lieu de 4 (demande
+    // utilisateur explicite). Courbe à progression décroissante analogue, recalée sur 3 paliers.
+    efficiencyByWorkersProduction: [0.5, 0.7, 0.85, 1],
   },
   // La horde de monstres : un bloc dense de petits monstres individuels (carrés, voir
   // GameScene.drawMonster) qui avancent chacun en ligne droite, à vitesse constante, sans
