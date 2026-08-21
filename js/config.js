@@ -110,7 +110,10 @@ const GameConfig = {
     wheat: { color: 0xdbc245, amountMin: 8, amountMax: 8 },
     // Cadavre de monstre (voir buildings.recycler/demande utilisateur) : amount toujours 1 --
     // "une ressource donne un codex", pas un stock qui s'épuise progressivement comme les autres.
-    corpse: { color: 0x6b1f3a, amountMin: 1, amountMax: 1 },
+    // edgeRowMargin (demande utilisateur explicite) : aucun cadavre posé à la génération du monde
+    // dans les 5 premières/dernières rangées (voir GameState._spawnSingleTiles) -- ne concerne
+    // QUE cette génération de départ, pas ceux laissés par un monstre tué (_maybeDropCorpse).
+    corpse: { color: 0x6b1f3a, amountMin: 1, amountMax: 1, edgeRowMargin: 5 },
     blobCountTree: 150,
     blobCountStone: 100,
     blobSizeMin: 4,
@@ -476,8 +479,14 @@ const GameConfig = {
     laborRoadSearchRange: 18,
     // Efficacité selon le nombre de travailleurs affectés à un bâtiment : index 0 = 0 travailleur,
     // index 1 = 1 travailleur, etc. Au-delà du dernier index (4 travailleurs), l'efficacité reste
-    // à 100 % (voir GameState.efficiencyForWorkers, qui borne l'index).
+    // à 100 % (voir GameState.efficiencyForWorkers, qui borne l'index). Utilisée par les
+    // processeurs (Scierie/Tailleur de pierre/Boulangerie) et les tours.
     efficiencyByWorkers: [0.5, 0.65, 0.8, 0.9, 1],
+    // Même principe, mais pour les bâtiments de PRODUCTION BRUTE (extracteurs : Camp de
+    // Bûcheron/Mineur, Ferme -- PAS les processeurs de raffinage, voir efficiencyByWorkers
+    // ci-dessus) : 100 % atteint à 3 travailleurs au lieu de 4 (demande utilisateur explicite).
+    // Courbe à progression décroissante analogue, juste recalée sur 3 paliers plutôt que 4.
+    efficiencyByWorkersExtractor: [0.5, 0.7, 0.85, 1],
   },
   // La horde de monstres : un bloc dense de petits monstres individuels (carrés, voir
   // GameScene.drawMonster) qui avancent chacun en ligne droite, à vitesse constante, sans

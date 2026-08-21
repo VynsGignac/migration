@@ -401,7 +401,11 @@ class GameScene extends Phaser.Scene {
   // pas un tout-ou-rien).
   laborStatusLine(col, row, def) {
     const workers = GameState.getAssignedWorkers(col, row);
-    const pct = Math.round(GameState.efficiencyForWorkers(workers, def.capMultiplier || 1) * 100);
+    // Les extracteurs (production brute) utilisent leur propre courbe -- 100 % à 3 travailleurs
+    // au lieu de 4 (voir GameState.tickProduction/population.efficiencyByWorkersExtractor) --
+    // sinon ce panneau afficherait un pourcentage différent de celui réellement appliqué.
+    const table = def.kind === 'extractor' ? GameConfig.population.efficiencyByWorkersExtractor : GameConfig.population.efficiencyByWorkers;
+    const pct = Math.round(GameState.efficiencyForWorkers(workers, def.capMultiplier || 1, table) * 100);
     return workers > 0
       ? `Main-d'œuvre : ${workers} travailleur(s) affecté(s) (${pct} %)`
       : `Main-d'œuvre : aucun travailleur affecté (${pct} %)`;

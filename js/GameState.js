@@ -285,12 +285,17 @@ const GameState = {
   // plutôt que groupée.
   _spawnSingleTiles(type, count, cfg) {
     const clearance = cfg.startClearance;
+    // Marge haut/bas (voir resourceNodes.corpse.edgeRowMargin, demande utilisateur explicite) :
+    // ne s'applique qu'à CETTE génération de départ, pas aux cadavres laissés par un monstre tué
+    // (voir _maybeDropCorpse, qui n'a aucune restriction de rangée -- un monstre meurt où il meurt).
+    const edgeRowMargin = (cfg[type] && cfg[type].edgeRowMargin) || 0;
     let placed = 0;
     let attempts = 0;
     while (placed < count && attempts < count * 30) {
       attempts++;
       const col = Math.floor(Math.random() * this.cols);
       const row = Math.floor(Math.random() * this.rows);
+      if (row < edgeRowMargin || row >= this.rows - edgeRowMargin) continue;
       if (this._withinStartClearance(col, clearance)) continue;
       if (!this._tileIsFreeForResource(col, row)) continue;
       const amount = cfg[type].amountMin + Math.floor(Math.random() * (cfg[type].amountMax - cfg[type].amountMin + 1));
@@ -542,6 +547,10 @@ const GameState = {
   neededWorkers() {
     if (!this.laborAssignment) return 0;
     const baseFullStaff = GameConfig.population.efficiencyByWorkers.length - 1;
+    // Les extracteurs plafonnent à 3 travailleurs, pas 4 (voir population.
+    // efficiencyByWorkersExtractor/tickProduction) -- sinon ce compteur réclamerait toujours 1
+    // travailleur de trop pour un Camp/une Ferme déjà à 100 %.
+    const extractorFullStaff = GameConfig.population.efficiencyByWorkersExtractor.length - 1;
     let needed = 0;
     for (const [key, entry] of this.laborAssignment) {
       // laborAssignment est un instantané du dernier tick de production (voir tickProduction,
@@ -556,7 +565,7 @@ const GameState = {
       // Le Château (voir buildings.castle.capMultiplier) absorbe utilement 2x plus de
       // travailleurs qu'un Donjon normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
       // pourrait encore en accueillir 4 de plus (voir efficiencyForWorkers).
-      const fullStaff = baseFullStaff * (def.capMultiplier || 1);
+      const fullStaff = (def.kind === 'extractor' ? extractorFullStaff : baseFullStaff) * (def.capMultiplier || 1);
       needed += Math.max(0, fullStaff - entry.workers);
     }
     return needed;
@@ -674,8 +683,7 @@ const GameState = {
   // même gain que le 1er, etc.) -- PAS un simple ×capMultiplier, qui doublerait aussi le socle de
   // 50 % obtenu à 0 travailleur. Pour capMultiplier=1 (tout le reste), se comporte EXACTEMENT
   // comme avant (aucun palier supplémentaire).
-  efficiencyForWorkers(workers, capMultiplier = 1) {
-    const table = GameConfig.population.efficiencyByWorkers;
+  efficiencyForWorkers(workers, capMultiplier = 1, table = GameConfig.population.efficiencyByWorkers) {
     const maxIndex = table.length - 1;
     const baseline = table[0];
     let total = table[Math.min(workers, maxIndex)];
@@ -752,8 +760,14 @@ const GameState = {
 
       const [col, row] = key.split(',').map(Number);
       // Recycleur : pas de main-d'œuvre (voir allocateLabor/buildings.recycler), toujours 100 %.
+      // Les autres extracteurs (production brute) utilisent leur propre courbe, 100 % atteint à
+      // 3 travailleurs plutôt que 4 (voir population.efficiencyByWorkersExtractor, demande
+      // utilisateur explicite -- NE s'applique PAS aux processeurs de raffinage, qui gardent
+      // efficiencyByWorkers/4 travailleurs, voir la boucle de transformation plus bas).
       const workers = labor.get(key) ? labor.get(key).workers : 0;
-      const efficiency = tile.type === 'recycler' ? 1 : this.efficiencyForWorkers(workers);
+      const efficiency = tile.type === 'recycler'
+        ? 1
+        : this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersExtractor);
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
