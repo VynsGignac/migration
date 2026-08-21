@@ -223,11 +223,17 @@ const GameConfig = {
     // pain a suffi tout du long, la population augmente d'un ; sinon elle baisse (1 minimum).
     // C'est cette population, à portée des bâtiments de production (voir population.laborRadius),
     // qui leur permet de tourner à plein rendement plutôt qu'à 50 %.
+    // growthInterval = 2.5s (demande utilisateur explicite : détection de croissance/décroissance
+    // divisée par 2 -- l'ancienne valeur était 6s -- ET une Maison à 0 habitant nourrie EN
+    // CONTINU doit être pleine en 10s maximum. Comme un habitant s'ajoute par intervalle complet
+    // (voir GameState.tickProduction, section 2.5), remplir populationCap=4 habitants prend
+    // 4 × growthInterval : 2.5s est la valeur exacte qui donne 10s pile pour les 4, plus stricte
+    // qu'une simple moitié de 6 (3s, qui aurait donné 12s -- au-dessus de la limite demandée).
     house: {
       name: 'Maison', cost: { planks: 8 }, color: 0xaf6f4d,
       kind: 'house', inputResource: 'bread', inputCap: 8,
       populationCap: 4, startPopulation: 1,
-      consumptionPerPerson: 0.15, growthInterval: 6,
+      consumptionPerPerson: 0.15, growthInterval: 2.5,
       ruinLoot: { planks: 4 },
     },
     // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval
