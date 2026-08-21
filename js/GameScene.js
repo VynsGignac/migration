@@ -526,17 +526,19 @@ class GameScene extends Phaser.Scene {
     }
 
     // Gain/perte par minute (demande utilisateur), pour les 3 ressources finales principales
-    // seulement (planches/pierre taillée/pain -- pas ore/codex, trop secondaires). Une seule ligne
-    // combinée (comme populationStatsText juste en dessous) plutôt qu'un texte par icône : la
-    // bande de ressources est déjà calée sur des emplacements de largeur fixe (voir
-    // resourceValueTexts ci-dessus, PC ET mobile) bien trop justes pour y ajouter un suffixe --
-    // surtout sur téléphone, où la largeur d'écran est parfois à peine plus grande que la bande
-    // elle-même. Positionnée juste sous la bande d'icônes, voir layoutHud.
+    // seulement (planches/pierre taillée/pain -- pas ore/codex, trop secondaires). Un texte par
+    // icône (juste le nombre signé, ex. "+12" -- pas de "Pl"/"PT"/"/min", l'icône juste à côté
+    // identifie déjà la ressource, voir demande utilisateur), positionné juste après le nombre
+    // principal (voir layoutHud, qui réserve un peu de largeur en plus pour CES 3 emplacements).
     this.mainRateResources = ['planks', 'stoneBlocks', 'bread'];
-    this.resourceRateText = this.add.text(0, 0, '', {
-      font: '12px sans-serif', color: '#c9e8ff',
-    }).setDepth(1000).setVisible(false);
-    this.uiElements.push(this.resourceRateText);
+    this.resourceRateTexts = {};
+    for (const res of this.mainRateResources) {
+      const t = this.add.text(0, 0, '', {
+        font: '11px sans-serif', color: '#8fd18f',
+      }).setDepth(1000).setVisible(false);
+      this.resourceRateTexts[res] = t;
+      this.uiElements.push(t);
+    }
     // Valeur courante (voir update(), qui la rafraîchit) : une PROJECTION du régime actuel
     // (GameState.estimateResourceRates), pas une moyenne sur un historique -- demande utilisateur
     // explicite. Recalculée seulement une fois par seconde réelle (rateRefreshAccum), pas chaque
@@ -640,7 +642,7 @@ class GameScene extends Phaser.Scene {
     // l'icône et le coût sont des objets à part, positionnés par-dessus (voir
     // positionBuildButtonContents, appelé depuis layoutHud).
     const buildIds = [
-      'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery',
+      'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery', 'recycler',
       'house', 'warehouse', 'donjon', 'watchtower', 'university',
     ];
     this.buildButtons = {};
@@ -1444,7 +1446,7 @@ class GameScene extends Phaser.Scene {
     const desktopSidebarWidth = 220;
     const desktopBtnHeight = 38, desktopGap = 6;
     const confirmRowHeight = 42;
-    const desktopNeededHeight = 210 + confirmRowHeight + catBlockHeight + desktopGap
+    const desktopNeededHeight = 216 + confirmRowHeight + catBlockHeight + desktopGap
       + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
@@ -1473,10 +1475,13 @@ class GameScene extends Phaser.Scene {
       // drawResourceBarIcon) plutôt qu'un texte brut : demande explicite pour que le PC
       // corresponde au mobile plutôt que d'afficher "Planches 100 Pierre taillée 30 ...".
       this.resourceBarIconsGraphics.clear().setVisible(true);
-      const pcIconSize = 20, pcNumberSlotWidth = 34, pcIconGap = 4, pcColGap = 8, pcRowGap = 6, pcCols = 3;
+      // 2 colonnes (pas 3) : laisse assez de place à droite du nombre pour le gain/perte par
+      // minute des 3 ressources principales (voir resourceRateTexts) sans le faire déborder sur
+      // la colonne suivante.
+      const pcIconSize = 20, pcNumberSlotWidth = 34, pcRateSlotWidth = 28, pcIconGap = 4, pcColGap = 8, pcRowGap = 6, pcCols = 2;
       this.resourceOrder.forEach((res, i) => {
         const col = i % pcCols, row = Math.floor(i / pcCols);
-        const bx = 10 + col * (pcIconSize + pcIconGap + pcNumberSlotWidth + pcColGap);
+        const bx = 10 + col * (pcIconSize + pcIconGap + pcNumberSlotWidth + pcRateSlotWidth + pcColGap);
         const by = 10 + row * (pcIconSize + pcRowGap);
         if (this.resourceBarIconTextureKeys[res]) {
           this.resourceBarIconImages[res].setPosition(bx, by).setDisplaySize(pcIconSize, pcIconSize).setVisible(true);
@@ -1484,11 +1489,13 @@ class GameScene extends Phaser.Scene {
           this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, pcIconSize);
         }
         this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + 2).setFontSize(13).setVisible(true);
+        if (this.resourceRateTexts[res]) {
+          this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + 4).setFontSize(11).setVisible(true);
+        }
       });
       const iconGridHeight = Math.ceil(this.resourceOrder.length / pcCols) * (pcIconSize + pcRowGap);
 
-      this.resourceRateText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
-      this.populationStatsText.setPosition(10, 10 + iconGridHeight + 22).setFontSize(12).setVisible(true);
+      this.populationStatsText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
 
       // Les onglets de catégorie restent à une hauteur FIXE (environ mi-hauteur de la colonne),
       // qu'ils ne bougent jamais selon le nombre de bâtiments de la catégorie active -- avant,
@@ -1500,7 +1507,7 @@ class GameScene extends Phaser.Scene {
       const catBlockY = Math.round(h / 2);
       const confirmY = catBlockY - desktopGap - confirmRowHeight;
 
-      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 50).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
+      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 34).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
 
       this.confirmButton
         .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
@@ -1556,12 +1563,13 @@ class GameScene extends Phaser.Scene {
 
     // Bandeau ressources : icônes + valeurs sur une seule ligne (voir drawResourceBarIcon).
     // Emplacements de largeur fixe par ressource, pour que la mise en page ne bouge pas quand une
-    // valeur gagne/perd un chiffre.
-    const barIconSize = 18, numberSlotWidth = 34, groupGap = 6, iconGap = 3;
+    // valeur gagne/perd un chiffre. Un peu plus large pour planches/pierre taillée/pain (voir
+    // rateSlotWidth) : gain/perte par minute juste après le nombre (voir resourceRateTexts), pas
+    // de ligne séparée -- ore/codex restent au format compact d'origine.
+    const barIconSize = 18, numberSlotWidth = 34, rateSlotWidth = 24, groupGap = 6, iconGap = 3;
     const barY = 8;
     const statsRowHeight = 18;
-    const rateRowHeight = 16;
-    const topBarHeight = barIconSize + rateRowHeight + statsRowHeight + 18;
+    const topBarHeight = barIconSize + statsRowHeight + 18;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
     // monde sans réduire la hauteur de caméra elle-même, il faut donc le soustraire à part.
@@ -1576,14 +1584,15 @@ class GameScene extends Phaser.Scene {
         this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, barY, barIconSize);
       }
       this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, barY + 1).setVisible(true);
-      bx += barIconSize + iconGap + numberSlotWidth + groupGap;
+      const extra = this.resourceRateTexts[res] ? rateSlotWidth : 0;
+      if (this.resourceRateTexts[res]) {
+        this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap + numberSlotWidth, barY + 3).setFontSize(11).setVisible(true);
+      }
+      bx += barIconSize + iconGap + numberSlotWidth + extra + groupGap;
     }
-    // Deuxième ligne du bandeau : gain/perte par minute (voir mainRateResources/
-    // GameState.estimateResourceRates) pour les 3 ressources finales principales.
-    this.resourceRateText.setPosition(8, barY + barIconSize + 3).setFontSize(11).setVisible(true);
-    // Troisième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
+    // Deuxième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
     // neededWorkers/availableHousing), pas des ressources du stock central.
-    this.populationStatsText.setPosition(8, barY + barIconSize + rateRowHeight + 4).setFontSize(12).setVisible(true);
+    this.populationStatsText.setPosition(8, barY + barIconSize + 4).setFontSize(12).setVisible(true);
 
     // Tailles réduites (voir demande utilisateur : le pavé prenait la moitié de l'écran sur
     // téléphone) : un bouton de 42-56px de haut avec 3 colonnes sur 2 rangées, plus l'onglet de
@@ -2901,14 +2910,14 @@ class GameScene extends Phaser.Scene {
     const r = GameState.resources;
     for (const res of this.resourceOrder) this.resourceValueTexts[res].setText(String(Math.floor(r[res])));
     // Gain/perte par minute (voir this.resourceRates, rafraîchi plus haut, une fois par seconde) :
-    // arrondi à l'entier, signe explicite même pour un gain (+12/min).
-    const rateLabels = { planks: GameConfig.resourceLabels.planks.short, stoneBlocks: GameConfig.resourceLabels.stoneBlocks.short, bread: GameConfig.resourceLabels.bread.short };
-    const rateParts = this.mainRateResources.map((res) => {
+    // juste le nombre signé, coloré selon le signe (l'icône juste à côté identifie la ressource).
+    for (const res of this.mainRateResources) {
       const rate = Math.round(this.resourceRates[res]);
-      const sign = rate > 0 ? '+' : '';
-      return `${rateLabels[res]} ${sign}${rate}/min`;
-    });
-    this.resourceRateText.setText(rateParts.join('   '));
+      const t = this.resourceRateTexts[res];
+      if (rate > 0) t.setText(`+${rate}`).setColor('#7fd17f');
+      else if (rate < 0) t.setText(`${rate}`).setColor('#e07a7a');
+      else t.setText('±0').setColor('#9aa5ad');
+    }
     this.populationStatsText.setText(
       `Main-d'œuvre nécessaire : ${GameState.neededWorkers()}   Logements libres : ${GameState.availableHousing()}`
     );

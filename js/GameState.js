@@ -524,78 +524,94 @@ const GameState = {
 
   // Estimation "à l'instant t" du gain/perte NET par minute réelle, pour les 3 ressources finales
   // principales (planches/pierre taillée/pain) -- demande utilisateur explicite : une PROJECTION
-  // du régime actuel, pas une moyenne glissante sur l'historique. Le stock central de ces 3
-  // ressources n'avance JAMAIS en continu : il ne bouge que par lots (shipBatchSize) à chaque
-  // expédition (voir _spawnShipments/_spawnWarehouseBread/_spawnWarehouseConstructionDeliveries),
-  // donc le vrai "débit" pertinent est combien de producteurs/Entrepôts encore inactifs
-  // enverraient une expédition MAINTENANT -- pas le rythme de production brut des bâtiments, qui
-  // remplit un outputBuffer local, pas le stock central. Reproduit fidèlement (en LECTURE SEULE,
-  // rien n'est créé/dépensé ici) l'éligibilité réelle de ces trois fonctions.
-  // Compté "par tick de production" (~1 seconde simulée, voir tickProduction/productionAccum)
-  // puis converti en unités par minute RÉELLE via GameConfig.simulation.speed (le jeu tourne au
-  // ralenti, sauf la horde -- 1 seconde simulée = 1/simulation.speed secondes réelles).
+  // du régime actuel, pas une moyenne glissante sur l'historique. Version STRUCTURELLE (pas gated
+  // sur l'état instantané d'un chargement en cours) : une première version regardait "un
+  // producteur/Entrepôt encore inactif enverrait-il un chargement MAINTENANT", mais comme un
+  // producteur/Entrepôt reste "occupé" pendant tout le trajet d'un chargement, cette éligibilité
+  // n'est vraie qu'un bref instant par cycle -- bug vécu, signalé par l'utilisateur : "la valeur
+  // vaut 0 sauf quand un paquet est reçu, puis repasse à 0". Ici, on ignore l'état d'occupation
+  // et on calcule un débit SOUTENABLE : le plus petit des deux goulots possibles (cadence de
+  // production réelle -- comme tickProduction -- et capacité de livraison, shipBatchSize divisé
+  // par le temps de trajet réel d'après le chemin trouvé), tant qu'un chemin STRUCTUREL existe.
+  // Change seulement quand la topologie (routes/bâtiments) ou la main-d'œuvre change, pas à
+  // chaque cycle de livraison individuel -- d'où la stabilité demandée.
   estimateResourceRates() {
+    const labor = this.allocateLabor();
     const batch = GameConfig.logistics.shipBatchSize;
-    const perTick = { planks: 0, stoneBlocks: 0, bread: 0 };
 
-    // Entrées : producteur -> Entrepôt (voir _spawnShipments). Un producteur encore inactif
-    // (pas déjà en train d'expédier) avec du stock en sortie compterait pour un envoi de plus.
+    const roueLevel = this.techLevel('log_roue');
+    const roueBonus = roueLevel > 0 ? GameConfig.techTree.nodes.log_roue.speedBonusByLevel[roueLevel - 1] : 0;
+    const shipSpeed = GameConfig.logistics.shipSpeed * (1 + roueBonus);
+
+    const expertiseLevel = this.techLevel('ind_expertise');
+    const expertiseBonus = expertiseLevel > 0 ? GameConfig.techTree.nodes.ind_expertise.speedBonusByLevel[expertiseLevel - 1] : 0;
+    const guildLevel = this.techLevel('ind_guilde');
+    const guildBonusValue = guildLevel > 0 ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
+    const alphabetisationLevel = this.techLevel('rec_alphabetisation');
+    const alphabetisationBonus = alphabetisationLevel > 0 ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
+    const formateurBonus = this.isTechUnlocked('rec_formateur') ? GameConfig.techTree.nodes.rec_formateur.zoneBonus : 0;
+
+    const perSecond = { planks: 0, stoneBlocks: 0, bread: 0 };
+
+    // Entrées : débit soutenable producteur -> Entrepôt (voir _spawnShipments). Un chemin
+    // structurel qui existe suffit (voir findBestPathToBuildingType, scoreFn constant -- on ne
+    // cherche pas ici quelle cible précise a le plus de place, juste qu'UNE existe).
     const outputResourceOf = { sawmill: 'planks', stonecutter: 'stoneBlocks', bakery: 'bread' };
     for (const [key, tile] of this.tiles) {
       const res = outputResourceOf[tile.type];
-      if (!res || tile.underConstruction || !tile.outputBuffer) continue;
-      if (this.shipments.some(s => s.fromKey === key)) continue;
       const def = GameConfig.buildings[tile.type];
+      if (!res || !def || tile.underConstruction) continue;
       const [col, row] = key.split(',').map(Number);
-      let eligible = false;
+      let found = null;
       for (const targetType of def.linkTargets) {
-        const found = this.findBestPathToBuildingType(col, row, [targetType], def.linkRange, (t) => {
-          if (t.type === 'warehouse') return Infinity;
-          return GameConfig.buildings[t.type].inputCap + this.capBonus() - t.inputBuffer;
-        });
-        if (found) { eligible = true; break; }
+        found = this.findBestPathToBuildingType(col, row, [targetType], def.linkRange, () => 1);
+        if (found) break;
       }
-      if (eligible) perTick[res] += Math.min(batch, tile.outputBuffer);
+      if (!found) continue;
+
+      const travelTime = (found.path.length - 1) / shipSpeed;
+      const deliveryCapacity = batch / travelTime;
+      const workers = labor.get(key) ? labor.get(key).workers : 0;
+      const efficiency = this.efficiencyForWorkers(workers);
+      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
+        + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (this.universityZone.has(key) ? formateurBonus : 0);
+      const productionRate = def.rate * efficiency * speedMultiplier;
+      perSecond[res] += Math.min(deliveryCapacity, productionRate);
     }
 
-    // Sorties (pain) : Entrepôt -> Maison (voir _spawnWarehouseBread).
-    for (const [key, tile] of this.tiles) {
-      if (tile.type !== 'warehouse' || tile.underConstruction) continue;
-      if (this.resources.bread <= 0) continue;
-      if (this.shipments.some(s => s.fromKey === key && !s.forConstruction)) continue;
-      const [col, row] = key.split(',').map(Number);
-      const found = this.findBestPathToBuildingType(col, row, ['house'], this.warehouseZoneRadius(), (t) => {
-        return GameConfig.buildings.house.inputCap + this.capBonus() - t.inputBuffer;
-      });
-      if (found) perTick.bread -= Math.min(batch, this.resources.bread);
+    // Sorties (pain) : demande réelle des Maisons (population * consommation, voir tickProduction)
+    // -- toujours stable, ne dépend que de la population, jamais du hasard des trajets.
+    const nutritionLevel = this.techLevel('pop_nutrition');
+    const breadReduction = nutritionLevel > 0
+      ? GameConfig.techTree.nodes.pop_nutrition.breadReductionByLevel[nutritionLevel - 1] : 0;
+    for (const [, tile] of this.tiles) {
+      const def = GameConfig.buildings[tile.type];
+      if (!def || def.kind !== 'house' || tile.underConstruction) continue;
+      perSecond.bread -= tile.population * def.consumptionPerPerson * (1 - breadReduction);
     }
 
-    // Sorties (planches/pierre taillée) : Entrepôt -> chantier (voir
-    // _spawnWarehouseConstructionDeliveries) -- même repli "un Entrepôt encore inactif en
-    // enverrait un de plus", pas besoin de reproduire l'ordre de pose des chantiers ici, seul le
-    // TOTAL compte pour cette estimation. Un Entrepôt ne compte qu'UNE fois (comme la vraie
-    // fonction : busy dès le premier match trouvé), la ressource testée en premier gagne le
-    // "créneau" si les deux sont éligibles -- accessoire pour une estimation.
-    const busyForConstruction = new Set();
-    for (const s of this.shipments) if (s.forConstruction) busyForConstruction.add(s.fromKey);
+    // Sorties (planches/pierre taillée) : capacité de livraison Entrepôt -> chantier le plus
+    // proche qui en a encore besoin (voir _spawnWarehouseConstructionDeliveries), même logique
+    // structurelle que les entrées ci-dessus.
     for (const [key, tile] of this.tiles) {
       if (tile.type !== 'warehouse' || tile.underConstruction) continue;
-      if (busyForConstruction.has(key)) continue;
       const [col, row] = key.split(',').map(Number);
       for (const res of ['planks', 'stoneBlocks']) {
-        if (this.resources[res] <= 0) continue;
         const found = this.findBestPath(col, row, (t) => {
           return t.underConstruction && t.constructionNeeded[res] > t.constructionDelivered[res];
         }, this.warehouseZoneRadius(), (t) => t.constructionNeeded[res] - t.constructionDelivered[res]);
-        if (found) { perTick[res] -= Math.min(batch, this.resources[res]); break; }
+        if (!found) continue;
+        const travelTime = (found.path.length - 1) / shipSpeed;
+        perSecond[res] -= batch / travelTime;
       }
     }
 
     const toPerMinute = 60 * GameConfig.simulation.speed;
     return {
-      planks: perTick.planks * toPerMinute,
-      stoneBlocks: perTick.stoneBlocks * toPerMinute,
-      bread: perTick.bread * toPerMinute,
+      planks: perSecond.planks * toPerMinute,
+      stoneBlocks: perSecond.stoneBlocks * toPerMinute,
+      bread: perSecond.bread * toPerMinute,
     };
   },
 
