@@ -25,8 +25,9 @@ const GameConfig = {
     rows: 23,
     // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
     // pour laisser au joueur le temps de construire avant qu'elle n'arrive. À la moitié du tour
-    // (250/500) : la vague met 10 min à l'atteindre pour un 1er tour de 20 min (voir
-    // monsters.lapOneSeconds) -- ce ratio doit être conservé si l'un des deux change.
+    // (250/500) : la vague met 20 min à l'atteindre pour un 1er tour de 40 min (voir
+    // monsters.lapOneSeconds, vitesse divisée par 2 -- demande utilisateur) -- ce ratio doit être
+    // conservé si l'un des deux change.
     startCol: 250,
   },
   camera: {
@@ -457,11 +458,14 @@ const GameConfig = {
   monsters: {
     // Vitesse PROGRESSIVE (voir demande utilisateur) : le 1er tour complet du cylindre dure
     // lapOneSeconds: à ce rythme, le front met world.startCol / world.cols * lapOneSeconds pour
-    // atteindre l'Entrepôt de départ (10 min avec startCol au milieu du monde, voir world.startCol).
+    // atteindre l'Entrepôt de départ (20 min avec startCol au milieu du monde, voir world.startCol).
     // Chaque tour suivant est lapSpeedMultiplier fois plus rapide que le précédent (voir
     // Monsters.update) : racine de 2 par défaut, pour que le 3e tour (2 multiplications depuis le
-    // 1er) soit exactement 2x plus rapide, donc 2x plus court (20 min -> 10 min).
-    lapOneSeconds: 1200, // 20 minutes
+    // 1er) soit exactement 2x plus rapide, donc 2x plus court (40 min -> 20 min).
+    // Doublé (donc vitesse divisée par 2, demande utilisateur explicite) par rapport à la valeur
+    // d'origine (1200s/20min) -- ce doublement s'applique uniformément à TOUS les tours (voir
+    // Monsters.update : speedCols = cols/lapOneSeconds, un facteur constant), pas seulement au 1er.
+    lapOneSeconds: 2400, // 40 minutes (vitesse divisée par 2)
     lapSpeedMultiplier: Math.SQRT2,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
     // compacte plutôt qu'une simple ligne.
