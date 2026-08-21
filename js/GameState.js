@@ -236,6 +236,48 @@ const GameState = {
     this._spawnBlobs('tree', cfg.blobCountTree, cfg);
     this._spawnBlobs('stone', cfg.blobCountStone, cfg);
     this._spawnSingleTiles('corpse', cfg.corpseCount, cfg);
+    this._ensureStartingVisibility(cfg);
+  },
+
+  // Anti-softlock (demande utilisateur explicite) : garantit qu'au moins une case de bois ET une
+  // case de pierre sont dans la ZONE D'ACTION de l'Entrepôt de départ dès le lancement (pas
+  // seulement visibles dans le brouillard de guerre, un rayon plus large mais inutile si aucun
+  // Camp posé à portée ne peut jamais expédier jusqu'à l'Entrepôt -- voir demande utilisateur
+  // explicite). Même rayon que warehouseZoneRadius() (zoneRadiusFor('warehouse'), SANS la marge
+  // +2 de computeRevealedTiles) : la portée réelle à laquelle un Camp de Bûcheron/Mineur posé là
+  // peut relier l'Entrepôt. Les blobs ci-dessus sont placés au hasard sur toute la carte -- rien
+  // ne garantissait qu'un joueur ait ne serait-ce qu'UNE case de chaque ressource exploitable
+  // sans déjà avoir étendu son réseau de routes au petit bonheur. Appelé après _spawnBlobs, donc
+  // ce filet de sécurité ne s'active que si le hasard n'a vraiment rien mis à portée.
+  _ensureStartingVisibility(cfg) {
+    const startCol = GameConfig.world.startCol;
+    const startRow = Math.floor(this.rows / 2);
+    const actionRadius = this.warehouseZoneRadius();
+    const ring = HexUtils.hexesInRange(startCol, startRow, actionRadius, this.cols, this.rows);
+
+    for (const type of ['tree', 'stone']) {
+      const alreadyVisible = ring.some((c) => {
+        const t = this.resourceTiles.get(this.key(c.col, c.row));
+        return t && t.type === type;
+      });
+      if (alreadyVisible) continue;
+
+      // Cherche une case libre dans cet anneau visible mais hors dégagement de départ (voir
+      // _withinStartClearance) : quelques tentatives avec une graine aléatoire à chaque fois,
+      // même principe que _spawnBlobs -- la zone est petite, ça suffit presque toujours à
+      // trouver une place pour un blob de taille minimale.
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const cand = ring[Math.floor(Math.random() * ring.length)];
+        if (this._withinStartClearance(cand.col, cfg.startClearance)) continue;
+        const blobTiles = this._growBlob(cand.col, cand.row, cfg.blobSizeMin, cfg.startClearance);
+        if (blobTiles.length === 0) continue;
+        for (const t of blobTiles) {
+          const amount = cfg[type].amountMin + Math.floor(Math.random() * (cfg[type].amountMax - cfg[type].amountMin + 1));
+          this.resourceTiles.set(this.key(t.col, t.row), { type, amount });
+        }
+        break;
+      }
+    }
   },
 
   // Cadavre de monstre (voir resourceNodes.corpseCount/buildings.recycler) : contrairement aux
