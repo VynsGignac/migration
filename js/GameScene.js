@@ -159,6 +159,12 @@ class GameScene extends Phaser.Scene {
   // chaque frame (voir redrawTileArt), affiché via la uiCamera (zoom fixe à 1, jamais déplacée)
   // pour ne pas subir un second zoom en plus de celui déjà appliqué à la main dans ce calcul.
   createTileArtLayer() {
+    // Même garde que hexTerrainTile (voir createTerrainTileSprite) : sans elle, createCanvas
+    // refusait silencieusement de recréer une texture sous une clé déjà utilisée après un
+    // scene.restart() (voir restartGame) -- tileArtTexture restait undefined, et le premier
+    // redrawTileArt() de la frame suivante plantait sur tex.context, gelant tout le jeu. Bug vécu
+    // pour de vrai : le bouton "Recommencer" de l'écran de défaite semblait ne rien faire.
+    if (this.textures.exists('tileArtLayer')) this.textures.remove('tileArtLayer');
     this.tileArtTexture = this.textures.createCanvas(
       'tileArtLayer', Math.max(1, Math.floor(this.scale.width)), Math.max(1, Math.floor(this.scale.height))
     );
@@ -1067,16 +1073,11 @@ class GameScene extends Phaser.Scene {
     this.gameOverRestartBtn.setPosition(cx, py + panelHeight - 50);
   }
 
-  // Bilan affiché sur l'écran de défaite : uniquement des chiffres déjà disponibles quelque part
-  // (rien de suivi spécialement pour l'occasion), calculés au moment de la défaite seulement --
-  // pas besoin de les tenir à jour en continu.
+  // Bilan affiché sur l'écran de défaite. population/buildings/monstersKilled sont des RECORDS
+  // tenus à jour en continu par GameState (voir _updateMaxStats/reset) -- le MAXIMUM jamais
+  // atteint pendant la partie, pas la valeur au moment de la défaite (qui peut avoir redescendu
+  // depuis, voir la horde/la famine) -- demande utilisateur explicite.
   computeGameOverStats() {
-    let population = 0, buildings = 0;
-    for (const [, tile] of GameState.tiles) {
-      if (tile.type === 'ruin') continue;
-      buildings++;
-      if (tile.population) population += tile.population;
-    }
     let techLevels = 0;
     for (const [, level] of GameState.unlockedTech) techLevels += level;
 
@@ -1088,7 +1089,12 @@ class GameScene extends Phaser.Scene {
     const mm = Math.floor(totalSeconds / 60), ss = totalSeconds % 60;
     const time = `${mm}:${String(ss).padStart(2, '0')}`;
 
-    return { time, population, buildings, laps, techLevels };
+    return {
+      time, laps, techLevels,
+      population: GameState.maxPopulation,
+      buildings: GameState.maxBuildings,
+      monstersKilled: GameState.monstersKilled,
+    };
   }
 
   // Déclenché depuis update() dès qu'il ne reste plus aucun Entrepôt (voir GameState.
@@ -1103,8 +1109,9 @@ class GameScene extends Phaser.Scene {
     const stats = this.computeGameOverStats();
     this.gameOverStatsText.setText(
       `Temps de survie : ${stats.time}\n`
-      + `Population totale : ${stats.population}\n`
-      + `Bâtiments construits : ${stats.buildings}\n`
+      + `Population maximale : ${stats.population}\n`
+      + `Bâtiments construits (max, hors routes) : ${stats.buildings}\n`
+      + `Monstres tués : ${stats.monstersKilled}\n`
       + `Tours de la horde survécus : ${stats.laps}\n`
       + `Niveaux de recherche débloqués : ${stats.techLevels}`
     );
@@ -2110,6 +2117,12 @@ class GameScene extends Phaser.Scene {
 
     for (const [key, tile] of GameState.tiles) {
       if (this.buildingTileArtKeys[tile.type]) continue;
+      // Une ruine ne révèle rien par elle-même (zoneRadiusFor('ruin') === null, contrairement à
+      // un bâtiment opérationnel toujours dans sa PROPRE zone) : elle peut donc sortir du
+      // brouillard de guerre si rien d'autre ne couvre encore cette case -- ne doit alors plus
+      // être visible du tout (demande utilisateur explicite ; voir aussi GameState.harvestRuin,
+      // qui refuse également de la piller dans ce cas).
+      if (tile.type === 'ruin' && !GameState.revealedTiles.has(key)) continue;
       const [col, row] = key.split(',').map(Number);
       const color = tile.type === 'ruin' ? GameConfig.colors.ruin : GameConfig.buildings[tile.type].color;
 
@@ -2712,7 +2725,14 @@ class GameScene extends Phaser.Scene {
       if (tile.type !== 'empty' && tile.type !== 'ruin') {
         this.selectedBuildingKey = GameState.key(wrappedCol, row);
       } else if (tile.type === 'ruin') {
-        this.infoPanelOverrideText = 'Ruines (reprends pour piller).';
+        // Même conditions que le pillage réel (voir GameState.harvestRuin/hasMonsterOn) : pas de
+        // texte du tout si hors du brouillard (invisible de toute façon), message dédié si un
+        // monstre est dessus.
+        if (GameState.hasMonsterOn(wrappedCol, row)) {
+          this.infoPanelOverrideText = 'Ruines : un monstre est dessus, impossible de piller.';
+        } else if (GameState.revealedTiles.has(GameState.key(wrappedCol, row))) {
+          this.infoPanelOverrideText = 'Ruines (reprends pour piller).';
+        }
       } else {
         const resTile = GameState.getResourceTile(wrappedCol, row);
         if (resTile) {
@@ -2729,9 +2749,20 @@ class GameScene extends Phaser.Scene {
 
     const tile = GameState.getTile(wrappedCol, row);
     if (tile.type === 'ruin') {
+      // Hors du brouillard de guerre ou monstre dessus (demande utilisateur explicite) :
+      // GameState.harvestRuin refuse déjà de piller dans ces cas (renvoie null) -- une ruine hors
+      // du brouillard n'est de toute façon plus dessinée (voir redrawBuildings), donc pas
+      // vraiment "tapable" en pratique, mais on reste défensif ici aussi.
+      if (GameState.hasMonsterOn(wrappedCol, row)) {
+        this.showToast('Un monstre est sur cette case : impossible de piller.');
+        this.redrawActionZone();
+        return;
+      }
       const loot = GameState.harvestRuin(wrappedCol, row);
-      this.showToast(`+${this.formatResources(loot, true)} (ruines)`);
-      this.infoPanelOverrideText = 'Ruines pillées.';
+      if (loot) {
+        this.showToast(`+${this.formatResources(loot, true)} (ruines)`);
+        this.infoPanelOverrideText = 'Ruines pillées.';
+      }
       this.redrawActionZone();
       return;
     }

@@ -47,6 +47,12 @@ const GameState = {
   // computeRevealedTiles) : plus restreint que `dirty` (qui change aussi à chaque tick de
   // production), pour ne recalculer le brouillard de guerre que quand il peut vraiment changer.
   buildingsDirty: true,
+  // Records de la partie (voir reset() pour le détail) : le MAXIMUM jamais atteint, affiché sur
+  // l'écran de défaite (voir GameScene.computeGameOverStats, demande utilisateur explicite) --
+  // PAS la valeur au moment de la défaite, qui peut avoir redescendu depuis.
+  maxPopulation: 0,
+  maxBuildings: 0,
+  monstersKilled: 0,
 
   key(col, row) {
     return col + ',' + row;
@@ -945,6 +951,7 @@ const GameState = {
         target.hp -= this.towerDamage(def);
         if (target.hp <= 0) {
           target.alive = false;
+          this.monstersKilled++;
           this._maybeDropCorpse(target);
         }
         this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
@@ -954,6 +961,23 @@ const GameState = {
     this._spawnShipments();
     this._spawnWarehouseBread();
     this._spawnWarehouseConstructionDeliveries();
+    this._updateMaxStats();
+  },
+
+  // Records de la partie (voir reset()/demande utilisateur explicite) : population et nombre de
+  // bâtiments (chantiers et routes exclus -- seulement ce qui est vraiment "construit") observés
+  // CE tick, comparés au maximum déjà connu. Appelé une fois par tick de production plutôt qu'à
+  // chaque frame : la population/le nombre de bâtiments ne changent pas plus vite que ça de toute
+  // façon (croissance/construction), inutile de reparcourir tiles à 60 i/s pour ça.
+  _updateMaxStats() {
+    let population = 0, buildings = 0;
+    for (const [, tile] of this.tiles) {
+      if (tile.type === 'road' || tile.type === 'ruin' || tile.underConstruction) continue;
+      buildings++;
+      if (tile.population) population += tile.population;
+    }
+    if (population > this.maxPopulation) this.maxPopulation = population;
+    if (buildings > this.maxBuildings) this.maxBuildings = buildings;
   },
 
   // Vrai si au moins une case voisine est une route (condition pour qu'un Donjon ou une
@@ -1096,6 +1120,18 @@ const GameState = {
       }
     }
     return closest;
+  },
+
+  // Vrai si un monstre vivant occupe PRÉCISÉMENT cette case (voir _findMonsterInRange ci-dessus
+  // pour la même conversion position continue -> colonne) -- utilisé par harvestRuin (demande
+  // utilisateur explicite : une ruine sous un monstre ne doit pas être pillable).
+  hasMonsterOn(col, row) {
+    const colWidth = GameConfig.hex.size * 1.5;
+    for (const m of Monsters.list) {
+      if (!m.alive || m.row !== row) continue;
+      if (HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols) === col) return true;
+    }
+    return false;
   },
 
   // Cadavre de monstre (voir resourceNodes.corpse/buildings.recycler/config.monsters.
@@ -1391,10 +1427,16 @@ const GameState = {
     return false;
   },
 
+  // Renvoie null (rien pillé) sans qu'il ne se passe rien si la case n'est pas une ruine, si elle
+  // est hors du brouillard de guerre, ou si un monstre est actuellement dessus (demande
+  // utilisateur explicite) -- voir GameScene.redrawBuildings pour le pendant visuel (une ruine
+  // hors du brouillard ne doit même plus être dessinée).
   harvestRuin(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
     if (!tile || tile.type !== 'ruin') return null;
+    if (!this.revealedTiles.has(key)) return null;
+    if (this.hasMonsterOn(col, row)) return null;
     const loot = tile.ruinLoot || {};
     for (const res in loot) this.resources[res] = (this.resources[res] || 0) + loot[res];
     this.tiles.delete(key);
@@ -1425,6 +1467,12 @@ const GameState = {
     this.universityZone = new Set();
     this.dirty = true;
     this.buildingsDirty = true;
+    // Records de la partie (voir _updateMaxStats/GameScene.computeGameOverStats, demande
+    // utilisateur explicite) : le MAXIMUM jamais atteint, pas la valeur au moment de la défaite
+    // (population/bâtiments peuvent avoir redescendu depuis, voir la horde/la famine).
+    this.maxPopulation = 0;
+    this.maxBuildings = 0;
+    this.monstersKilled = 0;
   },
 
   // Instantané complet de l'état sauvegardable (tout ce qui n'est pas dérivable de GameConfig).
@@ -1437,6 +1485,9 @@ const GameState = {
       shipments: this.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) })),
       nextShipmentId: this.nextShipmentId,
       unlockedTech: Array.from(this.unlockedTech.entries()),
+      maxPopulation: this.maxPopulation,
+      maxBuildings: this.maxBuildings,
+      monstersKilled: this.monstersKilled,
     };
   },
 
@@ -1446,6 +1497,10 @@ const GameState = {
     this.resourceTiles = new Map(data.resourceTiles.map(([k, t]) => [k, { ...t }]));
     this.shipments = data.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) }));
     this.nextShipmentId = data.nextShipmentId;
+    // || 0 : compatible avec les sauvegardes d'avant ces records (voir demande utilisateur).
+    this.maxPopulation = data.maxPopulation || 0;
+    this.maxBuildings = data.maxBuildings || 0;
+    this.monstersKilled = data.monstersKilled || 0;
     // Compatible avec l'ancien format (liste d'ids, sans niveau — voir l'ancien unlockedTech: Set) :
     // une entrée qui n'est pas déjà une paire [id, niveau] est traitée comme le niveau 1.
     this.unlockedTech = new Map((data.unlockedTech || []).map(e => Array.isArray(e) ? e : [e, 1]));
