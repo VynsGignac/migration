@@ -432,11 +432,15 @@ class GameScene extends Phaser.Scene {
           return sum + (res && res.type === def.resource ? res.amount : 0);
         }, 0);
       lines.push(`Ressource à proximité : ${Math.round(nearby)}`);
-      lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
       if (tile.type === 'recycler') {
+        // Pas d'outputBuffer significatif ici (voir GameState.tickProduction, cas spécial
+        // "recycler") : le Codex est versé d'un coup dès qu'un cadavre est épuisé, rien à
+        // afficher comme stock en attente d'expédition.
+        lines.push('10 Codex par cadavre recyclé (20 avec Imprimerie).');
         lines.push('Fonctionne seul, sans main-d\'œuvre (toujours à pleine efficacité).');
         lines.push('Codex versé directement au stock central (pas de livraison par la route).');
       } else {
+        lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
         lines.push(this.laborStatusLine(col, row, def));
       }
     } else if (def.kind === 'processor') {

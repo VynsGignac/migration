@@ -52,10 +52,10 @@ const GameConfig = {
     // Stock de départ, volontairement généreux : les premiers blobs de ressources peuvent être
     // loin de l'Entrepôt de départ (voir world.cols/resourceNodes.startClearance). Ce coussin doit suffire à
     // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
-    // codex volontairement énorme (voir demande utilisateur) : à terme les Codex se récupèrent sur
-    // les cadavres de monstres tués (pas encore implémenté), en attendant les recherches doivent
-    // rester quasi gratuites.
-    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, codex: 9999 },
+    // codex modeste (voir demande utilisateur) : les Codex se récupèrent maintenant pour de vrai
+    // sur les cadavres de monstres recyclés (voir buildings.recycler, 10 par cadavre) -- un petit
+    // coussin de départ suffit à lancer les premières recherches avant d'avoir un Recycleur actif.
+    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, codex: 50 },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
   // qui voyage sur les routes, pour chaque ressource.
@@ -70,11 +70,10 @@ const GameConfig = {
     // bâtiment qui la consomme, s'accumule simplement dans le stock central pour l'instant.
     ore: { long: 'Minerai', short: 'Minerai', color: 0x8a6d4f },
     // Monnaie des recherches (voir techTree.researchCostPerLevel), globale et jamais transportée
-    // sur les routes (directement dépensée/gagnée dans le stock central) : à terme récupérée sur
-    // les cadavres de monstres tués (pas encore implémenté, voir demande utilisateur) ; en
-    // attendant le stock de départ est volontairement énorme (voir resources.starting) pour que
-    // les recherches restent quasi gratuites. Imprimerie (voir techTree.nodes.rec_imprimerie)
-    // bonifiera cette collecte, mais reste sans effet tant qu'elle n'existe pas.
+    // sur les routes (directement dépensée/gagnée dans le stock central) : récupérée en recyclant
+    // des cadavres de monstres (voir buildings.recycler, 10 Codex par cadavre, 20 avec Imprimerie
+    // -- voir techTree.nodes.rec_imprimerie). Le stock de départ (voir resources.starting) n'est
+    // qu'un petit coussin pour les toutes premières recherches.
     codex: { long: 'Codex', short: 'Codex', color: 0x6f5fa3 },
   },
   // Transport des ressources le long des routes.
@@ -196,11 +195,12 @@ const GameConfig = {
     },
     // Récolte les cadavres de monstre (voir resourceNodes.corpse/demande utilisateur), rares et
     // dispersés sur la carte plutôt qu'en blobs. Un extracteur classique (même mécanique que
-    // Camp de Bûcheron/Mineur, voir tickProduction), MAIS sans linkTargets : le Codex ne se
-    // transporte jamais sur les routes (voir resourceLabels.codex) -- chaque tick, tout
-    // outputBuffer accumulé ici est versé directement au stock central (cas spécial dans
-    // tickProduction, juste après celui du Tunnelier/minerai, même principe). extractRate = 1/60 :
-    // un cadavre (amount toujours 1) prend environ 1 minute à recycler à pleine main-d'œuvre.
+    // Camp de Bûcheron/Mineur, voir tickProduction), MAIS sans linkTargets ni outputBuffer : le
+    // Codex ne se transporte jamais sur les routes (voir resourceLabels.codex) -- dès qu'une case
+    // de cadavre est entièrement épuisée, 10 Codex sont versés d'un coup au stock central (20 avec
+    // une chance liée à Imprimerie, voir techTree.nodes.rec_imprimerie), cas spécial dans
+    // tickProduction juste après celui du Tunnelier/minerai. extractRate = 1/60 : un cadavre
+    // (amount toujours 1) prend environ 1 minute à recycler à pleine main-d'œuvre.
     recycler: {
       name: 'Recycleur', cost: { planks: 3, stoneBlocks: 3 }, color: 0x6b1f3a,
       kind: 'extractor', resource: 'corpse', outputResource: 'codex',
@@ -369,9 +369,11 @@ const GameConfig = {
       },
       rec_imprimerie: {
         name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162,
-        // Sans effet actif pour l'instant : s'applique à la récolte de Codex sur les monstres
-        // vaincus (voir resourceLabels.codex), pas encore implémentée (voir demande utilisateur).
-        description: 'Lors de la récupération de Codex sur les monstres vaincus, 10 % de chances d\'en récupérer un de plus.',
+        // Voir GameState.tickProduction (section 1, cas spécial "recycler") : un cadavre recyclé
+        // donne normalement 10 Codex d'un coup ; avec cette techno, une chance de DOUBLER ce gain
+        // (20 au lieu de 10) -- pas un simple +1 (demande utilisateur explicite, corrige la
+        // version précédente).
+        description: 'Lors du recyclage d\'un cadavre de monstre (voir buildings.recycler), 10 % de chances de doubler le Codex obtenu (20 au lieu de 10).',
         codexChance: 0.10,
       },
 

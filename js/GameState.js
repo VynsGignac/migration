@@ -728,6 +728,7 @@ const GameState = {
       ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
     const forestierUnlocked = this.isTechUnlocked('ind_forestier');
     const tunnelierChance = this.isTechUnlocked('ind_tunnelier') ? GameConfig.techTree.nodes.ind_tunnelier.oreChance : 0;
+    const imprimerieChance = this.isTechUnlocked('rec_imprimerie') ? GameConfig.techTree.nodes.rec_imprimerie.codexChance : 0;
     const alphabetisationLevel = this.techLevel('rec_alphabetisation');
     const alphabetisationBonus = alphabetisationLevel > 0
       ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
@@ -763,10 +764,25 @@ const GameState = {
         const take = Math.min(toExtract, resTile.amount);
         resTile.amount -= take;
         toExtract -= take;
-        tile.outputBuffer += take;
+        // Recycleur exclu : pas d'outputBuffer à faire fructifier (voir plus bas, le Codex est
+        // versé d'un coup à la case de cadavre épuisée, pas accumulé fraction par fraction) --
+        // sinon il finirait par plafonner sur outputCap après quelques cadavres et se bloquer.
+        if (tile.type !== 'recycler') tile.outputBuffer += take;
         extracted += take;
         this.dirty = true;
-        if (resTile.amount <= 0.0001) this.resourceTiles.delete(resKey);
+        if (resTile.amount <= 0.0001) {
+          this.resourceTiles.delete(resKey);
+          // Cadavre entièrement recyclé (voir buildings.recycler/demande utilisateur explicite) :
+          // 10 Codex d'un coup, doublés (20) avec une chance liée à Imprimerie -- PAS un simple
+          // +1 comme l'ancienne version (voir techTree.nodes.rec_imprimerie, description mise à
+          // jour en conséquence). Un vrai jet UNIQUE par cadavre, pas une accumulation fractionnée
+          // qui aurait lissé la variance au fil des ticks.
+          if (tile.type === 'recycler') {
+            const doubled = imprimerieChance > 0 && Math.random() < imprimerieChance;
+            this.resources.codex += doubled ? 20 : 10;
+            this.dirty = true;
+          }
+        }
       }
 
       // Forestier : le Camp de Bûcheron replante immédiatement ce qu'il vient d'abattre, sur une
@@ -787,16 +803,6 @@ const GameState = {
       // entrepôt plutôt que d'exiger tout un second circuit de livraison pour un simple bonus.
       if (extracted > 0 && tile.type === 'minerCamp' && tunnelierChance > 0 && Math.random() < tunnelierChance) {
         this.resources.ore += extracted;
-        this.dirty = true;
-      }
-
-      // Recycleur : même principe que le Tunnelier ci-dessus -- le Codex ne se transporte jamais
-      // sur les routes (voir buildings.recycler/resourceLabels.codex), donc tout outputBuffer
-      // accumulé ici est versé directement au stock central plutôt que d'attendre un linkTargets
-      // (que ce bâtiment n'a d'ailleurs pas).
-      if (tile.type === 'recycler' && tile.outputBuffer > 0) {
-        this.resources.codex += tile.outputBuffer;
-        tile.outputBuffer = 0;
         this.dirty = true;
       }
     }
