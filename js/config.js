@@ -84,7 +84,7 @@ const GameConfig = {
   // Transport des ressources le long des routes.
   logistics: {
     shipSpeed: 2, // cases par seconde
-    shipBatchSize: 3, // quantité expédiée par voyage
+    shipBatchSize: 5, // quantité expédiée par voyage (demande utilisateur explicite, était 3)
     // Portée par défaut à laquelle un producteur peut trouver un Entrepôt/une Université, ET
     // base de la zone d'action RÉELLE de l'Entrepôt (voir warehouseExtraRange ci-dessous, séparé
     // exprès : agrandir seulement l'Entrepôt sans toucher à la portée des autres bâtiments).
@@ -135,12 +135,13 @@ const GameConfig = {
   // activeBuildCategory) : la liste à plat est devenue trop longue pour tenir sans scroller une
   // fois la Tour de Guet ajoutée (voir demande utilisateur). L'ordre des clés = l'ordre des
   // onglets ; l'ordre de "ids" = l'ordre dans la liste de cet onglet. Château n'y figure pas : il
-  // ne se construit pas depuis ce menu (voir buildings.castle).
+  // ne se construit pas depuis ce menu (voir buildings.castle). Pas d'onglet "Route" (supprimé,
+  // demande utilisateur explicite : il ne contenait QUE elle) -- 'road' est injecté directement
+  // dans la liste de boutons quel que soit l'onglet actif, voir GameScene.layoutHud/buttonIds.
   buildingCategories: {
     production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery', 'recycler'] },
     civil: { label: 'Civil', ids: ['warehouse', 'university', 'house'] },
     defense: { label: 'Défense', ids: ['donjon', 'watchtower'] },
-    route: { label: 'Route', ids: ['road'] },
   },
   // Chaque bâtiment producteur a son propre stock local (inputBuffer/outputBuffer), pas un
   // pool global : les ressources doivent être physiquement acheminées d'un bâtiment à l'autre.

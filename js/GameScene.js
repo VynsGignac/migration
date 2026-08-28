@@ -297,6 +297,42 @@ class GameScene extends Phaser.Scene {
     const radius = GameState.zoneRadiusFor(type);
     if (radius == null) return;
 
+    // Entrepôt : portée réelle PAR LA ROUTE (demande utilisateur explicite), pas un cercle à vol
+    // d'oiseau -- un Entrepôt ne livre/ne reçoit QUE ce qui est relié par des routes (voir
+    // _spawnWarehouseBread/_spawnWarehouseConstructionDeliveries/_spawnShipments, tous des BFS le
+    // long des routes, voir GameState.roadReachableFrom qui reprend la même règle de traversée).
+    // Petit point sur chaque route atteignable, contour (sans remplir, pour ne pas cacher son
+    // icône/état) sur chaque bâtiment atteignable.
+    if (type === 'warehouse') {
+      const { roadCells, buildingCells } = GameState.roadReachableFrom(col, row, radius);
+      for (let copy = -1; copy <= 1; copy++) {
+        const offsetX = copy * this.worldWidthPx;
+        g.fillStyle(0x4fd1ff, 0.5);
+        for (const key of roadCells) {
+          const [rc, rr] = key.split(',').map(Number);
+          const { x, y } = HexUtils.offsetToPixel(rc, rr, this.hexSize);
+          const pts = HexUtils.corners(x + offsetX, y, this.hexSize * 0.45);
+          g.beginPath();
+          g.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+          g.closePath();
+          g.fillPath();
+        }
+        g.lineStyle(3, 0x4fd1ff, 0.95);
+        for (const key of buildingCells) {
+          const [bc, br] = key.split(',').map(Number);
+          const { x, y } = HexUtils.offsetToPixel(bc, br, this.hexSize);
+          const pts = HexUtils.corners(x + offsetX, y, this.hexSize * 0.92);
+          g.beginPath();
+          g.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+          g.closePath();
+          g.strokePath();
+        }
+      }
+      return;
+    }
+
     const cells = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
     // Remplissage renforcé (0.15 -> 0.28, demande utilisateur explicite) : une case de ressource
     // très entamée se rend déjà très sombre/transparente (voir redrawTileArt, alpha jusqu'à 0.35
@@ -1464,8 +1500,11 @@ class GameScene extends Phaser.Scene {
 
     const categoryIds = Object.keys(GameConfig.buildingCategories);
     const activeCategoryIds = GameConfig.buildingCategories[this.activeBuildCategory].ids;
+    // 'road' toujours inclus, quel que soit l'onglet actif (demande utilisateur explicite : plus
+    // d'onglet "Route" séparé, qui ne contenait QUE elle -- accès direct depuis n'importe quelle
+    // catégorie, toujours en premier grâce à l'ordre de buildIds, voir buildHud).
     const buttonIds = Object.keys(this.buildButtons)
-      .filter((id) => this.isBuildingUnlocked(id) && activeCategoryIds.includes(id));
+      .filter((id) => this.isBuildingUnlocked(id) && (id === 'road' || activeCategoryIds.includes(id)));
     // Cache explicitement tout bouton qui n'est PAS dans la catégorie active : les boucles PC/
     // mobile plus bas ne font que .setVisible(true) sur les ids DE buttonIds, elles ne touchent
     // jamais à ceux d'une autre catégorie -- sans ce passage, changer d'onglet empilait les

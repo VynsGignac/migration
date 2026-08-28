@@ -478,6 +478,45 @@ const GameState = {
     return Infinity;
   },
 
+  // BFS le long des ROUTES uniquement (même règle de traversée que findBestPath : seule une route
+  // sert de relais, un bâtiment est une case atteignable mais n'en prolonge jamais le chemin),
+  // mais collecte TOUT ce qui est atteignable en `maxRange` pas plutôt qu'un seul meilleur
+  // candidat -- utilisé pour visualiser la vraie portée d'un Entrepôt (voir GameScene.
+  // redrawActionZone, demande utilisateur explicite : "une indication qui indique sur les routes
+  // uniquement les bâtiments à portée", plus fidèle qu'un simple cercle de cases à vol d'oiseau,
+  // qui peut englober des bâtiments non reliés ou exclure des bâtiments reliés par une route
+  // sinueuse plus longue que le rayon à vol d'oiseau).
+  roadReachableFrom(fromCol, fromRow, maxRange) {
+    const roadCells = new Set();
+    const buildingCells = new Set();
+    const visited = new Set([this.key(fromCol, fromRow)]);
+    let frontier = [{ col: fromCol, row: fromRow }];
+
+    for (let step = 0; step < maxRange; step++) {
+      const next = [];
+      for (const cur of frontier) {
+        for (const n of HexUtils.neighbors(cur.col, cur.row)) {
+          if (n.row < 0 || n.row >= this.rows) continue;
+          const wrappedCol = HexUtils.wrapCol(n.col, this.cols);
+          const key = this.key(wrappedCol, n.row);
+          if (visited.has(key)) continue;
+          visited.add(key);
+
+          const tile = this.tiles.get(key);
+          if (!tile) continue;
+          if (tile.type === 'road') {
+            roadCells.add(key);
+            next.push({ col: n.col, row: n.row });
+          } else {
+            buildingCells.add(key);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return { roadCells, buildingCells };
+  },
+
   // Répartit les habitants de toutes les Maisons vers les bâtiments de production (extracteurs,
   // processeurs, tours) à portée : un habitant = un poste dans un seul bâtiment (jamais compté deux fois).
   // Pour chaque Maison, ses habitants sont affectés un par un aux bâtiments à laborRadius cases,
