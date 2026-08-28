@@ -298,8 +298,12 @@ class GameScene extends Phaser.Scene {
     if (radius == null) return;
 
     const cells = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
+    // Remplissage renforcé (0.15 -> 0.28, demande utilisateur explicite) : une case de ressource
+    // très entamée se rend déjà très sombre/transparente (voir redrawTileArt, alpha jusqu'à 0.35
+    // seulement) -- un remplissage trop faible par-dessus se fondait dans ce fond assombri au lieu
+    // de rester nettement bleu, rendant la zone difficile à distinguer là où elle compte le plus.
     g.lineStyle(2, 0x4fd1ff, 0.9);
-    g.fillStyle(0x4fd1ff, 0.15);
+    g.fillStyle(0x4fd1ff, 0.28);
     for (const cell of cells) {
       for (let copy = -1; copy <= 1; copy++) {
         const offsetX = copy * this.worldWidthPx;
@@ -919,6 +923,10 @@ class GameScene extends Phaser.Scene {
     this.techTreeCamX = 0;
     this.techTreeCamY = 0;
     this.techTreePanDragging = false;
+    // Distingue un tap dans le vide (désélectionne, voir onPointerUp) d'un glisser ou d'un clic
+    // sur un nœud (voir onPointerDown/onTechNodeClick) -- demande utilisateur explicite.
+    this.techTreeDragMoved = 0;
+    this.techTreeNodeClickedThisPointer = false;
     this.techTreeSelectedId = null;
 
     this.techTreeOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.75)
@@ -1351,6 +1359,9 @@ class GameScene extends Phaser.Scene {
   // updateTechTreeBubble) sans le débloquer — le déblocage ne se fait qu'en validant explicitement
   // via le bouton "Rechercher" (voir researchSelectedTech).
   onTechNodeClick(id) {
+    // Voir onPointerUp : empêche le gestionnaire global (qui s'exécute juste après celui-ci pour
+    // le même relâchement) de désélectionner immédiatement ce nœud qu'on vient tout juste de choisir.
+    this.techTreeNodeClickedThisPointer = true;
     this.techTreeSelectedId = id;
     this.refreshTechTree();
     this.updateTechTreeBubble();
@@ -1364,6 +1375,10 @@ class GameScene extends Phaser.Scene {
     if (!id || !GameState.canResearchTech(id)) return;
     GameState.researchTech(id);
     this.refreshTechTree();
+    // La bulle disparaît une fois la recherche faite (demande utilisateur explicite) plutôt que
+    // de rester affichée à mettre à jour son propre état -- désélectionne le nœud avant de
+    // rafraîchir la bulle, qui se masque donc entièrement (voir updateTechTreeBubble, id === null).
+    this.techTreeSelectedId = null;
     this.updateTechTreeBubble();
     // Au cas où cette recherche débloque un bâtiment (voir isBuildingUnlocked) : le menu de
     // construction, masqué derrière ce panneau, doit déjà être à jour au moment où on le referme.
@@ -1958,7 +1973,15 @@ class GameScene extends Phaser.Scene {
       const wrappedCol = HexUtils.wrapCol(col, this.cols);
       for (let row = rowMin; row <= rowMax; row++) {
         const key = GameState.key(wrappedCol, row);
-        if (row >= 0 && row < this.rows && (GameState.revealedTiles.has(key) || GameState.tiles.has(key))) continue;
+        // Uniquement GameState.revealedTiles (PAS tiles.has(key) en plus, retiré -- bug corrigé,
+        // demande utilisateur explicite) : une Route n'a elle-même aucun rayon de révélation
+        // (zoneRadiusFor('route') === null), donc la poser dans le brouillard ne devrait RIEN
+        // révéler -- l'ancienne condition levait quand même le brouillard sur sa propre case du
+        // seul fait qu'une case existe désormais dans `tiles`, sans lien avec la visibilité
+        // réelle. Tout bâtiment qui révèle vraiment (extracteur/tour/Entrepôt/Université/Maison)
+        // le fait déjà via computeRevealedTiles, qui couvre toujours sa PROPRE case (rayon >= 0) :
+        // rien ne dépend plus de cette redondance.
+        if (row >= 0 && row < this.rows && GameState.revealedTiles.has(key)) continue;
         // offsetToPixel avec la colonne RÉELLE (non wrappée, potentiellement hors [0,cols)) donne
         // directement la bonne position écran à ce niveau de scroll, sans recourir aux 3 copies
         // utilisées ailleurs pour les objets en nombre fini (voir redrawBuildings) — la clé wrappée
@@ -2522,6 +2545,12 @@ class GameScene extends Phaser.Scene {
         this.techTreePanLastX = pointer.x;
         this.techTreePanLastY = pointer.y;
       }
+      // Voir onPointerUp/onTechNodeClick : distingue un tap dans le vide (déselectionne, ferme la
+      // bulle -- demande utilisateur explicite) d'un glisser (navigation) ou d'un tap sur un nœud
+      // (son propre écouteur 'pointerup' met techTreeNodeClickedThisPointer à true avant que ce
+      // gestionnaire global ne s'exécute).
+      this.techTreeDragMoved = 0;
+      this.techTreeNodeClickedThisPointer = false;
       return;
     }
     if (this.isModalOpen()) return;
@@ -2549,6 +2578,7 @@ class GameScene extends Phaser.Scene {
       if (this.techTreePanDragging && pointer.isDown) {
         const dx = pointer.x - this.techTreePanLastX;
         const dy = pointer.y - this.techTreePanLastY;
+        this.techTreeDragMoved = (this.techTreeDragMoved || 0) + Math.abs(dx) + Math.abs(dy);
         this.techTreeCamX -= dx;
         this.techTreeCamY -= dy;
         this.techTreePanLastX = pointer.x;
@@ -2590,6 +2620,14 @@ class GameScene extends Phaser.Scene {
   onPointerUp(pointer) {
     if (this.techTreeOpen) {
       this.techTreePanDragging = false;
+      // Tap dans le vide (pas un glisser, pas un clic sur un nœud -- voir onTechNodeClick, qui
+      // met techTreeNodeClickedThisPointer à true avant que ce gestionnaire global ne s'exécute)
+      // = désélectionne et ferme la bulle (demande utilisateur explicite).
+      if (!this.techTreeNodeClickedThisPointer && (this.techTreeDragMoved || 0) < 6 && this.techTreeSelectedId) {
+        this.techTreeSelectedId = null;
+        this.refreshTechTree();
+        this.updateTechTreeBubble();
+      }
       return;
     }
     if (this.isModalOpen()) return;
@@ -2706,12 +2744,16 @@ class GameScene extends Phaser.Scene {
     }
 
     // Une Université s'ouvre directement en arbre technologique (au lieu du panneau d'info
-    // habituel), que le jeu soit en pause ou non — ouvrir le menu gère lui-même la pause.
+    // habituel), que le jeu soit en pause ou non — ouvrir le menu gère lui-même la pause. PAS
+    // tant qu'elle est encore en chantier (bug corrigé, demande utilisateur explicite) : elle
+    // tombe alors dans la branche générale plus bas, qui affiche l'avancement du chantier comme
+    // n'importe quel autre bâtiment en construction.
     // Sélectionnée comme n'importe quel autre bâtiment (voir redrawActionZone/zoneRadiusFor) pour
     // que sa zone d'action reste visible sur la carte même après avoir refermé l'arbre techno --
     // demande utilisateur : cette zone (même rayon que l'Entrepôt de base) doit être visible pour
     // les recherches qui affectent les bâtiments à portée (voir techTree.nodes.rec_formateur).
-    if (GameState.getTile(wrappedCol, row).type === 'university') {
+    const tappedTile = GameState.getTile(wrappedCol, row);
+    if (tappedTile.type === 'university' && !tappedTile.underConstruction) {
       this.selectedBuildingKey = GameState.key(wrappedCol, row);
       this.redrawActionZone();
       this.openTechTree(wrappedCol, row);

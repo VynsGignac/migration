@@ -108,12 +108,16 @@ const GameConfig = {
     // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
     // au calcul de l'opacité (case bien mûre vs. presque récoltée).
     wheat: { color: 0xdbc245, amountMin: 8, amountMax: 8 },
-    // Cadavre de monstre (voir buildings.recycler/demande utilisateur) : amount toujours 1 --
-    // "une ressource donne un codex", pas un stock qui s'épuise progressivement comme les autres.
+    // Cadavre de monstre (voir buildings.recycler/demande utilisateur) : amount toujours 10 --
+    // pas la vraie quantité de Codex versée (toujours 10, ou 20 avec Imprimerie, voir
+    // tickProduction), juste ce qui permet à la case de décroître visiblement 10 -> 0 pendant la
+    // récolte au lieu de rester bloquée à "0 restant" tout du long (bug corrigé, demande
+    // utilisateur explicite : avec amount=1, Math.round() affichait 0 dès les tout premiers % du
+    // chantier, bien avant que le cadavre ne soit réellement épuisé -- trompeur).
     // edgeRowMargin (demande utilisateur explicite) : aucun cadavre posé à la génération du monde
     // dans les 5 premières/dernières rangées (voir GameState._spawnSingleTiles) -- ne concerne
     // QUE cette génération de départ, pas ceux laissés par un monstre tué (_maybeDropCorpse).
-    corpse: { color: 0x6b1f3a, amountMin: 1, amountMax: 1, edgeRowMargin: 5 },
+    corpse: { color: 0x6b1f3a, amountMin: 10, amountMax: 10, edgeRowMargin: 5 },
     blobCountTree: 150,
     blobCountStone: 100,
     blobSizeMin: 4,
@@ -223,14 +227,16 @@ const GameConfig = {
     // Codex ne se transporte jamais sur les routes (voir resourceLabels.codex) -- dès qu'une case
     // de cadavre est entièrement épuisée, 10 Codex sont versés d'un coup au stock central (20 avec
     // une chance liée à Imprimerie, voir techTree.nodes.rec_imprimerie), cas spécial dans
-    // tickProduction juste après celui du Tunnelier/minerai. extractRate = 1/60 : un cadavre
-    // (amount toujours 1) prend environ 1 minute à recycler à pleine main-d'œuvre.
+    // tickProduction juste après celui du Tunnelier/minerai. extractRate = 10/60 : un cadavre
+    // (resourceNodes.corpse.amountMin/Max = 10, voir plus haut -- juste pour un affichage "10
+    // restant" -> "0" lisible pendant la récolte, PAS la vraie quantité de Codex) prend environ
+    // 1 minute à recycler à pleine main-d'œuvre.
     recycler: {
       // 25 % de 3 planches (0,75, arrondi à 1) transféré en pierre taillée, en plus de son coût
       // en pierre taillée déjà existant.
       name: 'Recycleur', cost: { planks: 2, stoneBlocks: 4 }, color: 0x6b1f3a,
       kind: 'extractor', resource: 'corpse', outputResource: 'codex',
-      extractRadius: 3, extractRate: 1 / 60, outputCap: 3,
+      extractRadius: 3, extractRate: 10 / 60, outputCap: 3,
       // PAS de main-d'œuvre (voir allocateLabor/tickProduction, cas spécial "recycler") :
       // toujours à pleine efficacité, sans dépendre d'habitants à proximité -- ce bâtiment se
       // pose près d'un cadavre isolé, souvent loin de toute Maison (voir demande utilisateur :
