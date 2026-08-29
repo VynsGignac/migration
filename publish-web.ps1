@@ -47,6 +47,21 @@ $sw = $sw -replace "const CACHE_NAME = '[^']*';", "const CACHE_NAME = 'migration
 [System.IO.File]::WriteAllText($swPath, $sw, $utf8NoBom)
 git add $swPath
 
+# Numero de version (voir js/version.js, demande utilisateur explicite) : incremente
+# AUTOMATIQUEMENT le dernier chiffre (patch) a chaque vraie publication -- meme raisonnement/
+# emplacement que le CACHE_NAME ci-dessus (apres le check "rien a publier", pour ne pas bumper
+# sans rien de neuf). Majeur/mineur ne changent que sur demande explicite de l'utilisateur, pas ici.
+$versionPath = Join-Path $root "js\version.js"
+$versionJs = [System.IO.File]::ReadAllText($versionPath, $utf8NoBom)
+if ($versionJs -match "const GameVersion = '(\d+)\.(\d+)\.(\d+)';") {
+  $newPatch = ([int]$matches[3] + 1).ToString("D3")
+  $newVersion = "$($matches[1]).$($matches[2]).$newPatch"
+  $versionJs = $versionJs -replace "const GameVersion = '[^']*';", "const GameVersion = '$newVersion';"
+  [System.IO.File]::WriteAllText($versionPath, $versionJs, $utf8NoBom)
+  git add $versionPath
+  Write-Host "Version : $newVersion" -ForegroundColor DarkGray
+}
+
 Write-Host "3/4 Commit..." -ForegroundColor Cyan
 $date = Get-Date -Format "yyyy-MM-dd HH:mm"
 git commit -m "Mise a jour du site - $date"

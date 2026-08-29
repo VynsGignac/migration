@@ -676,6 +676,15 @@ class GameScene extends Phaser.Scene {
     }).setDepth(1002).setOrigin(1, 0);
     this.uiElements.push(this.chronoText);
 
+    // Numéro de version (voir js/version.js, demande utilisateur explicite) : tout petit, en bas
+    // à gauche de l'ÉCRAN (pas de la colonne PC, pour ne jamais chevaucher la liste de boutons de
+    // construction) -- purement informatif, incrémenté automatiquement à chaque publication (voir
+    // publish-web.ps1).
+    this.versionText = this.add.text(0, 0, 'v' + GameVersion, {
+      font: '10px sans-serif', color: '#ffffff99',
+    }).setDepth(2000).setOrigin(0, 1);
+    this.uiElements.push(this.versionText);
+
     this.buildSaveMenu();
     this.buildTechTree();
     this.buildGameOver();
@@ -1540,6 +1549,10 @@ class GameScene extends Phaser.Scene {
     this.menuButton.setPosition(w - this.menuButton.width - 10, 10);
     this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, 10);
     this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, 10);
+    // Toujours en bas à gauche de l'ÉCRAN entier (pas de la colonne PC), indépendamment de la
+    // mise en page : la colonne PC prend toute la hauteur à gauche, un ancrage relatif à elle
+    // finirait sous la liste de boutons de construction.
+    this.versionText.setPosition(4, h - 4);
 
     const categoryIds = Object.keys(GameConfig.buildingCategories);
     const activeCategoryIds = GameConfig.buildingCategories[this.activeBuildCategory].ids;
