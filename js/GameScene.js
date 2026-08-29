@@ -26,11 +26,6 @@ class GameScene extends Phaser.Scene {
     this.load.image('stoneTile', GameAssets.stoneTile);
     this.load.image('wheatTile', GameAssets.wheatTile);
     this.load.image('roadTile', GameAssets.roadTile);
-    this.load.image('lumberjackCampTile', GameAssets.lumberjackCampTile);
-    this.load.image('minerCampTile', GameAssets.minerCampTile);
-    this.load.image('sawmillTile', GameAssets.sawmillTile);
-    this.load.image('stonecutterTile', GameAssets.stonecutterTile);
-    this.load.image('warehouseTile', GameAssets.warehouseTile);
     this.load.image('woodIcon', GameAssets.woodIcon);
     this.load.image('planksIcon', GameAssets.planksIcon);
     this.load.image('stoneIcon', GameAssets.stoneIcon);
@@ -38,6 +33,22 @@ class GameScene extends Phaser.Scene {
     this.load.image('wheatIcon', GameAssets.wheatIcon);
     this.load.image('breadIcon', GameAssets.breadIcon);
     this.load.image('oreIcon', GameAssets.oreIcon);
+    // Icones de batiment (fond uni + icone -- demande utilisateur explicite, remplace les
+    // anciennes tuiles photo completes de lumberjackCamp/minerCamp/sawmill/stonecutter/warehouse
+    // ET les icones vectorielles dessinees a la main de tous les autres, voir
+    // GameScene.buildingIconKeys/redrawTileArt/redrawBuildings).
+    this.load.image('lumberjackCampIcon', GameAssets.lumberjackCampIcon);
+    this.load.image('warehouseIcon', GameAssets.warehouseIcon);
+    this.load.image('sawmillIcon', GameAssets.sawmillIcon);
+    this.load.image('universityIcon', GameAssets.universityIcon);
+    this.load.image('bakeryIcon', GameAssets.bakeryIcon);
+    this.load.image('castleIcon', GameAssets.castleIcon);
+    this.load.image('donjonIcon', GameAssets.donjonIcon);
+    this.load.image('houseIcon', GameAssets.houseIcon);
+    this.load.image('minerCampIcon', GameAssets.minerCampIcon);
+    this.load.image('stonecutterIcon', GameAssets.stonecutterIcon);
+    this.load.image('watchtowerIcon', GameAssets.watchtowerIcon);
+    this.load.image('farmIcon', GameAssets.farmIcon);
   }
 
   create() {
@@ -91,15 +102,30 @@ class GameScene extends Phaser.Scene {
       this.shotGraphics, this.selectionGraphics, this.ghostGraphics, this.zoneGraphics,
     ];
 
-    // Types de bâtiment (voir js/assets.js) ayant leur propre illustration complète — dessinés par
-    // redrawTileArt, PAS par redrawBuildings (voir plus bas) qui les ignore explicitement.
+    // Route : seul type gardant sa propre illustration COMPLÈTE (pas d'icône dédiée fournie,
+    // voir buildingIconKeys ci-dessous) — dessiné par redrawTileArt, PAS par redrawBuildings
+    // (voir plus bas) qui l'ignore explicitement.
     this.buildingTileArtKeys = {
       road: 'roadTile',
-      lumberjackCamp: 'lumberjackCampTile',
-      minerCamp: 'minerCampTile',
-      sawmill: 'sawmillTile',
-      stonecutter: 'stonecutterTile',
-      warehouse: 'warehouseTile',
+    };
+    // Fond uni (couleur de buildings.xxx.color) + icône (voir js/assets.js, demande utilisateur
+    // explicite) pour tout le reste SAUF Route ci-dessus, Ruine et Recycleur (aucune icône dédiée
+    // fournie pour ces deux derniers -- ils gardent le repli vectoriel, voir redrawBuildings/
+    // drawBuildingIcon). Dessiné par redrawTileArt (canvas 2D, comme les tuiles photo), PAS par
+    // redrawBuildings qui les ignore explicitement lui aussi.
+    this.buildingIconKeys = {
+      lumberjackCamp: 'lumberjackCampIcon',
+      warehouse: 'warehouseIcon',
+      sawmill: 'sawmillIcon',
+      university: 'universityIcon',
+      bakery: 'bakeryIcon',
+      castle: 'castleIcon',
+      donjon: 'donjonIcon',
+      house: 'houseIcon',
+      minerCamp: 'minerCampIcon',
+      stonecutter: 'stonecutterIcon',
+      watchtower: 'watchtowerIcon',
+      farm: 'farmIcon',
     };
 
     // Entrepôt de départ, offert, pour que le joueur ait un réseau à étendre tout de suite. Entouré
@@ -2105,6 +2131,31 @@ class GameScene extends Phaser.Scene {
       ctx.restore();
     };
 
+    // Fond uni (couleur du bâtiment) + icône (voir js/assets.js -- demande utilisateur explicite,
+    // remplace à la fois les anciennes tuiles photo complètes et les icônes vectorielles dessinées
+    // à la main). Icône aussi grosse que possible SANS déborder du hexagone (même marge que
+    // drawTile ci-dessus, size*2.05 -- le clip garantit qu'elle ne dépasse jamais), quitte à
+    // l'étirer de façon non uniforme (demande utilisateur explicite : "tu peux déformer un peu
+    // les images au besoin").
+    const drawIconTile = (col, row, color, iconKey, alpha) => {
+      const { x: wx, y: wy } = HexUtils.offsetToPixel(col, row, this.hexSize);
+      const { x: sx, y: sy } = worldToScreen(wx, wy);
+      const size = this.hexSize * zoom;
+      if (sx < -size - 4 || sx > tex.width + size + 4 || sy < -size - 4 || sy > tex.height + size + 4) return;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      hexPathAt(sx, sy, size);
+      ctx.clip();
+      ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+      ctx.fill();
+      if (iconKey && this.textures.exists(iconKey)) {
+        const img = this.textures.get(iconKey).getSourceImage();
+        const s = size * 2.05;
+        ctx.drawImage(img, sx - s / 2, sy - s / 2, s, s);
+      }
+      ctx.restore();
+    };
+
     const resourceKeyByType = { tree: 'treeTile', stone: 'stoneTile', wheat: 'wheatTile' };
 
     for (let col = colMin; col <= colMax; col++) {
@@ -2160,25 +2211,32 @@ class GameScene extends Phaser.Scene {
         }
         const tile = GameState.tiles.get(key);
         if (tile) {
-          const textureKey = this.buildingTileArtKeys[tile.type];
           // Chantier (voir GameState.placeBuilding) : rendu délavé pour se distinguer d'un
           // bâtiment opérationnel, en attendant ses livraisons.
-          if (textureKey) drawTile(col, row, textureKey, tile.underConstruction ? 0.45 : 1);
+          const alpha = tile.underConstruction ? 0.45 : 1;
+          const textureKey = this.buildingTileArtKeys[tile.type];
+          const iconKey = this.buildingIconKeys[tile.type];
+          if (textureKey) {
+            drawTile(col, row, textureKey, alpha);
+          } else if (iconKey) {
+            drawIconTile(col, row, GameConfig.buildings[tile.type].color, iconKey, alpha);
+          }
         }
       }
     }
   }
 
-  // Redessine les bâtiments/ruines posés (appelé seulement quand GameState.dirty). Une route a sa
-  // propre illustration (voir js/assets.js) et est désormais dessinée par redrawTileArt, pas ici ;
-  // tout le reste reçoit en plus une icône (voir drawBuildingIcon) pour se distinguer d'un coup
-  // d'œil sans dépendre uniquement de la couleur de fond.
+  // Redessine les bâtiments/ruines posés (appelé seulement quand GameState.dirty) qui n'ont PAS
+  // d'icône dédiée (voir buildingTileArtKeys/buildingIconKeys, tous deux dessinés par
+  // redrawTileArt, pas ici) : seuls Ruine et Recycleur en pratique, plus l'icône vectorielle de
+  // secours (voir drawBuildingIcon) pour se distinguer d'un coup d'œil sans dépendre uniquement
+  // de la couleur de fond.
   redrawBuildings() {
     const g = this.buildingsGraphics;
     g.clear();
 
     for (const [key, tile] of GameState.tiles) {
-      if (this.buildingTileArtKeys[tile.type]) continue;
+      if (this.buildingTileArtKeys[tile.type] || this.buildingIconKeys[tile.type]) continue;
       // Une ruine ne révèle rien par elle-même (zoneRadiusFor('ruin') === null, contrairement à
       // un bâtiment opérationnel toujours dans sa PROPRE zone) : elle peut donc sortir du
       // brouillard de guerre si rien d'autre ne couvre encore cette case -- ne doit alors plus
