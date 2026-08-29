@@ -538,10 +538,19 @@ const GameConfig = {
     // chevauchement du tout. sizeFactor (juste en dessous) reste strictement inférieur à cette
     // valeur pour garantir un petit espace visible entre deux gobelins consécutifs.
     depthSpacingFactor: 1.0, // fraction de hexSize.size
+    // Espacement vertical AFFICHÉ entre deux lignes de monstres (voir GameScene.redrawMonsters),
+    // en fraction de hexSize -- demande utilisateur explicite ("beaucoup plus proches, notamment
+    // les lignes entre elles") : DÉCOUPLÉ de la vraie hauteur de rangée du monde (rowHeight =
+    // hexSize*racine(3) ≈ 1.73*hexSize, utilisée avant), qui laissait un très grand vide entre
+    // deux lignes. Purement visuel -- m.row reste la vraie rangée pour le jeu (fog/destruction de
+    // case), seul l'AFFICHAGE se resserre ; la horde n'occupe donc plus toute la hauteur de la
+    // carte, accepté explicitement par l'utilisateur ("pour l'instant"). Reste strictement
+    // supérieur à sizeFactor (juste en dessous) pour ne pas réintroduire de chevauchement vertical.
+    rowSpacingFactor: 0.95,
     // Taille du carré de chaque monstre (voir GameScene.redrawMonsters), en fraction de hexSize --
-    // strictement inférieure à depthSpacingFactor ci-dessus (pas de chevauchement horizontal) ET
-    // à la hauteur d'une rangée (rowHeight = hexSize*racine(3) ≈ 1.73*hexSize, pas de chevauchement
-    // vertical entre rangées) ET tient dans une case sans la dépasser (demande utilisateur explicite).
+    // strictement inférieure à depthSpacingFactor ci-dessus (pas de chevauchement horizontal) ET à
+    // rowSpacingFactor ci-dessus (pas de chevauchement vertical) ET tient dans une case sans la
+    // dépasser (demande utilisateur explicite).
     sizeFactor: 0.85,
     // Vie de départ de chaque monstre (voir GameState.tickProduction, section tir de tour, pour
     // les dégâts infligés par un Donjon) -- demande utilisateur explicite (voir aussi

@@ -2660,34 +2660,50 @@ class GameScene extends Phaser.Scene {
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.lineWidth = 1;
 
+    // Espacement vertical des LIGNES resserré (demande utilisateur explicite : "beaucoup plus
+    // proches, notamment les lignes entre elles"), DÉCOUPLÉ de la vraie hauteur de rangée du
+    // monde (HexUtils.rowHeight, utilisée avant) -- purement visuel, "pour l'instant" (accepté
+    // par l'utilisateur que la horde n'occupe alors plus toute la hauteur de la carte). m.row
+    // reste la VRAIE rangée pour le jeu (brouillard/destruction de case, voir Monsters.update) :
+    // seule la position AFFICHÉE change, pas la logique.
+    const rowSpacing = this.hexSize * GameConfig.monsters.rowSpacingFactor;
+
     for (const m of Monsters.list) {
       if (!m.alive) continue;
       // Brouillard de guerre : un monstre hors de toute zone révélée ne doit pas non plus être
       // visible (voir GameState.revealedTiles) — même logique que pour les ressources naturelles.
       const col = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
       if (!GameState.revealedTiles.has(GameState.key(col, m.row))) continue;
-      const wy = HexUtils.rowHeight(this.hexSize) * (m.row + 0.25);
-      const { x: sx, y: sy } = worldToScreen(m.x, wy);
+      const wy = rowSpacing * (m.row + 0.25);
       const mSize = size * (sizeMultiplierByType[m.type] || 1);
-      const x = sx - mSize / 2, y = sy - mSize / 2;
       const wounded = m.hp < GameConfig.monsters.startingHp;
       const iconKey = iconKeyByType[m.type] || 'goblinIcon';
       const img = this.textures.exists(iconKey) ? this.textures.get(iconKey).getSourceImage() : null;
-      if (img) {
-        ctx.drawImage(img, x, y, mSize, mSize);
-        if (wounded) {
-          ctx.save();
-          ctx.globalCompositeOperation = 'source-atop';
-          ctx.globalAlpha = 0.5;
-          ctx.fillStyle = colorWounded;
+
+      // Monde cylindrique (voir redrawBuildings, même principe) : la caméra peut regarder n'importe
+      // quelle "copie" du monde selon son défilement -- sans essayer les 3, un monstre proche de la
+      // colonne de raccord (0/cols) apparaissait/disparaissait selon le défilement de la caméra au
+      // lieu de rester visible en continu (bug corrigé, signalé par l'utilisateur).
+      for (let copy = -1; copy <= 1; copy++) {
+        const { x: sx, y: sy } = worldToScreen(m.x + copy * this.worldWidthPx, wy);
+        if (sx < -mSize - 4 || sx > this.tileArtTexture.width + mSize + 4 || sy < -mSize - 4 || sy > this.tileArtTexture.height + mSize + 4) continue;
+        const x = sx - mSize / 2, y = sy - mSize / 2;
+        if (img) {
+          ctx.drawImage(img, x, y, mSize, mSize);
+          if (wounded) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = colorWounded;
+            ctx.fillRect(x, y, mSize, mSize);
+            ctx.restore();
+          }
+        } else {
+          // Repli si l'image n'a pas chargé : carré uni comme avant.
+          ctx.fillStyle = wounded ? colorWounded : colorFull;
           ctx.fillRect(x, y, mSize, mSize);
-          ctx.restore();
+          ctx.strokeRect(x, y, mSize, mSize);
         }
-      } else {
-        // Repli si l'image n'a pas chargé : carré uni comme avant.
-        ctx.fillStyle = wounded ? colorWounded : colorFull;
-        ctx.fillRect(x, y, mSize, mSize);
-        ctx.strokeRect(x, y, mSize, mSize);
       }
     }
   }
