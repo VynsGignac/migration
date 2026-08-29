@@ -22,20 +22,37 @@ const Monsters = {
   // rangée (depthSpacingFactor) est volontairement plus petit qu'une case, pour un rendu de horde
   // tassée (voir GameScene.redrawMonsters) — indépendant de la largeur de case réelle utilisée
   // pour la détection de franchissement de colonne dans update() ci-dessous.
+  // Découpe le bloc 30x30 (lignes x profondeur) en une grille 3x3 de blocs 10x10 (voir
+  // GameConfig.monsters.blockSize, demande utilisateur explicite) : un Chef de guerre au centre
+  // de CHAQUE bloc, remplacé par le Seigneur de la horde dans le bloc central (celui du milieu de
+  // la grille 3x3). Mêmes stats que les gobelins pour l'instant (voir demande utilisateur) --
+  // seul le type (donc l'image, voir GameScene.redrawMonsters) change.
   init(gameState) {
     const cfg = GameConfig.monsters;
     const depthSpacing = GameConfig.hex.size * cfg.depthSpacingFactor;
+    const blockSize = cfg.blockSize;
+    const centerLocal = Math.floor((blockSize - 1) / 2);
     this.list = [];
     this.nextId = 1;
     this.totalDistancePx = 0;
     for (let row = 0; row < gameState.rows; row++) {
+      const rowBlock = Math.floor(row / blockSize);
+      const localRow = row % blockSize;
       for (let depth = 0; depth < cfg.depthCount; depth++) {
+        const depthBlock = Math.floor(depth / blockSize);
+        const localDepth = depth % blockSize;
+        let type = 'goblin';
+        if (localRow === centerLocal && localDepth === centerLocal) {
+          const isMiddleBlock = rowBlock === 1 && depthBlock === 1;
+          type = isMiddleBlock ? 'lord' : 'chief';
+        }
         this.list.push({
           id: this.nextId++,
           row,
           x: -depth * depthSpacing,
           hp: cfg.startingHp,
           alive: true,
+          type,
         });
       }
     }

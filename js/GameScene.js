@@ -50,6 +50,8 @@ class GameScene extends Phaser.Scene {
     this.load.image('watchtowerIcon', GameAssets.watchtowerIcon);
     this.load.image('farmIcon', GameAssets.farmIcon);
     this.load.image('goblinIcon', GameAssets.goblinIcon);
+    this.load.image('chiefIcon', GameAssets.chiefIcon);
+    this.load.image('warlordIcon', GameAssets.warlordIcon);
   }
 
   create() {
@@ -2642,14 +2644,18 @@ class GameScene extends Phaser.Scene {
 
     const size = this.hexSize * GameConfig.monsters.sizeFactor * zoom;
     const colWidth = this.hexSize * 1.5;
-    // Image de gobelin (voir js/assets.js, demande utilisateur explicite -- remplace les carrés
-    // unis) plutôt qu'un simple fillRect. Blessé (hp < startingHp) : léger voile orangé PAR-DESSUS
-    // l'image, appliqué UNIQUEMENT là où elle est opaque (globalCompositeOperation 'source-atop',
-    // voir plus bas) -- teinte sa silhouette réelle plutôt qu'un carré autour, reste lisible même
-    // minuscule dézoomé, sans dépendre d'une jauge ou d'une icône séparée.
-    const goblinReady = this.textures.exists('goblinIcon');
-    const goblinImg = goblinReady ? this.textures.get('goblinIcon').getSourceImage() : null;
+    // Image par type (voir js/assets.js/Monsters.init, demande utilisateur explicite -- remplace
+    // les carrés unis) : gobelin normal, Chef de guerre au centre de chaque bloc 10x10, Seigneur
+    // de la horde au centre du bloc du milieu. Chef/Seigneur dessinés un peu plus grands (purement
+    // cosmétique -- mêmes stats que les gobelins pour l'instant, voir demande utilisateur) pour se
+    // distinguer d'un coup d'œil dans la masse.
+    const iconKeyByType = { goblin: 'goblinIcon', chief: 'chiefIcon', lord: 'warlordIcon' };
+    const sizeMultiplierByType = { goblin: 1, chief: 1.4, lord: 1.8 };
     const colorFull = '#' + GameConfig.colors.monster.toString(16).padStart(6, '0');
+    // Blessé (hp < startingHp) : léger voile orangé PAR-DESSUS l'image, appliqué UNIQUEMENT là où
+    // elle est opaque (globalCompositeOperation 'source-atop', voir plus bas) -- teinte sa
+    // silhouette réelle plutôt qu'un carré autour, reste lisible même minuscule dézoomé, sans
+    // dépendre d'une jauge ou d'une icône séparée.
     const colorWounded = '#' + GameConfig.colors.monsterWounded.toString(16).padStart(6, '0');
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.lineWidth = 1;
@@ -2662,23 +2668,26 @@ class GameScene extends Phaser.Scene {
       if (!GameState.revealedTiles.has(GameState.key(col, m.row))) continue;
       const wy = HexUtils.rowHeight(this.hexSize) * (m.row + 0.25);
       const { x: sx, y: sy } = worldToScreen(m.x, wy);
-      const x = sx - size / 2, y = sy - size / 2;
+      const mSize = size * (sizeMultiplierByType[m.type] || 1);
+      const x = sx - mSize / 2, y = sy - mSize / 2;
       const wounded = m.hp < GameConfig.monsters.startingHp;
-      if (goblinImg) {
-        ctx.drawImage(goblinImg, x, y, size, size);
+      const iconKey = iconKeyByType[m.type] || 'goblinIcon';
+      const img = this.textures.exists(iconKey) ? this.textures.get(iconKey).getSourceImage() : null;
+      if (img) {
+        ctx.drawImage(img, x, y, mSize, mSize);
         if (wounded) {
           ctx.save();
           ctx.globalCompositeOperation = 'source-atop';
           ctx.globalAlpha = 0.5;
           ctx.fillStyle = colorWounded;
-          ctx.fillRect(x, y, size, size);
+          ctx.fillRect(x, y, mSize, mSize);
           ctx.restore();
         }
       } else {
         // Repli si l'image n'a pas chargé : carré uni comme avant.
         ctx.fillStyle = wounded ? colorWounded : colorFull;
-        ctx.fillRect(x, y, size, size);
-        ctx.strokeRect(x, y, size, size);
+        ctx.fillRect(x, y, mSize, mSize);
+        ctx.strokeRect(x, y, mSize, mSize);
       }
     }
   }

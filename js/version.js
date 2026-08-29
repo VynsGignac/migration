@@ -6,4 +6,4 @@
 // deux premiers (majeur.mineur) ne changent que sur demande explicite de l'utilisateur.
 // ============================================================
 
-const GameVersion = '0.1.007';
+const GameVersion = '0.1.008';

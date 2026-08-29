@@ -526,6 +526,11 @@ const GameConfig = {
     // compacte plutôt qu'une simple ligne -- 30 (demande utilisateur explicite : 30 lignes ET 30
     // colonnes, voir world.rows pour les lignes).
     depthCount: 30,
+    // Taille de chaque bloc de la grille 3x3 (voir Monsters.init, demande utilisateur explicite :
+    // 30 lignes/30 colonnes divisées en blocs de 10x10) -- un Chef de guerre au centre de chaque
+    // bloc, un Seigneur de la horde au centre du bloc DU MILIEU (rowBlock/depthBlock === 1),
+    // suppose exactement 3 blocs par axe (rows et depthCount doivent rester des multiples de 10).
+    blockSize: 10,
     // Espacement entre deux monstres consécutifs d'une même rangée (voir Monsters.init). Avec le
     // passage à une vraie image de gobelin (voir GameScene.redrawMonsters/js/assets.js), le
     // chevauchement volontairement serré d'avant (carrés unis, un chevauchement ne se voyait pas)
