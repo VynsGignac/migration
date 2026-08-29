@@ -2156,6 +2156,23 @@ class GameScene extends Phaser.Scene {
       ctx.closePath();
     };
 
+    // Bordure roche/pierre des cases de bâtiment (voir GameConfig.colors.buildingBorder, demande
+    // utilisateur explicite) : appelée après le contenu (tuile photo ou icône) de CHAQUE bâtiment
+    // dessiné par ce canvas (route + tout ce qui a une icône, voir plus bas) -- le fait ressortir
+    // du fond d'herbe qui se voit maintenant autour/à travers les icônes.
+    const strokeHexBorder = (col, row) => {
+      const { x: wx, y: wy } = HexUtils.offsetToPixel(col, row, this.hexSize);
+      const { x: sx, y: sy } = worldToScreen(wx, wy);
+      const size = this.hexSize * zoom;
+      if (sx < -size - 4 || sx > tex.width + size + 4 || sy < -size - 4 || sy > tex.height + size + 4) return;
+      ctx.save();
+      hexPathAt(sx, sy, size);
+      ctx.lineWidth = Math.max(1, size * 0.05);
+      ctx.strokeStyle = '#' + GameConfig.colors.buildingBorder.toString(16).padStart(6, '0');
+      ctx.stroke();
+      ctx.restore();
+    };
+
     const drawTile = (col, row, textureKey, alpha) => {
       const { x: wx, y: wy } = HexUtils.offsetToPixel(col, row, this.hexSize);
       const { x: sx, y: sy } = worldToScreen(wx, wy);
@@ -2266,8 +2283,10 @@ class GameScene extends Phaser.Scene {
           const iconKey = this.buildingIconKeys[tile.type];
           if (textureKey) {
             drawTile(col, row, textureKey, alpha);
+            strokeHexBorder(col, row);
           } else if (iconKey) {
             drawIconTile(col, row, GameConfig.buildings[tile.type].color, iconKey, alpha);
+            strokeHexBorder(col, row);
           }
         }
       }
@@ -2300,7 +2319,10 @@ class GameScene extends Phaser.Scene {
         const pts = HexUtils.corners(x + offsetX, y, this.hexSize * 0.82);
         // Refixé à chaque copie : drawBuildingIcon() change fillStyle/lineStyle en interne et ne
         // les restaure pas, sinon la case suivante hériterait par erreur des couleurs de l'icône.
-        g.lineStyle(1, GameConfig.colors.hexStroke, GameConfig.colors.hexStrokeAlpha);
+        // Bordure roche/pierre (voir GameConfig.colors.buildingBorder/redrawTileArt.
+        // strokeHexBorder, demande utilisateur explicite) plutôt que le liseré discret générique
+        // du terrain (hexStroke) -- même traitement que tous les autres bâtiments.
+        g.lineStyle(2, GameConfig.colors.buildingBorder, 1);
         // Chantier (voir GameState.placeBuilding) : fond délavé, même principe que les tuiles
         // photo (voir redrawTileArt) -- l'icône elle-même (drawBuildingIcon, plus bas) reste à
         // son opacité normale, dessinée sur le même Graphics partagé par tous les bâtiments (pas

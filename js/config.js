@@ -52,6 +52,11 @@ const GameConfig = {
     // claire/orangée pour rester lisible à la taille minuscule d'un monstre sans dépendre d'une
     // jauge ou d'une icône séparée -- demande utilisateur explicite.
     monsterWounded: 0xffb347,
+    // Bordure des cases de bâtiment (voir GameScene.redrawTileArt/redrawBuildings, demande
+    // utilisateur explicite) : couleur roche/pierre, distincte du liseré discret entre cases
+    // (hexStroke ci-dessus, qui reste inchangé pour le terrain) -- fait ressortir un bâtiment
+    // du fond d'herbe qui se voit maintenant autour des icônes.
+    buildingBorder: 0x9c9186,
   },
   resources: {
     // Stock de départ, volontairement généreux : les premiers blobs de ressources peuvent être
