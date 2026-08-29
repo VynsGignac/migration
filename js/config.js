@@ -21,8 +21,10 @@ const GameConfig = {
     // Nombre de colonnes de cases sur la largeur du cylindre
     // (une fois qu'on a parcouru "cols" colonnes vers la droite, on retombe sur la colonne 0)
     cols: 500,
-    // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement)
-    rows: 23,
+    // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement) -- 30 pour
+    // avoir 30 lignes de monstres (voir monsters.depthCount pour les 30 colonnes, demande
+    // utilisateur explicite : une ligne de horde par rangée du monde, voir Monsters.init).
+    rows: 30,
     // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
     // pour laisser au joueur le temps de construire avant qu'elle n'arrive. À la moitié du tour
     // (250/500) : la vague met 20 min à l'atteindre pour un 1er tour de 40 min (voir
@@ -521,17 +523,21 @@ const GameConfig = {
     lapOneSeconds: 2400, // 40 minutes (vitesse divisée par 2)
     lapSpeedMultiplier: Math.SQRT2,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
-    // compacte plutôt qu'une simple ligne.
-    depthCount: 20,
-    // Espacement entre deux monstres consécutifs d'une même rangée (voir Monsters.init) : plus
-    // petit que la largeur d'une case pour que le bloc ait l'air d'une horde tassée plutôt que
-    // d'un quadrillage clairsemé. Indépendant de la largeur de case réelle utilisée pour détecter
-    // le franchissement des colonnes (Monsters.update) : ceci n'affecte que le rendu/l'espacement.
-    depthSpacingFactor: 0.8, // fraction de hexSize.size
-    // Taille du carré de chaque monstre (voir GameScene.redrawMonsters), en fraction de hexSize.
-    // Assez grand pour presque se toucher horizontalement (avec depthSpacingFactor) et verticalement
-    // (avec la hauteur d'une rangée) : c'est ça qui donne l'effet de horde compacte.
-    sizeFactor: 1.3,
+    // compacte plutôt qu'une simple ligne -- 30 (demande utilisateur explicite : 30 lignes ET 30
+    // colonnes, voir world.rows pour les lignes).
+    depthCount: 30,
+    // Espacement entre deux monstres consécutifs d'une même rangée (voir Monsters.init). Avec le
+    // passage à une vraie image de gobelin (voir GameScene.redrawMonsters/js/assets.js), le
+    // chevauchement volontairement serré d'avant (carrés unis, un chevauchement ne se voyait pas)
+    // ferait se chevaucher des silhouettes détaillées -- demande utilisateur explicite : plus de
+    // chevauchement du tout. sizeFactor (juste en dessous) reste strictement inférieur à cette
+    // valeur pour garantir un petit espace visible entre deux gobelins consécutifs.
+    depthSpacingFactor: 1.0, // fraction de hexSize.size
+    // Taille du carré de chaque monstre (voir GameScene.redrawMonsters), en fraction de hexSize --
+    // strictement inférieure à depthSpacingFactor ci-dessus (pas de chevauchement horizontal) ET
+    // à la hauteur d'une rangée (rowHeight = hexSize*racine(3) ≈ 1.73*hexSize, pas de chevauchement
+    // vertical entre rangées) ET tient dans une case sans la dépasser (demande utilisateur explicite).
+    sizeFactor: 0.85,
     // Vie de départ de chaque monstre (voir GameState.tickProduction, section tir de tour, pour
     // les dégâts infligés par un Donjon) -- demande utilisateur explicite (voir aussi
     // GameScene.redrawMonsters : un monstre à hp < startingHp est affiché "blessé", couleur plus

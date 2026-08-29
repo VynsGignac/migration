@@ -49,6 +49,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('stonecutterIcon', GameAssets.stonecutterIcon);
     this.load.image('watchtowerIcon', GameAssets.watchtowerIcon);
     this.load.image('farmIcon', GameAssets.farmIcon);
+    this.load.image('goblinIcon', GameAssets.goblinIcon);
   }
 
   create() {
@@ -2641,10 +2642,14 @@ class GameScene extends Phaser.Scene {
 
     const size = this.hexSize * GameConfig.monsters.sizeFactor * zoom;
     const colWidth = this.hexSize * 1.5;
+    // Image de gobelin (voir js/assets.js, demande utilisateur explicite -- remplace les carrés
+    // unis) plutôt qu'un simple fillRect. Blessé (hp < startingHp) : léger voile orangé PAR-DESSUS
+    // l'image, appliqué UNIQUEMENT là où elle est opaque (globalCompositeOperation 'source-atop',
+    // voir plus bas) -- teinte sa silhouette réelle plutôt qu'un carré autour, reste lisible même
+    // minuscule dézoomé, sans dépendre d'une jauge ou d'une icône séparée.
+    const goblinReady = this.textures.exists('goblinIcon');
+    const goblinImg = goblinReady ? this.textures.get('goblinIcon').getSourceImage() : null;
     const colorFull = '#' + GameConfig.colors.monster.toString(16).padStart(6, '0');
-    // Blessé (hp < startingHp, voir config.monsters.startingHp/demande utilisateur explicite) :
-    // couleur plus claire plutôt qu'une jauge ou une icône séparée -- reste lisible même à la
-    // taille minuscule d'un monstre dézoomé, et se voit tout de suite dans le tas de la horde.
     const colorWounded = '#' + GameConfig.colors.monsterWounded.toString(16).padStart(6, '0');
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.lineWidth = 1;
@@ -2658,9 +2663,23 @@ class GameScene extends Phaser.Scene {
       const wy = HexUtils.rowHeight(this.hexSize) * (m.row + 0.25);
       const { x: sx, y: sy } = worldToScreen(m.x, wy);
       const x = sx - size / 2, y = sy - size / 2;
-      ctx.fillStyle = m.hp < GameConfig.monsters.startingHp ? colorWounded : colorFull;
-      ctx.fillRect(x, y, size, size);
-      ctx.strokeRect(x, y, size, size);
+      const wounded = m.hp < GameConfig.monsters.startingHp;
+      if (goblinImg) {
+        ctx.drawImage(goblinImg, x, y, size, size);
+        if (wounded) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+          ctx.globalAlpha = 0.5;
+          ctx.fillStyle = colorWounded;
+          ctx.fillRect(x, y, size, size);
+          ctx.restore();
+        }
+      } else {
+        // Repli si l'image n'a pas chargé : carré uni comme avant.
+        ctx.fillStyle = wounded ? colorWounded : colorFull;
+        ctx.fillRect(x, y, size, size);
+        ctx.strokeRect(x, y, size, size);
+      }
     }
   }
 
