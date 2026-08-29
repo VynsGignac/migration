@@ -2645,16 +2645,15 @@ class GameScene extends Phaser.Scene {
     const size = this.hexSize * GameConfig.monsters.sizeFactor * zoom;
     const colWidth = this.hexSize * 1.5;
     // Image par type (voir js/assets.js/Monsters.init, demande utilisateur explicite -- remplace
-    // les carrés unis) : gobelin normal, Chef de guerre au centre de chaque bloc 10x10, Seigneur
+    // les carrés unis) : gobelin normal, Chef de guerre au centre de chaque bloc 15x15, Seigneur
     // de la horde au centre du bloc du milieu. Chef/Seigneur dessinés un peu plus grands (purement
     // cosmétique -- mêmes stats que les gobelins pour l'instant, voir demande utilisateur) pour se
     // distinguer d'un coup d'œil dans la masse.
     const iconKeyByType = { goblin: 'goblinIcon', chief: 'chiefIcon', lord: 'warlordIcon' };
-    // lord: 1.8 -> 0.9 (moitié) en même temps que le doublement de GameConfig.monsters.sizeFactor
-    // (demande utilisateur explicite : la taille de tout le monde double SAUF le Seigneur de la
-    // horde) -- compense exactement pour que sa taille ABSOLUE (sizeFactor * multiplicateur) reste
-    // celle d'avant cette demande, pendant que gobelins/Chefs doublent bien.
-    const sizeMultiplierByType = { goblin: 1, chief: 1.4, lord: 0.9 };
+    // lord: 0.9 -> 1.35 (x1.5, demande utilisateur explicite "augmente la taille du seigneur de
+    // guerre de 1.5") -- part de la valeur précédente (qui compensait le doublement global pour
+    // garder sa taille absolue inchangée), et l'agrandit ensuite de 50% par-dessus.
+    const sizeMultiplierByType = { goblin: 1, chief: 1.4, lord: 1.35 };
     const colorFull = '#' + GameConfig.colors.monster.toString(16).padStart(6, '0');
     // Blessé (hp < startingHp) : léger voile orangé PAR-DESSUS l'image, appliqué UNIQUEMENT là où
     // elle est opaque (globalCompositeOperation 'source-atop', voir plus bas) -- teinte sa

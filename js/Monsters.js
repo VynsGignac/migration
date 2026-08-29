@@ -22,7 +22,7 @@ const Monsters = {
   // rangée (depthSpacingFactor) est volontairement plus petit qu'une case, pour un rendu de horde
   // tassée (voir GameScene.redrawMonsters) — indépendant de la largeur de case réelle utilisée
   // pour la détection de franchissement de colonne dans update() ci-dessous.
-  // Découpe le bloc 30x30 (lignes x profondeur) en une grille 3x3 de blocs 10x10 (voir
+  // Découpe le bloc 45x45 (lignes x profondeur) en une grille 3x3 de blocs 15x15 (voir
   // GameConfig.monsters.blockSize, demande utilisateur explicite) : un Chef de guerre au centre
   // de CHAQUE bloc, remplacé par le Seigneur de la horde dans le bloc central (celui du milieu de
   // la grille 3x3). Mêmes stats que les gobelins pour l'instant (voir demande utilisateur) --
