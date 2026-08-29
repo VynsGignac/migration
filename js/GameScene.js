@@ -2671,8 +2671,9 @@ class GameScene extends Phaser.Scene {
     // proches, notamment les lignes entre elles"), DÉCOUPLÉ de la vraie hauteur de rangée du
     // monde (HexUtils.rowHeight, utilisée avant) -- purement visuel, "pour l'instant" (accepté
     // par l'utilisateur que la horde n'occupe alors plus toute la hauteur de la carte). m.row
-    // reste la VRAIE rangée pour le jeu (brouillard/destruction de case, voir Monsters.update) :
-    // seule la position AFFICHÉE change, pas la logique.
+    // reste la VRAIE rangée pour le jeu (brouillard/destruction de case, voir Monsters.update) ;
+    // m.displayRow (0..rowCount-1, voir Monsters.init) pilote UNIQUEMENT la position affichée ici,
+    // ce qui permet d'avoir plus de lignes de horde à l'écran que de vraies rangées du monde.
     const rowSpacing = this.hexSize * GameConfig.monsters.rowSpacingFactor;
 
     for (const m of Monsters.list) {
@@ -2681,7 +2682,7 @@ class GameScene extends Phaser.Scene {
       // visible (voir GameState.revealedTiles) — même logique que pour les ressources naturelles.
       const col = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
       if (!GameState.revealedTiles.has(GameState.key(col, m.row))) continue;
-      const wy = rowSpacing * (m.row + 0.25);
+      const wy = rowSpacing * (m.displayRow + 0.25);
       const mSize = size * (sizeMultiplierByType[m.type] || 1);
       const wounded = m.hp < GameConfig.monsters.startingHp;
       // Variante d'image cosmétique pour les gobelins simples (demande utilisateur explicite :

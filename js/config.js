@@ -21,13 +21,11 @@ const GameConfig = {
     // Nombre de colonnes de cases sur la largeur du cylindre
     // (une fois qu'on a parcouru "cols" colonnes vers la droite, on retombe sur la colonne 0)
     cols: 500,
-    // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement) -- 90 pour
-    // avoir 90 lignes de monstres (voir monsters.depthCount pour les 45 colonnes, demande
-    // utilisateur explicite : une ligne de horde par rangée du monde, voir Monsters.init).
-    // 90 = blockSize(15) x 6 : la grille de blocs (voir monsters.blockSize) compte 6 blocs en
-    // lignes x 3 blocs en colonnes (demande utilisateur explicite, pour remplir plus la carte),
-    // ce nombre doit donc toujours être un multiple de blockSize.
-    rows: 90,
+    // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement) -- taille du
+    // MONDE réel, ne pas confondre avec monsters.rowCount (nombre de lignes de la horde, purement
+    // visuel/formation, découplé de cette valeur -- demande utilisateur explicite : plus de lignes
+    // de monstres SANS agrandir le monde, voir Monsters.init).
+    rows: 45,
     // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
     // pour laisser au joueur le temps de construire avant qu'elle n'arrive. À la moitié du tour
     // (250/500) : la vague met 20 min à l'atteindre pour un 1er tour de 40 min (voir
@@ -526,14 +524,25 @@ const GameConfig = {
     lapOneSeconds: 2400, // 40 minutes (vitesse divisée par 2)
     lapSpeedMultiplier: Math.SQRT2,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
-    // compacte plutôt qu'une simple ligne -- 45 = blockSize(15) x 3 blocs en colonnes (inchangé,
-    // voir world.rows pour les lignes, passées à 6 blocs pour remplir plus la carte).
+    // compacte plutôt qu'une simple ligne -- 45 = blockSize(15) x 3 blocs en colonnes. Dimension
+    // purement formation/visuelle, déjà découplée du nombre réel de colonnes du monde (world.cols,
+    // 500) -- seule la position x résultante compte pour le jeu (voir Monsters.update).
     depthCount: 45,
-    // Taille de chaque bloc de la grille (voir Monsters.init) -- 15 : un Chef de guerre au centre
-    // de CHAQUE bloc (17 au total désormais, grille 6 lignes x 3 colonnes, demande utilisateur
-    // explicite), sauf le bloc historique rowBlock===1/depthBlock===1 qui garde le Seigneur de la
-    // horde (position inchangée depuis la grille 3x3 d'origine, demande utilisateur explicite de
-    // ne pas le déplacer). rows et depthCount doivent rester des multiples de blockSize.
+    // Nombre de LIGNES de la horde (voir Monsters.init) -- 90 = blockSize(15) x 6 blocs en lignes.
+    // Comme depthCount ci-dessus, dimension purement formation/visuelle, découplée du nombre réel
+    // de rangées du monde (world.rows, 45) : demande utilisateur explicite -- plus de lignes de
+    // monstres SANS agrandir le monde. Chaque ligne de formation est associée à une vraie rangée
+    // du monde via Math.floor(displayRow * world.rows / rowCount) pour la destruction de case, le
+    // brouillard de guerre et le ciblage des tours (voir Monsters.init/GameState) -- plusieurs
+    // lignes de formation partagent donc la même vraie rangée (seule la première à l'atteindre
+    // détruit quelque chose, comme pour depthCount/les colonnes).
+    rowCount: 90,
+    // Taille de chaque bloc de la grille de FORMATION (rowCount x depthCount, voir Monsters.init)
+    // -- 15 : un Chef de guerre au centre de CHAQUE bloc (17 au total, grille 6 lignes x 3
+    // colonnes, demande utilisateur explicite), sauf le bloc historique rowBlock===1/
+    // depthBlock===1 qui garde le Seigneur de la horde (position inchangée depuis la grille 3x3
+    // d'origine, demande utilisateur explicite de ne pas le déplacer). rowCount et depthCount
+    // doivent rester des multiples de blockSize.
     blockSize: 15,
     // Espacement entre deux monstres consécutifs d'une même rangée (voir Monsters.init). Avec le
     // passage à une vraie image de gobelin (voir GameScene.redrawMonsters/js/assets.js), le

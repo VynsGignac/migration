@@ -4,8 +4,10 @@
 // individuels : chacun avance en ligne droite, à vitesse constante, sans se soucier des routes
 // ni des bâtiments — pas de pathfinding, pas de contournement, juste une position continue qui
 // augmente avec le temps. En traversant une case, il la détruit. Formation : un bloc dense de
-// depthCount monstres par rangée (espacés d'une largeur de case), sur toutes les rangées du monde,
-// qui avancent ensemble. Pas d'interaction du joueur avec eux pour l'instant (voir hp dans config).
+// depthCount monstres par rangée de formation (espacés d'une largeur de case), sur rowCount
+// rangées de formation (voir GameConfig.monsters -- ce nombre est purement visuel, DÉCOUPLÉ du
+// vrai nombre de rangées du monde, voir init() ci-dessous), qui avancent ensemble. Pas
+// d'interaction du joueur avec eux pour l'instant (voir hp dans config).
 // ============================================================
 
 const Monsters = {
@@ -16,19 +18,30 @@ const Monsters = {
   // vitesse progressive, sans avoir besoin d'un compteur de tours séparé à tenir à jour à la main.
   totalDistancePx: 0,
 
-  // Peuple la horde : un bloc de depthCount monstres par rangée, le front (depth 0) démarrant à
-  // la colonne 0, le reste s'étirant derrière (colonnes négatives, qui boucleront naturellement
-  // sur l'autre bord du cylindre le temps que le front avance). L'écart entre monstres d'une même
-  // rangée (depthSpacingFactor) est volontairement plus petit qu'une case, pour un rendu de horde
-  // tassée (voir GameScene.redrawMonsters) — indépendant de la largeur de case réelle utilisée
-  // pour la détection de franchissement de colonne dans update() ci-dessous.
-  // Découpe le bloc 90x45 (lignes x profondeur) en une grille de blocs 15x15 : 6 blocs en lignes
-  // x 3 blocs en colonnes (18 blocs au total, demande utilisateur explicite pour remplir plus la
-  // carte, voir GameConfig.monsters.blockSize) : un Chef de guerre au centre de CHAQUE bloc (17),
-  // sauf le bloc historique rowBlock===1/depthBlock===1 (position inchangée depuis la grille 3x3
-  // d'origine, demande utilisateur explicite de ne pas déplacer le Seigneur de la horde) qui
-  // reçoit le Seigneur de la horde à la place. Mêmes stats que les gobelins pour l'instant (voir
-  // demande utilisateur) -- seul le type (donc l'image, voir GameScene.redrawMonsters) change.
+  // Peuple la horde : un bloc de depthCount monstres par rangée de FORMATION (rowCount rangées au
+  // total), le front (depth 0) démarrant à la colonne 0, le reste s'étirant derrière (colonnes
+  // négatives, qui boucleront naturellement sur l'autre bord du cylindre le temps que le front
+  // avance). L'écart entre monstres d'une même rangée (depthSpacingFactor) est volontairement plus
+  // petit qu'une case, pour un rendu de horde tassée (voir GameScene.redrawMonsters) — indépendant
+  // de la largeur de case réelle utilisée pour la détection de franchissement de colonne dans
+  // update() ci-dessous.
+  // rowCount (lignes de formation, voir GameConfig.monsters) est DÉCOUPLÉ du vrai nombre de
+  // rangées du monde (gameState.rows) -- demande utilisateur explicite : plus de lignes de
+  // monstres SANS agrandir le monde. m.row (utilisé pour la destruction de case, le brouillard de
+  // guerre et le ciblage des tours, voir GameState/GameScene) reste la VRAIE rangée du monde,
+  // obtenue en compressant displayRow (0..rowCount-1) sur [0, gameState.rows) ; m.displayRow
+  // (0..rowCount-1) sert uniquement au rendu vertical (voir GameScene.redrawMonsters) et au calcul
+  // de la grille de blocs ci-dessous (comme pour depthCount/les colonnes, plusieurs lignes de
+  // formation peuvent donc partager la même vraie rangée -- seule la première à l'atteindre y
+  // détruit quelque chose).
+  // Découpe le bloc rowCount x depthCount (lignes de formation x profondeur) en une grille de
+  // blocs 15x15 : 6 blocs en lignes x 3 blocs en colonnes (18 blocs au total, demande utilisateur
+  // explicite pour remplir plus la carte, voir GameConfig.monsters.blockSize) : un Chef de guerre
+  // au centre de CHAQUE bloc (17), sauf le bloc historique rowBlock===1/depthBlock===1 (position
+  // inchangée depuis la grille 3x3 d'origine, demande utilisateur explicite de ne pas déplacer le
+  // Seigneur de la horde) qui reçoit le Seigneur de la horde à la place. Mêmes stats que les
+  // gobelins pour l'instant (voir demande utilisateur) -- seul le type (donc l'image, voir
+  // GameScene.redrawMonsters) change.
   // Variantes d'image purement cosmétiques pour les gobelins simples (demande utilisateur
   // explicite : plusieurs images ajoutées, utilisées au hasard, mêmes caractéristiques pour tous
   // -- seul le rendu change, voir GameScene.redrawMonsters). 'goblinIcon' (image d'origine) fait
@@ -43,9 +56,10 @@ const Monsters = {
     this.list = [];
     this.nextId = 1;
     this.totalDistancePx = 0;
-    for (let row = 0; row < gameState.rows; row++) {
-      const rowBlock = Math.floor(row / blockSize);
-      const localRow = row % blockSize;
+    for (let displayRow = 0; displayRow < cfg.rowCount; displayRow++) {
+      const worldRow = Math.floor(displayRow * gameState.rows / cfg.rowCount);
+      const rowBlock = Math.floor(displayRow / blockSize);
+      const localRow = displayRow % blockSize;
       for (let depth = 0; depth < cfg.depthCount; depth++) {
         const depthBlock = Math.floor(depth / blockSize);
         const localDepth = depth % blockSize;
@@ -62,7 +76,8 @@ const Monsters = {
           : undefined;
         this.list.push({
           id: this.nextId++,
-          row,
+          row: worldRow,
+          displayRow,
           x: -depth * depthSpacing,
           hp: cfg.startingHp,
           alive: true,
