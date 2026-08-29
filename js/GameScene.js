@@ -736,7 +736,13 @@ class GameScene extends Phaser.Scene {
     this.buildButtonIcons = {};
     this.buildButtonCostIcons = {};
     buildIds.forEach((id) => {
-      const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339).setOrigin(0, 0)
+      // Pas de fond coloré derrière une icône-image (voir buildingIconKeys) tant qu'elle n'est
+      // pas le mode de construction actif (demande utilisateur explicite, "sans arrière-plan") --
+      // Route/Recycleur (icône vectorielle) gardent leur fond vert habituel dès la création,
+      // nécessaire au contraste des traits dessinés à la main (voir aussi setBuildMode, qui gère
+      // le même choix au moment de la sélection).
+      const idleAlpha = this.buildingIconKeys[id] ? 0 : 1;
+      const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339, idleAlpha).setOrigin(0, 0)
         // Caché par défaut : layoutHud() ne rend visible que les bâtiments débloqués de la
         // catégorie active (voir isBuildingUnlocked/activeBuildCategory) -- sans ce setVisible(false)
         // initial, un bâtiment pas encore débloqué/hors-onglet resterait affiché à sa position
@@ -1825,7 +1831,14 @@ class GameScene extends Phaser.Scene {
     this.buildMode = mode;
     this.buildGhostHex = null;
     for (const id in this.buildButtons) {
-      this.buildButtons[id].setFillStyle(id === mode ? 0xffd23f : 0x2e5339);
+      const selected = id === mode;
+      // Icônes-images : pas de fond tant que ce n'est pas le mode actif (voir buildHud, même
+      // choix à la création) -- seul le halo jaune de sélection doit rester visible.
+      if (this.buildingIconKeys[id]) {
+        this.buildButtons[id].setFillStyle(selected ? 0xffd23f : 0x2e5339, selected ? 1 : 0);
+      } else {
+        this.buildButtons[id].setFillStyle(selected ? 0xffd23f : 0x2e5339);
+      }
     }
     if (mode) {
       // Activer un mode de construction remplace l'inspection en cours : on ne veut pas mélanger
@@ -2145,12 +2158,12 @@ class GameScene extends Phaser.Scene {
       ctx.restore();
     };
 
-    // Fond uni (couleur du bâtiment) + icône (voir js/assets.js -- demande utilisateur explicite,
-    // remplace à la fois les anciennes tuiles photo complètes et les icônes vectorielles dessinées
-    // à la main). Icône aussi grosse que possible SANS déborder du hexagone (même marge que
-    // drawTile ci-dessus, size*2.05 -- le clip garantit qu'elle ne dépasse jamais), quitte à
-    // l'étirer de façon non uniforme (demande utilisateur explicite : "tu peux déformer un peu
-    // les images au besoin").
+    // Fond d'herbe (demande utilisateur explicite -- PAS de remplissage de couleur ici : la
+    // texture d'herbe du terrain, déjà dessinée par terrainSprite juste en dessous de ce canvas,
+    // voir createTerrainTileSprite, se voit simplement à travers puisqu'on ne peint plus rien
+    // d'opaque sous l'icône) + icône PAR-DESSUS, volontairement plus petite que la pleine case
+    // (contrairement à drawTile ci-dessus) pour que l'herbe reste visible tout autour -- couleur
+    // du bâtiment gardée en repli si jamais l'icône ne charge pas.
     const drawIconTile = (col, row, color, iconKey, alpha) => {
       const { x: wx, y: wy } = HexUtils.offsetToPixel(col, row, this.hexSize);
       const { x: sx, y: sy } = worldToScreen(wx, wy);
@@ -2158,14 +2171,22 @@ class GameScene extends Phaser.Scene {
       if (sx < -size - 4 || sx > tex.width + size + 4 || sy < -size - 4 || sy > tex.height + size + 4) return;
       ctx.save();
       ctx.globalAlpha = alpha;
+      // Le clip garantit qu'on ne dépasse jamais le contour de la case (demande utilisateur
+      // explicite), même si le carré dessiné ci-dessous est en réalité plus grand que l'hexagone
+      // dans ses coins (un carré de 1.4*size déborderait sinon légèrement sur les bords obliques).
       hexPathAt(sx, sy, size);
       ctx.clip();
-      ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
-      ctx.fill();
       if (iconKey && this.textures.exists(iconKey)) {
         const img = this.textures.get(iconKey).getSourceImage();
-        const s = size * 2.05;
+        const s = size * 1.4;
         ctx.drawImage(img, sx - s / 2, sy - s / 2, s, s);
+      } else {
+        // Repli si l'icône n'a pas chargé : petit disque de la couleur du bâtiment, pour rester
+        // repérable plutôt que de laisser la case paraître complètement vide.
+        ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+        ctx.beginPath();
+        ctx.arc(sx, sy, size * 0.6, 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.restore();
     };
