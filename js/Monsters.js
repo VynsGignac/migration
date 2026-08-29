@@ -27,6 +27,12 @@ const Monsters = {
   // de CHAQUE bloc, remplacé par le Seigneur de la horde dans le bloc central (celui du milieu de
   // la grille 3x3). Mêmes stats que les gobelins pour l'instant (voir demande utilisateur) --
   // seul le type (donc l'image, voir GameScene.redrawMonsters) change.
+  // Variantes d'image purement cosmétiques pour les gobelins simples (demande utilisateur
+  // explicite : plusieurs images ajoutées, utilisées au hasard, mêmes caractéristiques pour tous
+  // -- seul le rendu change, voir GameScene.redrawMonsters). 'goblinIcon' (image d'origine) fait
+  // partie du tirage au même titre que les nouvelles.
+  goblinVariants: ['goblinIcon', 'goblinIcon2', 'goblinIcon3', 'goblinIcon4'],
+
   init(gameState) {
     const cfg = GameConfig.monsters;
     const depthSpacing = GameConfig.hex.size * cfg.depthSpacingFactor;
@@ -46,6 +52,9 @@ const Monsters = {
           const isMiddleBlock = rowBlock === 1 && depthBlock === 1;
           type = isMiddleBlock ? 'lord' : 'chief';
         }
+        const variant = type === 'goblin'
+          ? this.goblinVariants[Math.floor(Math.random() * this.goblinVariants.length)]
+          : undefined;
         this.list.push({
           id: this.nextId++,
           row,
@@ -53,6 +62,7 @@ const Monsters = {
           hp: cfg.startingHp,
           alive: true,
           type,
+          variant,
         });
       }
     }

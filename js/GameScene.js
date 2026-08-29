@@ -50,6 +50,9 @@ class GameScene extends Phaser.Scene {
     this.load.image('watchtowerIcon', GameAssets.watchtowerIcon);
     this.load.image('farmIcon', GameAssets.farmIcon);
     this.load.image('goblinIcon', GameAssets.goblinIcon);
+    this.load.image('goblinIcon2', GameAssets.goblinIcon2);
+    this.load.image('goblinIcon3', GameAssets.goblinIcon3);
+    this.load.image('goblinIcon4', GameAssets.goblinIcon4);
     this.load.image('chiefIcon', GameAssets.chiefIcon);
     this.load.image('warlordIcon', GameAssets.warlordIcon);
   }
@@ -2680,7 +2683,11 @@ class GameScene extends Phaser.Scene {
       const wy = rowSpacing * (m.row + 0.25);
       const mSize = size * (sizeMultiplierByType[m.type] || 1);
       const wounded = m.hp < GameConfig.monsters.startingHp;
-      const iconKey = iconKeyByType[m.type] || 'goblinIcon';
+      // Variante d'image cosmétique pour les gobelins simples (demande utilisateur explicite :
+      // plusieurs images de gobelin utilisées aléatoirement pour varier l'apparence, mêmes stats
+      // pour tous) -- m.variant fixé une fois pour toutes à la création (voir Monsters.init) pour
+      // rester stable d'une image à l'autre plutôt que de changer à chaque redessin.
+      const iconKey = m.type === 'goblin' ? (m.variant || 'goblinIcon') : (iconKeyByType[m.type] || 'goblinIcon');
       const img = this.textures.exists(iconKey) ? this.textures.get(iconKey).getSourceImage() : null;
 
       // Monde cylindrique (voir redrawBuildings, même principe) : la caméra peut regarder n'importe
