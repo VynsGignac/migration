@@ -22,11 +22,13 @@ const Monsters = {
   // rangée (depthSpacingFactor) est volontairement plus petit qu'une case, pour un rendu de horde
   // tassée (voir GameScene.redrawMonsters) — indépendant de la largeur de case réelle utilisée
   // pour la détection de franchissement de colonne dans update() ci-dessous.
-  // Découpe le bloc 45x45 (lignes x profondeur) en une grille 3x3 de blocs 15x15 (voir
-  // GameConfig.monsters.blockSize, demande utilisateur explicite) : un Chef de guerre au centre
-  // de CHAQUE bloc, remplacé par le Seigneur de la horde dans le bloc central (celui du milieu de
-  // la grille 3x3). Mêmes stats que les gobelins pour l'instant (voir demande utilisateur) --
-  // seul le type (donc l'image, voir GameScene.redrawMonsters) change.
+  // Découpe le bloc 90x45 (lignes x profondeur) en une grille de blocs 15x15 : 6 blocs en lignes
+  // x 3 blocs en colonnes (18 blocs au total, demande utilisateur explicite pour remplir plus la
+  // carte, voir GameConfig.monsters.blockSize) : un Chef de guerre au centre de CHAQUE bloc (17),
+  // sauf le bloc historique rowBlock===1/depthBlock===1 (position inchangée depuis la grille 3x3
+  // d'origine, demande utilisateur explicite de ne pas déplacer le Seigneur de la horde) qui
+  // reçoit le Seigneur de la horde à la place. Mêmes stats que les gobelins pour l'instant (voir
+  // demande utilisateur) -- seul le type (donc l'image, voir GameScene.redrawMonsters) change.
   // Variantes d'image purement cosmétiques pour les gobelins simples (demande utilisateur
   // explicite : plusieurs images ajoutées, utilisées au hasard, mêmes caractéristiques pour tous
   // -- seul le rendu change, voir GameScene.redrawMonsters). 'goblinIcon' (image d'origine) fait
@@ -49,8 +51,11 @@ const Monsters = {
         const localDepth = depth % blockSize;
         let type = 'goblin';
         if (localRow === centerLocal && localDepth === centerLocal) {
-          const isMiddleBlock = rowBlock === 1 && depthBlock === 1;
-          type = isMiddleBlock ? 'lord' : 'chief';
+          // Bloc historique du Seigneur de la horde (position figée depuis la grille 3x3
+          // d'origine, demande utilisateur explicite de ne pas le déplacer en agrandissant la
+          // grille) -- tous les autres blocs de la grille reçoivent un Chef de guerre.
+          const isLordBlock = rowBlock === 1 && depthBlock === 1;
+          type = isLordBlock ? 'lord' : 'chief';
         }
         const variant = type === 'goblin'
           ? this.goblinVariants[Math.floor(Math.random() * this.goblinVariants.length)]

@@ -2648,10 +2648,11 @@ class GameScene extends Phaser.Scene {
     const size = this.hexSize * GameConfig.monsters.sizeFactor * zoom;
     const colWidth = this.hexSize * 1.5;
     // Image par type (voir js/assets.js/Monsters.init, demande utilisateur explicite -- remplace
-    // les carrés unis) : gobelin normal, Chef de guerre au centre de chaque bloc 15x15, Seigneur
-    // de la horde au centre du bloc du milieu. Chef/Seigneur dessinés un peu plus grands (purement
-    // cosmétique -- mêmes stats que les gobelins pour l'instant, voir demande utilisateur) pour se
-    // distinguer d'un coup d'œil dans la masse.
+    // les carrés unis) : gobelin normal, Chef de guerre au centre de chaque bloc 15x15 (grille 6
+    // lignes x 3 colonnes, 17 blocs), Seigneur de la horde au centre du bloc historique (position
+    // inchangée depuis la grille 3x3 d'origine). Chef/Seigneur dessinés un peu plus grands
+    // (purement cosmétique -- mêmes stats que les gobelins pour l'instant, voir demande
+    // utilisateur) pour se distinguer d'un coup d'œil dans la masse.
     const iconKeyByType = { goblin: 'goblinIcon', chief: 'chiefIcon', lord: 'warlordIcon' };
     // lord: 0.9 -> 1.35 (x1.5, demande utilisateur explicite "augmente la taille du seigneur de
     // guerre de 1.5") -- part de la valeur précédente (qui compensait le doublement global pour

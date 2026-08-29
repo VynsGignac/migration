@@ -21,12 +21,13 @@ const GameConfig = {
     // Nombre de colonnes de cases sur la largeur du cylindre
     // (une fois qu'on a parcouru "cols" colonnes vers la droite, on retombe sur la colonne 0)
     cols: 500,
-    // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement) -- 45 pour
-    // avoir 45 lignes de monstres (voir monsters.depthCount pour les 45 colonnes, demande
+    // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement) -- 90 pour
+    // avoir 90 lignes de monstres (voir monsters.depthCount pour les 45 colonnes, demande
     // utilisateur explicite : une ligne de horde par rangée du monde, voir Monsters.init).
-    // 45 = blockSize(15) x 3 : la grille 3x3 de blocs (voir monsters.blockSize) doit rester
-    // exacte, ce nombre doit donc toujours être un multiple de blockSize.
-    rows: 45,
+    // 90 = blockSize(15) x 6 : la grille de blocs (voir monsters.blockSize) compte 6 blocs en
+    // lignes x 3 blocs en colonnes (demande utilisateur explicite, pour remplir plus la carte),
+    // ce nombre doit donc toujours être un multiple de blockSize.
+    rows: 90,
     // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
     // pour laisser au joueur le temps de construire avant qu'elle n'arrive. À la moitié du tour
     // (250/500) : la vague met 20 min à l'atteindre pour un 1er tour de 40 min (voir
@@ -525,13 +526,14 @@ const GameConfig = {
     lapOneSeconds: 2400, // 40 minutes (vitesse divisée par 2)
     lapSpeedMultiplier: Math.SQRT2,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
-    // compacte plutôt qu'une simple ligne -- 45 (demande utilisateur explicite : blocs passés de
-    // 10x10 à 15x15, voir blockSize -- 45 lignes ET 45 colonnes, voir world.rows pour les lignes).
+    // compacte plutôt qu'une simple ligne -- 45 = blockSize(15) x 3 blocs en colonnes (inchangé,
+    // voir world.rows pour les lignes, passées à 6 blocs pour remplir plus la carte).
     depthCount: 45,
-    // Taille de chaque bloc de la grille 3x3 (voir Monsters.init) -- 15 (demande utilisateur
-    // explicite, était 10) : un Chef de guerre au centre de chaque bloc, un Seigneur de la horde
-    // au centre du bloc DU MILIEU (rowBlock/depthBlock === 1), suppose exactement 3 blocs par axe
-    // (rows et depthCount doivent rester des multiples de blockSize).
+    // Taille de chaque bloc de la grille (voir Monsters.init) -- 15 : un Chef de guerre au centre
+    // de CHAQUE bloc (17 au total désormais, grille 6 lignes x 3 colonnes, demande utilisateur
+    // explicite), sauf le bloc historique rowBlock===1/depthBlock===1 qui garde le Seigneur de la
+    // horde (position inchangée depuis la grille 3x3 d'origine, demande utilisateur explicite de
+    // ne pas le déplacer). rows et depthCount doivent rester des multiples de blockSize.
     blockSize: 15,
     // Espacement entre deux monstres consécutifs d'une même rangée (voir Monsters.init). Avec le
     // passage à une vraie image de gobelin (voir GameScene.redrawMonsters/js/assets.js), le
