@@ -2167,7 +2167,10 @@ class GameScene extends Phaser.Scene {
       if (sx < -size - 4 || sx > tex.width + size + 4 || sy < -size - 4 || sy > tex.height + size + 4) return;
       ctx.save();
       hexPathAt(sx, sy, size);
-      ctx.lineWidth = Math.max(1, size * 0.05);
+      // x2.5 (demande utilisateur explicite : "beaucoup trop léger") par rapport à l'épaisseur
+      // d'origine (size*0.05) -- restait bien trop discret pour vraiment faire ressortir un
+      // bâtiment du fond d'herbe.
+      ctx.lineWidth = Math.max(2.5, size * 0.13);
       ctx.strokeStyle = '#' + GameConfig.colors.buildingBorder.toString(16).padStart(6, '0');
       ctx.stroke();
       ctx.restore();
@@ -2322,7 +2325,8 @@ class GameScene extends Phaser.Scene {
         // Bordure roche/pierre (voir GameConfig.colors.buildingBorder/redrawTileArt.
         // strokeHexBorder, demande utilisateur explicite) plutôt que le liseré discret générique
         // du terrain (hexStroke) -- même traitement que tous les autres bâtiments.
-        g.lineStyle(2, GameConfig.colors.buildingBorder, 1);
+        // x2.5, même raison qu'en haut (redrawTileArt.strokeHexBorder) : trop discret à 2px.
+        g.lineStyle(5, GameConfig.colors.buildingBorder, 1);
         // Chantier (voir GameState.placeBuilding) : fond délavé, même principe que les tuiles
         // photo (voir redrawTileArt) -- l'icône elle-même (drawBuildingIcon, plus bas) reste à
         // son opacité normale, dessinée sur le même Graphics partagé par tous les bâtiments (pas
