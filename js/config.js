@@ -548,11 +548,11 @@ const GameConfig = {
     // supérieur à sizeFactor (juste en dessous) pour ne pas réintroduire de chevauchement vertical.
     rowSpacingFactor: 0.95,
     // Taille du carré de chaque monstre (voir GameScene.redrawMonsters), en fraction de hexSize.
-    // Doublée (demande utilisateur explicite : "2x plus gros, en gardant le même écartement") par
-    // rapport à la valeur d'origine (0.85) -- dépasse maintenant volontairement depthSpacingFactor/
-    // rowSpacingFactor ci-dessus, donc les monstres se chevauchent de nouveau (accepté
-    // explicitement cette fois, contrairement à la demande précédente).
-    sizeFactor: 1.7,
+    // Doublée une seconde fois (demande utilisateur explicite), donc x4 au total par rapport à la
+    // valeur d'origine (0.85) -- SAUF le Seigneur de la horde, dont le multiplicateur dédié
+    // (sizeMultiplierByType.lord, voir GameScene.redrawMonsters) a été divisé par 2 en même temps
+    // pour compenser et garder exactement sa taille absolue d'avant cette demande.
+    sizeFactor: 3.4,
     // Vie de départ de chaque monstre (voir GameState.tickProduction, section tir de tour, pour
     // les dégâts infligés par un Donjon) -- demande utilisateur explicite (voir aussi
     // GameScene.redrawMonsters : un monstre à hp < startingHp est affiché "blessé", couleur plus

@@ -2650,7 +2650,11 @@ class GameScene extends Phaser.Scene {
     // cosmétique -- mêmes stats que les gobelins pour l'instant, voir demande utilisateur) pour se
     // distinguer d'un coup d'œil dans la masse.
     const iconKeyByType = { goblin: 'goblinIcon', chief: 'chiefIcon', lord: 'warlordIcon' };
-    const sizeMultiplierByType = { goblin: 1, chief: 1.4, lord: 1.8 };
+    // lord: 1.8 -> 0.9 (moitié) en même temps que le doublement de GameConfig.monsters.sizeFactor
+    // (demande utilisateur explicite : la taille de tout le monde double SAUF le Seigneur de la
+    // horde) -- compense exactement pour que sa taille ABSOLUE (sizeFactor * multiplicateur) reste
+    // celle d'avant cette demande, pendant que gobelins/Chefs doublent bien.
+    const sizeMultiplierByType = { goblin: 1, chief: 1.4, lord: 0.9 };
     const colorFull = '#' + GameConfig.colors.monster.toString(16).padStart(6, '0');
     // Blessé (hp < startingHp) : léger voile orangé PAR-DESSUS l'image, appliqué UNIQUEMENT là où
     // elle est opaque (globalCompositeOperation 'source-atop', voir plus bas) -- teinte sa
