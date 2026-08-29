@@ -747,10 +747,21 @@ class GameScene extends Phaser.Scene {
       this.buildButtons[id] = btn;
       this.uiElements.push(btn);
 
-      // Dessinée UNE fois à l'origine locale (0,0) -- repositionnée ensuite via setPosition à
-      // chaque layoutHud(), jamais redessinée (même trick que resourceBarIconImages).
-      const icon = this.add.graphics().setDepth(1001).setVisible(false);
-      this.drawBuildingIcon(icon, id, 0, 0, 30);
+      // Même icône que sur la carte (voir buildingIconKeys/redrawTileArt, demande utilisateur
+      // explicite) quand une image dédiée existe ; repli sur le dessin vectoriel (drawBuildingIcon)
+      // sinon (Route/Recycleur, aucune image fournie). Un Image (voir positionBuildButtonContents,
+      // setDisplaySize) se comporte comme le Graphics qu'il remplace pour tout le reste du code
+      // (setPosition/setAlpha/setVisible, utilisés génériquement ailleurs sans distinguer les deux).
+      const iconKey = this.buildingIconKeys[id];
+      let icon;
+      if (iconKey) {
+        icon = this.add.image(0, 0, iconKey).setDepth(1001).setVisible(false);
+      } else {
+        // Dessinée UNE fois à l'origine locale (0,0) -- repositionnée ensuite via setPosition à
+        // chaque layoutHud(), jamais redessinée (même trick que resourceBarIconImages).
+        icon = this.add.graphics().setDepth(1001).setVisible(false);
+        this.drawBuildingIcon(icon, id, 0, 0, 30);
+      }
       this.buildButtonIcons[id] = icon;
       this.uiElements.push(icon);
 
@@ -1790,10 +1801,13 @@ class GameScene extends Phaser.Scene {
   // depuis layoutHud (PC ET mobile, même recette) à chaque fois qu'un bouton visible est repositionné.
   positionBuildButtonContents(id, x, y, w, h) {
     const iconSize = Math.min(h - 6, 26);
-    this.buildButtonIcons[id]
-      .setPosition(x + 6 + iconSize / 2, y + h / 2)
-      .setScale(iconSize / 30) // dessinée à s=30 en référence, voir buildHud
-      .setVisible(true);
+    const icon = this.buildButtonIcons[id];
+    icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
+    // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution
+    // native du fichier source. Graphics de secours (Route/Recycleur) : dessinée à s=30 en
+    // référence dans buildHud, setScale reste donc le bon levier pour celui-là.
+    if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
+    else icon.setScale(iconSize / 30);
 
     const costImgSize = Math.min(h - 12, 15);
     const fontSize = Math.max(10, Math.min(13, h - 20));
