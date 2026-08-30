@@ -2665,10 +2665,15 @@ class GameScene extends Phaser.Scene {
     // dépendre d'une jauge ou d'une icône séparée.
     const colorWounded = '#' + GameConfig.colors.monsterWounded.toString(16).padStart(6, '0');
     // Halo coloré pour faire ressortir Chef/Seigneur au milieu des gobelins (demande utilisateur
-    // explicite : "se démarquer plus... sans changer les tailles") -- dégradé radial dessiné
-    // SOUS l'icône (avant drawImage), ne modifie donc pas mSize/la taille réelle de l'icône,
-    // seulement l'espace visuel autour. Argenté pour les Chefs, doré pour le Seigneur.
+    // explicite : "se démarquer plus... sans changer les tailles") -- dégradé radial, ne modifie
+    // donc pas mSize/la taille réelle de l'icône, seulement l'espace visuel autour. Argenté pour
+    // les Chefs, doré pour le Seigneur. Dessiné en second passage APRÈS tous les gobelins (voir
+    // eliteDraws plus bas, demande utilisateur explicite "au premier plan devant les gobelins")
+    // pour ne pas être recouvert par un gobelin voisin dessiné après lui dans la boucle
+    // principale ; l'icône du Chef/Seigneur est elle-même redessinée par-dessus son propre halo
+    // pour rester nette (le halo ne doit pas la voiler).
     const haloColorByType = { chief: '190,205,255', lord: '255,200,40' };
+    const eliteDraws = [];
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.lineWidth = 1;
 
@@ -2705,19 +2710,6 @@ class GameScene extends Phaser.Scene {
         const { x: sx, y: sy } = worldToScreen(m.x + copy * this.worldWidthPx, wy);
         if (sx < -mSize - 4 || sx > this.tileArtTexture.width + mSize + 4 || sy < -mSize - 4 || sy > this.tileArtTexture.height + mSize + 4) continue;
         const x = sx - mSize / 2, y = sy - mSize / 2;
-        const haloColor = haloColorByType[m.type];
-        if (haloColor) {
-          const haloRadius = mSize * 0.75;
-          const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, haloRadius);
-          grad.addColorStop(0, `rgba(${haloColor},0.65)`);
-          grad.addColorStop(1, `rgba(${haloColor},0)`);
-          ctx.save();
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(sx, sy, haloRadius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
         if (img) {
           ctx.drawImage(img, x, y, mSize, mSize);
           if (wounded) {
@@ -2733,6 +2725,35 @@ class GameScene extends Phaser.Scene {
           ctx.fillStyle = wounded ? colorWounded : colorFull;
           ctx.fillRect(x, y, mSize, mSize);
           ctx.strokeRect(x, y, mSize, mSize);
+        }
+        const haloColor = haloColorByType[m.type];
+        if (haloColor) eliteDraws.push({ sx, sy, x, y, mSize, img, wounded, haloColor });
+      }
+    }
+
+    // Second passage : halos dessinés APRÈS tous les gobelins (voir commentaire plus haut), donc
+    // par-dessus tout voisin qui les recouvrirait sinon -- l'icône est redessinée juste après son
+    // propre halo pour rester nette par-dessus.
+    for (const e of eliteDraws) {
+      const haloRadius = e.mSize * 0.75;
+      const grad = ctx.createRadialGradient(e.sx, e.sy, 0, e.sx, e.sy, haloRadius);
+      grad.addColorStop(0, `rgba(${e.haloColor},0.65)`);
+      grad.addColorStop(1, `rgba(${e.haloColor},0)`);
+      ctx.save();
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(e.sx, e.sy, haloRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      if (e.img) {
+        ctx.drawImage(e.img, e.x, e.y, e.mSize, e.mSize);
+        if (e.wounded) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+          ctx.globalAlpha = 0.5;
+          ctx.fillStyle = colorWounded;
+          ctx.fillRect(e.x, e.y, e.mSize, e.mSize);
+          ctx.restore();
         }
       }
     }
