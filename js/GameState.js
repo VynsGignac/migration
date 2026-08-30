@@ -193,20 +193,7 @@ const GameState = {
   // chaque frame : coûteux si la ville est grande, et inutile puisque seuls les bâtiments posés/
   // détruits peuvent changer le résultat).
   computeRevealedTiles() {
-    // DÉSACTIVÉ TEMPORAIREMENT (demande utilisateur explicite, pour inspecter la horde/les
-    // nouveaux visuels sans le brouillard de guerre) : révèle toute la carte d'un coup plutôt que
-    // de calculer la vraie portée des bâtiments -- tous les autres endroits qui lisent
-    // revealedTiles (redrawFog/redrawTileArt/redrawMonsters/redrawBuildings) en profitent
-    // automatiquement, un seul endroit à changer. Remettre la ligne juste en dessous (commentée)
-    // pour réactiver le vrai calcul.
     const revealed = new Set();
-    for (let col = 0; col < this.cols; col++) {
-      for (let row = 0; row < this.rows; row++) revealed.add(this.key(col, row));
-    }
-    this.revealedTiles = revealed;
-    return;
-    // Code original, inatteignable tant que le return ci-dessus reste -- gardé tel quel pour
-    // pouvoir réactiver le vrai calcul juste en retirant ce return.
     for (const [key, tile] of this.tiles) {
       if (tile.underConstruction) continue; // pas encore opérationnel, pas de zone/brouillard révélé
       const radius = this.zoneRadiusFor(tile.type);
