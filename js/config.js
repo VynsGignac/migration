@@ -20,7 +20,12 @@ const GameConfig = {
   world: {
     // Nombre de colonnes de cases sur la largeur du cylindre
     // (une fois qu'on a parcouru "cols" colonnes vers la droite, on retombe sur la colonne 0)
-    cols: 500,
+    // -- 200 (demande utilisateur explicite, réduit depuis 500). Plusieurs autres valeurs sont
+    // calibrées PROPORTIONNELLEMENT à ce nombre et doivent être réajustées si il change encore :
+    // world.startCol (reste à cols/2), monsters.lapOneSeconds (vitesse initiale de la horde en
+    // colonnes/s), et resourceNodes.blobCountTree/blobCountStone/corpseCount (densité de
+    // ressources par colonne, voir resourceNodes plus bas).
+    cols: 200,
     // Nombre de rangées de cases en hauteur (le monde NE boucle PAS verticalement) -- taille du
     // MONDE réel, ne pas confondre avec monsters.rowCount (nombre de lignes de la horde, purement
     // visuel/formation, découplé de cette valeur -- demande utilisateur explicite : plus de lignes
@@ -28,10 +33,10 @@ const GameConfig = {
     rows: 45,
     // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
     // pour laisser au joueur le temps de construire avant qu'elle n'arrive. À la moitié du tour
-    // (250/500) : la vague met 20 min à l'atteindre pour un 1er tour de 40 min (voir
-    // monsters.lapOneSeconds, vitesse divisée par 2 -- demande utilisateur) -- ce ratio doit être
-    // conservé si l'un des deux change.
-    startCol: 250,
+    // (100/200) -- ce ratio doit être conservé si cols change encore. Avec la vitesse initiale
+    // actuelle (voir monsters.lapOneSeconds, demande utilisateur explicite : 10 colonnes/30s), la
+    // horde met 5 min à l'atteindre pour un 1er tour de 10 min.
+    startCol: 100,
   },
   camera: {
     // zoomMin est un garde-fou absolu (jamais une valeur "confortable" à atteindre en pratique) :
@@ -107,7 +112,7 @@ const GameConfig = {
   // Les nombres de blobs gardent la même densité qu'à 80 colonnes (~1 blob d'arbres/6-7
   // colonnes, ~1 blob de pierre/10 colonnes), doublée (voir demande utilisateur : deux fois plus
   // de ressource sur la carte), puis mise à l'échelle du nombre de colonnes actuel (voir
-  // world.cols : ces comptes sont pour 500 colonnes -- à ajuster proportionnellement si world.cols
+  // world.cols : ces comptes sont pour 200 colonnes -- à ajuster proportionnellement si world.cols
   // change encore, sous peine de densité deux fois trop faible/forte).
   resourceNodes: {
     tree: { color: 0x1f6b3a, amountMin: 20, amountMax: 40 },
@@ -126,18 +131,18 @@ const GameConfig = {
     // dans les 5 premières/dernières rangées (voir GameState._spawnSingleTiles) -- ne concerne
     // QUE cette génération de départ, pas ceux laissés par un monstre tué (_maybeDropCorpse).
     corpse: { color: 0x6b1f3a, amountMin: 10, amountMax: 10, edgeRowMargin: 5 },
-    blobCountTree: 150,
-    blobCountStone: 100,
+    blobCountTree: 60,
+    blobCountStone: 40,
     blobSizeMin: 4,
     blobSizeMax: 9,
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
     startClearance: 4,
     // Cadavre de monstre : PAS un blob (voir _spawnSingleTiles) -- une case isolée et rare,
     // dispersée sur toute la carte. Densité de base ~1 par écran plein à dézoom maximum (le
-    // monde montre toujours ses 23 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur
-    // un écran 16:9 typique ça correspond à environ 45 colonnes visibles, 500/45 ≈ 11), doublée
-    // (demande utilisateur explicite).
-    corpseCount: 22,
+    // monde montre toujours ses 45 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur
+    // un écran 16:9 typique ça correspond à environ 45 colonnes visibles, 200/45 ≈ 4,4), doublée
+    // (demande utilisateur explicite) -- mis à l'échelle avec world.cols comme les blobs ci-dessus.
+    corpseCount: 9,
   },
   // Regroupe les bâtiments par onglet dans le menu de construction (voir GameScene.layoutHud/
   // activeBuildCategory) : la liste à plat est devenue trop longue pour tenir sans scroller une
@@ -513,20 +518,20 @@ const GameConfig = {
   // (pas d'attaque) : la seule chose qui compte est "un monstre qui passe sur une case la détruit".
   monsters: {
     // Vitesse PROGRESSIVE (voir demande utilisateur) : le 1er tour complet du cylindre dure
-    // lapOneSeconds: à ce rythme, le front met world.startCol / world.cols * lapOneSeconds pour
-    // atteindre l'Entrepôt de départ (20 min avec startCol au milieu du monde, voir world.startCol).
+    // lapOneSeconds, à un rythme constant de world.cols / lapOneSeconds colonnes/s (voir
+    // Monsters.update : speedCols = cols/lapOneSeconds au 1er tour). Calé sur la vitesse INITIALE
+    // demandée explicitement par l'utilisateur -- 10 colonnes en 30s, soit 1/3 colonne/s -- d'où
+    // lapOneSeconds = world.cols / (10/30) = 200 / (1/3) = 600s (10 min) pour world.cols = 200.
+    // À réajuster si world.cols change encore, pour garder cette même vitesse initiale.
     // Chaque tour suivant est lapSpeedMultiplier fois plus rapide que le précédent (voir
     // Monsters.update) : racine de 2 par défaut, pour que le 3e tour (2 multiplications depuis le
-    // 1er) soit exactement 2x plus rapide, donc 2x plus court (40 min -> 20 min).
-    // Doublé (donc vitesse divisée par 2, demande utilisateur explicite) par rapport à la valeur
-    // d'origine (1200s/20min) -- ce doublement s'applique uniformément à TOUS les tours (voir
-    // Monsters.update : speedCols = cols/lapOneSeconds, un facteur constant), pas seulement au 1er.
-    lapOneSeconds: 2400, // 40 minutes (vitesse divisée par 2)
+    // 1er) soit exactement 2x plus rapide, donc 2x plus court.
+    lapOneSeconds: 600, // 10 minutes (vitesse initiale : 10 colonnes/30s, demande utilisateur explicite)
     lapSpeedMultiplier: Math.SQRT2,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
     // compacte plutôt qu'une simple ligne -- 45 = blockSize(15) x 3 blocs en colonnes. Dimension
-    // purement formation/visuelle, déjà découplée du nombre réel de colonnes du monde (world.cols,
-    // 500) -- seule la position x résultante compte pour le jeu (voir Monsters.update).
+    // purement formation/visuelle, déjà découplée du nombre réel de colonnes du monde (world.cols)
+    // -- seule la position x résultante compte pour le jeu (voir Monsters.update).
     depthCount: 45,
     // Nombre de LIGNES de la horde (voir Monsters.init) -- 90 = blockSize(15) x 6 blocs en lignes.
     // Comme depthCount ci-dessus, dimension purement formation/visuelle, découplée du nombre réel
