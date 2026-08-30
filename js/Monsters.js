@@ -160,14 +160,26 @@ const Monsters = {
       } else if (m.respawnTimer != null) {
         // Décompte en temps RÉEL, comme le déplacement de la horde (dt non modifié par
         // GameConfig.simulation.speed, voir GameScene.update qui passe le même dt ici) -- pas au
-        // rythme ralenti du reste du jeu. respawnTimer est initialisé à la mort (voir GameState,
-        // section tir de tour) ; le Seigneur de la horde n'en reçoit jamais (voir Monsters.init/
-        // GameState) et ne régénère donc jamais.
+        // rythme ralenti du reste du jeu. Pour un Chef, respawnTimer est lancé dès sa mort (voir
+        // GameState, section tir de tour) ; pour un gobelin, voir juste en dessous. Le Seigneur de
+        // la horde n'en reçoit jamais et ne régénère donc jamais.
         m.respawnTimer -= dt;
         if (m.respawnTimer <= 0) {
           m.respawnTimer = null;
           m.alive = true;
           m.hp = cfg.startingHp;
+        }
+      } else if (m.leaderId != null) {
+        // Gobelin mort SANS respawnTimer en cours : soit il vient de mourir avec son meneur déjà
+        // mort, soit il attend encore depuis une mort précédente (demande utilisateur explicite :
+        // "il attend que le chef de guerre réapparaisse avant de lancer le timer de sa propre
+        // résurrection") -- vérifié à CHAQUE frame tant que le meneur (Chef ou Seigneur, voir
+        // Monsters.init) reste mort ; dès qu'il est de nouveau en vie, le délai aléatoire de
+        // régénération démarre enfin (voir GameConfig.monsters.goblinRespawnSecondsRange).
+        const leader = this.byId.get(m.leaderId);
+        if (leader && leader.alive) {
+          const [minS, maxS] = GameConfig.monsters.goblinRespawnSecondsRange;
+          m.respawnTimer = minS + Math.random() * (maxS - minS);
         }
       }
 

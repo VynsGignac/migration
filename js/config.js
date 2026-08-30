@@ -593,9 +593,10 @@ const GameConfig = {
     // horde, lui, ne régénère JAMAIS -- le tuer met fin à la partie (voir GameScene.update).
     chiefRespawnSeconds: 120,
     // Régénération des gobelins simples : délai ALÉATOIRE dans cette plage (demande utilisateur
-    // explicite : "2 à 3 min"), et SEULEMENT si le meneur (Chef ou Seigneur, voir Monsters.init/
-    // leaderId) de leur zone était en vie au moment de leur mort -- sinon ils restent morts
-    // définitivement (voir GameState, section tir de tour).
+    // explicite : "2 à 3 min"), mais ce délai ne démarre que lorsque le meneur (Chef ou Seigneur,
+    // voir Monsters.init/leaderId) de leur zone est EN VIE -- un gobelin mort dont le meneur est
+    // déjà mort ATTEND (sans décompte) que ce meneur réapparaisse avant que son propre délai ne
+    // soit tiré et lancé (voir Monsters.update, demande utilisateur explicite).
     goblinRespawnSecondsRange: [120, 180],
   },
 };

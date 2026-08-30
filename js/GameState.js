@@ -1006,21 +1006,16 @@ const GameState = {
           this.monstersKilled++;
           this._maybeDropCorpse(target);
           // Régénération (voir GameConfig.monsters.chiefRespawnSeconds/goblinRespawnSecondsRange,
-          // demande utilisateur explicite -- décompte réel dans Monsters.update) : un Chef de
-          // guerre revient toujours après un délai fixe. Un gobelin ne revient qu'après un délai
-          // aléatoire, et SEULEMENT si le meneur de sa zone (Chef ou Seigneur, voir Monsters.init/
-          // leaderId) était en vie au moment de CETTE mort -- sinon il reste mort définitivement
-          // (tant qu'il ne meurt pas une prochaine fois avec un meneur de nouveau vivant). Le
-          // Seigneur de la horde, lui, ne reçoit jamais de respawnTimer : il ne revient jamais (le
-          // tuer met fin à la partie, voir GameScene.update).
+          // demande utilisateur explicite) : un Chef de guerre revient TOUJOURS après un délai
+          // fixe, lancé dès sa mort. Un gobelin, lui, ne lance son propre délai (aléatoire) que
+          // lorsque le meneur de sa zone (Chef ou Seigneur, voir Monsters.init/leaderId) est EN VIE
+          // -- s'il meurt alors que son meneur est déjà mort, il attend (respawnTimer reste null)
+          // que ce meneur réapparaisse avant que son propre décompte démarre (voir Monsters.update,
+          // qui vérifie ça à chaque frame pour tout gobelin mort sans respawnTimer). Le Seigneur de
+          // la horde, lui, ne reçoit jamais de respawnTimer : il ne revient jamais (le tuer met fin
+          // à la partie, voir GameScene.update).
           if (target.type === 'chief') {
             target.respawnTimer = GameConfig.monsters.chiefRespawnSeconds;
-          } else if (target.type === 'goblin') {
-            const leader = Monsters.byId.get(target.leaderId);
-            if (leader && leader.alive) {
-              const [minS, maxS] = GameConfig.monsters.goblinRespawnSecondsRange;
-              target.respawnTimer = minS + Math.random() * (maxS - minS);
-            }
           }
         }
         this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
