@@ -65,6 +65,11 @@ const Monsters = {
     const tailStartX = (GameConfig.world.startCol + cfg.tailAheadOfWarehouseCols) * colWidth;
     const frontStartX = tailStartX + (cfg.depthCount - 1) * depthSpacing;
     this.list = [];
+    // Index id -> monstre (voir GameState, résolution rapide de leaderId à la mort d'un gobelin
+    // pour la régénération) et référence directe au Seigneur (voir GameScene.update, condition de
+    // victoire) -- reconstruits aussi par deserialize(), pas persistés (dérivables de list).
+    this.byId = new Map();
+    this.lord = null;
     this.nextId = 1;
     this.totalDistancePx = 0;
     for (let displayRow = 0; displayRow < cfg.rowCount; displayRow++) {
@@ -85,7 +90,16 @@ const Monsters = {
         const variant = type === 'goblin'
           ? this.goblinVariants[Math.floor(Math.random() * this.goblinVariants.length)]
           : undefined;
-        this.list.push({
+        // Meneur (Chef ou Seigneur) de la zone de ce gobelin, pour la condition de régénération
+        // (voir GameState, section tir de tour, et GameConfig.monsters.goblinRespawnSecondsRange) :
+        // calculé directement à partir des ids séquentiels attribués ci-dessous, SANS passe
+        // supplémentaire -- id(displayRow, depth) = displayRow * depthCount + depth + 1 (nextId
+        // incrémenté une fois par push, dans cet ordre), et le meneur du bloc (rowBlock,
+        // depthBlock) est toujours celui au centre local (centerLocal, centerLocal) de ce bloc.
+        const leaderId = type === 'goblin'
+          ? (rowBlock * blockSize + centerLocal) * cfg.depthCount + (depthBlock * blockSize + centerLocal) + 1
+          : undefined;
+        const monster = {
           id: this.nextId++,
           row: worldRow,
           displayRow,
@@ -94,7 +108,11 @@ const Monsters = {
           alive: true,
           type,
           variant,
-        });
+          leaderId,
+        };
+        this.list.push(monster);
+        this.byId.set(monster.id, monster);
+        if (type === 'lord') this.lord = monster;
       }
     }
   },
@@ -124,15 +142,33 @@ const Monsters = {
     const messages = [];
 
     for (const m of this.list) {
-      if (!m.alive) continue;
+      // Position TOUJOURS avancée, même mort (voir régénération ci-dessous, GameConfig.monsters.
+      // chiefRespawnSeconds/goblinRespawnSecondsRange, demande utilisateur explicite) : la
+      // formation reste un bloc rigide, un monstre régénéré doit réapparaître à SA place ACTUELLE
+      // dans la formation, pas à l'endroit (obsolète) où il est mort -- seule la détection de
+      // franchissement de case (destruction) est sautée pour un monstre mort, juste en dessous.
       const prevCol = Math.floor(m.x / colWidth);
       m.x += advance;
       const newCol = Math.floor(m.x / colWidth);
 
-      for (let c = prevCol + 1; c <= newCol; c++) {
-        const wrappedCol = HexUtils.wrapCol(c, gameState.cols);
-        const warehouseLost = gameState.destroyTile(wrappedCol, m.row);
-        if (warehouseLost) messages.push('Un Entrepôt a été englouti par les monstres !');
+      if (m.alive) {
+        for (let c = prevCol + 1; c <= newCol; c++) {
+          const wrappedCol = HexUtils.wrapCol(c, gameState.cols);
+          const warehouseLost = gameState.destroyTile(wrappedCol, m.row);
+          if (warehouseLost) messages.push('Un Entrepôt a été englouti par les monstres !');
+        }
+      } else if (m.respawnTimer != null) {
+        // Décompte en temps RÉEL, comme le déplacement de la horde (dt non modifié par
+        // GameConfig.simulation.speed, voir GameScene.update qui passe le même dt ici) -- pas au
+        // rythme ralenti du reste du jeu. respawnTimer est initialisé à la mort (voir GameState,
+        // section tir de tour) ; le Seigneur de la horde n'en reçoit jamais (voir Monsters.init/
+        // GameState) et ne régénère donc jamais.
+        m.respawnTimer -= dt;
+        if (m.respawnTimer <= 0) {
+          m.respawnTimer = null;
+          m.alive = true;
+          m.hp = cfg.startingHp;
+        }
       }
 
       // Ramène x dans [0, worldWidthPx) pour éviter une dérive flottante sur une longue partie
@@ -151,5 +187,10 @@ const Monsters = {
     this.list = (data.list || []).map(m => ({ ...m }));
     this.nextId = data.nextId || 1;
     this.totalDistancePx = data.totalDistancePx || 0;
+    // Reconstruits à partir de list (pas persistés, voir init()) : fonctionne aussi sur une
+    // sauvegarde d'avant cette fonctionnalité (leaderId/respawnTimer seront alors simplement
+    // absents -- ces gobelins ne régénéreront pas, sans erreur).
+    this.byId = new Map(this.list.map(m => [m.id, m]));
+    this.lord = this.list.find(m => m.type === 'lord') || null;
   },
 };

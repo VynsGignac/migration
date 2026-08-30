@@ -3243,6 +3243,12 @@ class GameScene extends Phaser.Scene {
 
       const monsterMessages = Monsters.update(dt, this.elapsed, GameState);
       for (const msg of monsterMessages) this.showToast(msg);
+
+      // Condition de VICTOIRE (demande utilisateur explicite) : affiche pour l'instant le même
+      // écran que la défaite (à distinguer plus tard) -- le Seigneur de la horde ne reçoit jamais
+      // de respawnTimer (voir GameState/Monsters.update), donc `alive` reste définitivement false
+      // une fois tué, contrairement aux Chefs/gobelins qui régénèrent.
+      if (!this.gameOverOpen && Monsters.lord && !Monsters.lord.alive) this.triggerGameOver();
     }
 
     if (GameState.buildingsDirty) {

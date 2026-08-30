@@ -588,5 +588,14 @@ const GameConfig = {
     // Chance qu'un monstre tué (par une tour, voir tickProduction/_maybeDropCorpse) laisse un
     // cadavre sur sa case -- voir resourceNodes.corpse/buildings.recycler, demande utilisateur.
     corpseDropChance: 0.1,
+    // Régénération des Chefs de guerre (voir GameState, section tir de tour, et Monsters.update
+    // pour le décompte) : délai FIXE, demande utilisateur explicite ("2 min"). Le Seigneur de la
+    // horde, lui, ne régénère JAMAIS -- le tuer met fin à la partie (voir GameScene.update).
+    chiefRespawnSeconds: 120,
+    // Régénération des gobelins simples : délai ALÉATOIRE dans cette plage (demande utilisateur
+    // explicite : "2 à 3 min"), et SEULEMENT si le meneur (Chef ou Seigneur, voir Monsters.init/
+    // leaderId) de leur zone était en vie au moment de leur mort -- sinon ils restent morts
+    // définitivement (voir GameState, section tir de tour).
+    goblinRespawnSecondsRange: [120, 180],
   },
 };
