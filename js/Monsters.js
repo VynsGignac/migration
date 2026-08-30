@@ -19,12 +19,16 @@ const Monsters = {
   totalDistancePx: 0,
 
   // Peuple la horde : un bloc de depthCount monstres par rangée de FORMATION (rowCount rangées au
-  // total), le front (depth 0) démarrant à la colonne 0, le reste s'étirant derrière (colonnes
-  // négatives, qui boucleront naturellement sur l'autre bord du cylindre le temps que le front
-  // avance). L'écart entre monstres d'une même rangée (depthSpacingFactor) est volontairement plus
-  // petit qu'une case, pour un rendu de horde tassée (voir GameScene.redrawMonsters) — indépendant
-  // de la largeur de case réelle utilisée pour la détection de franchissement de colonne dans
-  // update() ci-dessous.
+  // total). Position de départ (voir GameConfig.monsters.tailAheadOfWarehouseCols, demande
+  // utilisateur explicite) : la FIN de la formation (depth = depthCount-1, la plus en retrait)
+  // démarre à world.startCol + tailAheadOfWarehouseCols colonnes -- donc déjà passée l'Entrepôt
+  // initial -- et le front (depth 0) démarre encore plus loin devant elle, à cette même position
+  // PLUS le décalage total de la formation (depthCount-1 pas de depthSpacing). Le reste de la
+  // formation s'étire derrière le front selon ce même écart (colonnes qui boucleront naturellement
+  // sur l'autre bord du cylindre le temps que le front avance). L'écart entre monstres d'une même
+  // rangée (depthSpacingFactor) est volontairement plus petit qu'une case, pour un rendu de horde
+  // tassée (voir GameScene.redrawMonsters) — indépendant de la largeur de case réelle utilisée
+  // pour la détection de franchissement de colonne dans update() ci-dessous.
   // rowCount (lignes de formation, voir GameConfig.monsters) est DÉCOUPLÉ du vrai nombre de
   // rangées du monde (gameState.rows) -- demande utilisateur explicite : plus de lignes de
   // monstres SANS agrandir le monde. m.row (utilisé pour la destruction de case, le brouillard de
@@ -53,6 +57,13 @@ const Monsters = {
     const depthSpacing = GameConfig.hex.size * cfg.depthSpacingFactor;
     const blockSize = cfg.blockSize;
     const centerLocal = Math.floor((blockSize - 1) / 2);
+    const colWidth = GameConfig.hex.size * 1.5;
+    // Voir commentaire au-dessus de init() : la fin de la formation (dernier depth) doit démarrer
+    // à world.startCol + tailAheadOfWarehouseCols colonnes ; le front (depth 0) démarre donc à
+    // cette position PLUS le décalage total de la formation ((depthCount-1) * depthSpacing), qu'on
+    // retire ensuite pas à pas par depth ci-dessous (x: frontStartX - depth * depthSpacing).
+    const tailStartX = (GameConfig.world.startCol + cfg.tailAheadOfWarehouseCols) * colWidth;
+    const frontStartX = tailStartX + (cfg.depthCount - 1) * depthSpacing;
     this.list = [];
     this.nextId = 1;
     this.totalDistancePx = 0;
@@ -78,7 +89,7 @@ const Monsters = {
           id: this.nextId++,
           row: worldRow,
           displayRow,
-          x: -depth * depthSpacing,
+          x: frontStartX - depth * depthSpacing,
           hp: cfg.startingHp,
           alive: true,
           type,

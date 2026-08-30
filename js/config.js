@@ -31,11 +31,12 @@ const GameConfig = {
     // visuel/formation, découplé de cette valeur -- demande utilisateur explicite : plus de lignes
     // de monstres SANS agrandir le monde, voir Monsters.init).
     rows: 45,
-    // Colonne de départ de l'Entrepôt initial : assez loin devant la vague (qui démarre à la colonne 0)
-    // pour laisser au joueur le temps de construire avant qu'elle n'arrive. À la moitié du tour
-    // (100/200) -- ce ratio doit être conservé si cols change encore. Avec la vitesse initiale
-    // actuelle (voir monsters.lapOneSeconds, demande utilisateur explicite : 10 colonnes/30s), la
-    // horde met 5 min à l'atteindre pour un 1er tour de 10 min.
+    // Colonne de départ de l'Entrepôt initial. À la moitié du tour (100/200) -- ce ratio doit être
+    // conservé si cols change encore. La horde démarre maintenant déjà PASSÉE cette colonne (voir
+    // monsters.tailAheadOfWarehouseCols/Monsters.init, demande utilisateur explicite) : elle doit
+    // faire presque un tour complet pour l'atteindre, soit ≈7min32 avec la vitesse initiale
+    // actuelle (voir monsters.lapOneSeconds : 10 colonnes/30s) -- 5 min avec l'ancien départ à la
+    // colonne 0.
     startCol: 100,
   },
   camera: {
@@ -528,6 +529,15 @@ const GameConfig = {
     // 1er) soit exactement 2x plus rapide, donc 2x plus court.
     lapOneSeconds: 600, // 10 minutes (vitesse initiale : 10 colonnes/30s, demande utilisateur explicite)
     lapSpeedMultiplier: Math.SQRT2,
+    // Position de départ de la horde (voir Monsters.init) -- demande utilisateur explicite :
+    // positionner la horde pour que la FIN de la formation (le dernier gobelin, depth = depthCount-1)
+    // démarre 20 colonnes à droite (donc déjà PASSÉE) de l'Entrepôt initial (world.startCol), au
+    // lieu du front à la colonne 0 comme avant. Le front (plus avancé que la fin, voir depthCount/
+    // depthSpacingFactor) démarre alors lui-même déjà passé l'Entrepôt -- il doit donc faire
+    // presque un tour complet du cylindre pour l'atteindre : ≈150,7 colonnes à la vitesse initiale
+    // (1/3 colonne/s, voir lapOneSeconds) donnent ≈452s (7min32) avant le 1er contact, contre 5 min
+    // avec l'ancien départ à la colonne 0 -- valeur demandée par l'utilisateur ("7 min 30").
+    tailAheadOfWarehouseCols: 20,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
     // compacte plutôt qu'une simple ligne -- 45 = blockSize(15) x 3 blocs en colonnes. Dimension
     // purement formation/visuelle, déjà découplée du nombre réel de colonnes du monde (world.cols)
