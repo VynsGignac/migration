@@ -130,13 +130,15 @@ const GameConfig = {
     // d'origine (tree 20-40, stone 25-50).
     tree: { color: 0x1f6b3a, amountMin: 40, amountMax: 80 },
     stone: { color: 0x767a80, amountMin: 50, amountMax: 100 },
-    // Nouvelle ressource (demande utilisateur explicite) : blobs deux fois moins nombreux que la
-    // pierre (blobCountMountain = blobCountStone/2, voir plus bas) mais 1.5x plus de ressource par
-    // case (base = stone.amountMin/amountMax) -- pas encore de bâtiment qui l'extrait (voir ore
-    // plus bas, même situation), juste la ressource posée sur la carte pour l'instant.
-    // compact: true (voir GameState._growBlob) : forme plus ronde/dense qu'un blob normal, demande
-    // utilisateur explicite.
-    mountain: { color: 0x4a4e58, amountMin: 75, amountMax: 150, compact: true },
+    // Nouvelle ressource (demande utilisateur explicite) : blobs à l'origine deux fois moins
+    // nombreux que la pierre (blobCountMountain = blobCountStone/2, voir plus bas) et 1.5x plus de
+    // ressource par case (base = stone.amountMin/amountMax) -- pas encore de bâtiment qui
+    // l'extrait (voir ore plus bas, même situation), juste la ressource posée sur la carte pour
+    // l'instant. compact: true (voir GameState._growBlob) : forme plus ronde/dense qu'un blob
+    // normal. sizeMin/sizeMax (demande utilisateur explicite ultérieure, "3 fois plus gros mais 2
+    // fois plus rare") : 3x blobSizeMin/blobSizeMax (4-9) plutôt que ces valeurs partagées avec
+    // tree/stone -- voir aussi blobCountMountain, divisé par 2 en même temps (20 -> 10).
+    mountain: { color: 0x4a4e58, amountMin: 75, amountMax: 150, compact: true, sizeMin: 12, sizeMax: 27 },
     // Le blé n'apparaît pas en blobs au démarrage : ce sont les Fermes qui le plantent
     // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
     // au calcul de l'opacité (case bien mûre vs. presque récoltée).
@@ -154,7 +156,7 @@ const GameConfig = {
     blobCountTree: 60,
     blobCountStone: 40,
     // Moitié du nombre de blobs de pierre (demande utilisateur explicite : "2 fois moins nombreux").
-    blobCountMountain: 20,
+    blobCountMountain: 10,
     blobSizeMin: 4,
     blobSizeMax: 9,
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.

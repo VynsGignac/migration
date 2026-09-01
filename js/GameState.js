@@ -329,6 +329,11 @@ const GameState = {
     // Voir GameConfig.resourceNodes.mountain.compact / GameState._growBlob : forme plus ronde/
     // dense pour ce type, sans toucher au tracé habituel (plus organique) de tree/stone.
     const compact = !!(cfg[type] && cfg[type].compact);
+    // Taille de blob PAR TYPE (voir resourceNodes.mountain.sizeMin/sizeMax, demande utilisateur
+    // explicite : blobs de montagne 3x plus gros) -- reprend blobSizeMin/blobSizeMax (partagés,
+    // tree/stone) si le type n'a pas ses propres bornes.
+    const sizeMin = (cfg[type] && cfg[type].sizeMin) || cfg.blobSizeMin;
+    const sizeMax = (cfg[type] && cfg[type].sizeMax) || cfg.blobSizeMax;
     let placed = 0;
     let attempts = 0;
     while (placed < count && attempts < count * 15) {
@@ -337,7 +342,7 @@ const GameState = {
       const seedRow = Math.floor(Math.random() * this.rows);
       if (this._withinStartClearance(seedCol, clearance)) continue;
 
-      const size = cfg.blobSizeMin + Math.floor(Math.random() * (cfg.blobSizeMax - cfg.blobSizeMin + 1));
+      const size = sizeMin + Math.floor(Math.random() * (sizeMax - sizeMin + 1));
       const blobTiles = this._growBlob(seedCol, seedRow, size, clearance, compact);
       if (blobTiles.length === 0) continue;
 
