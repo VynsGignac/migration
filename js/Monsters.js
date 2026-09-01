@@ -104,7 +104,7 @@ const Monsters = {
           row: worldRow,
           displayRow,
           x: frontStartX - depth * depthSpacing,
-          hp: cfg.startingHp,
+          hp: cfg.hpByType[type],
           alive: true,
           type,
           variant,
@@ -167,7 +167,7 @@ const Monsters = {
         if (m.respawnTimer <= 0) {
           m.respawnTimer = null;
           m.alive = true;
-          m.hp = cfg.startingHp;
+          m.hp = cfg.hpByType[m.type];
         }
       } else if (m.leaderId != null) {
         // Gobelin mort SANS respawnTimer en cours : soit il vient de mourir avec son meneur déjà

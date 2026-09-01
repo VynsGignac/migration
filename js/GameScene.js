@@ -25,6 +25,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('treeTile', GameAssets.treeTile);
     this.load.image('stoneTile', GameAssets.stoneTile);
     this.load.image('wheatTile', GameAssets.wheatTile);
+    this.load.image('mountainTile', GameAssets.mountainTile);
     this.load.image('roadTile', GameAssets.roadTile);
     this.load.image('woodIcon', GameAssets.woodIcon);
     this.load.image('planksIcon', GameAssets.planksIcon);
@@ -2230,7 +2231,7 @@ class GameScene extends Phaser.Scene {
       ctx.restore();
     };
 
-    const resourceKeyByType = { tree: 'treeTile', stone: 'stoneTile', wheat: 'wheatTile' };
+    const resourceKeyByType = { tree: 'treeTile', stone: 'stoneTile', wheat: 'wheatTile', mountain: 'mountainTile' };
 
     for (let col = colMin; col <= colMax; col++) {
       const wrappedCol = HexUtils.wrapCol(col, this.cols);
@@ -2659,7 +2660,7 @@ class GameScene extends Phaser.Scene {
     // garder sa taille absolue inchangée), et l'agrandit ensuite de 50% par-dessus.
     const sizeMultiplierByType = { goblin: 1, chief: 1.4, lord: 1.35 };
     const colorFull = '#' + GameConfig.colors.monster.toString(16).padStart(6, '0');
-    // Blessé (hp < startingHp) : léger voile orangé PAR-DESSUS l'image, appliqué UNIQUEMENT là où
+    // Blessé (hp < hpByType[m.type]) : léger voile orangé PAR-DESSUS l'image, appliqué UNIQUEMENT là où
     // elle est opaque (globalCompositeOperation 'source-atop', voir plus bas) -- teinte sa
     // silhouette réelle plutôt qu'un carré autour, reste lisible même minuscule dézoomé, sans
     // dépendre d'une jauge ou d'une icône séparée.
@@ -2694,7 +2695,7 @@ class GameScene extends Phaser.Scene {
       if (!GameState.revealedTiles.has(GameState.key(col, m.row))) continue;
       const wy = rowSpacing * (m.displayRow + 0.25);
       const mSize = size * (sizeMultiplierByType[m.type] || 1);
-      const wounded = m.hp < GameConfig.monsters.startingHp;
+      const wounded = m.hp < GameConfig.monsters.hpByType[m.type];
       // Variante d'image cosmétique pour les gobelins simples (demande utilisateur explicite :
       // plusieurs images de gobelin utilisées aléatoirement pour varier l'apparence, mêmes stats
       // pour tous) -- m.variant fixé une fois pour toutes à la création (voir Monsters.init) pour

@@ -193,6 +193,19 @@ const GameState = {
   // chaque frame : coûteux si la ville est grande, et inutile puisque seuls les bâtiments posés/
   // détruits peuvent changer le résultat).
   computeRevealedTiles() {
+    // Voir GameConfig.debug.disableFog : bascule de test, révèle toute la carte d'un coup plutôt
+    // que la zone d'action réelle des bâtiments -- un seul point de passage (rendu ET logique,
+    // voir harvestRuin, lisent tous les deux ce même revealedTiles) plutôt qu'un contournement
+    // éparpillé à chaque endroit qui le consulte.
+    if (GameConfig.debug && GameConfig.debug.disableFog) {
+      const revealed = new Set();
+      for (let col = 0; col < this.cols; col++) {
+        for (let row = 0; row < this.rows; row++) revealed.add(this.key(col, row));
+      }
+      this.revealedTiles = revealed;
+      return;
+    }
+
     const revealed = new Set();
     for (const [key, tile] of this.tiles) {
       if (tile.underConstruction) continue; // pas encore opérationnel, pas de zone/brouillard révélé
@@ -241,6 +254,7 @@ const GameState = {
     const cfg = GameConfig.resourceNodes;
     this._spawnBlobs('tree', cfg.blobCountTree, cfg);
     this._spawnBlobs('stone', cfg.blobCountStone, cfg);
+    this._spawnBlobs('mountain', cfg.blobCountMountain, cfg);
     this._spawnSingleTiles('corpse', cfg.corpseCount, cfg);
     this._ensureStartingVisibility(cfg);
   },
@@ -312,6 +326,9 @@ const GameState = {
 
   _spawnBlobs(type, count, cfg) {
     const clearance = cfg.startClearance;
+    // Voir GameConfig.resourceNodes.mountain.compact / GameState._growBlob : forme plus ronde/
+    // dense pour ce type, sans toucher au tracé habituel (plus organique) de tree/stone.
+    const compact = !!(cfg[type] && cfg[type].compact);
     let placed = 0;
     let attempts = 0;
     while (placed < count && attempts < count * 15) {
@@ -321,7 +338,7 @@ const GameState = {
       if (this._withinStartClearance(seedCol, clearance)) continue;
 
       const size = cfg.blobSizeMin + Math.floor(Math.random() * (cfg.blobSizeMax - cfg.blobSizeMin + 1));
-      const blobTiles = this._growBlob(seedCol, seedRow, size, clearance);
+      const blobTiles = this._growBlob(seedCol, seedRow, size, clearance, compact);
       if (blobTiles.length === 0) continue;
 
       for (const t of blobTiles) {
@@ -340,7 +357,12 @@ const GameState = {
   // Fait pousser un amas irrégulier de `size` cases autour d'une graine, en évitant les cases
   // déjà occupées (bâtiment ou autre ressource) et la zone de dégagement de départ.
   // Peut renvoyer moins de `size` cases si la place manque.
-  _growBlob(seedCol, seedRow, size, clearance) {
+  // compact (voir GameConfig.resourceNodes.mountain, demande utilisateur explicite) : étend
+  // TOUJOURS depuis la case la plus ANCIENNE du front (FIFO, façon BFS) plutôt qu'une case tirée
+  // au hasard -- remplit les anneaux proches de la graine avant de s'étendre plus loin, donnant
+  // une forme ronde/dense plutôt qu'un tracé qui peut serpenter loin d'elle. Comportement normal
+  // (aléatoire, plus organique) inchangé pour tree/stone (compact absent/false).
+  _growBlob(seedCol, seedRow, size, clearance, compact) {
     const wrappedSeedCol = HexUtils.wrapCol(seedCol, this.cols);
     if (!this._tileIsFreeForResource(wrappedSeedCol, seedRow)) return [];
 
@@ -351,15 +373,19 @@ const GameState = {
 
     while (result.length < size && frontier.length > 0 && guard < size * 20) {
       guard++;
-      const idx = Math.floor(Math.random() * frontier.length);
+      const idx = compact ? 0 : Math.floor(Math.random() * frontier.length);
       const cur = frontier[idx];
-      const candidates = HexUtils.neighbors(cur.col, cur.row).filter(n => n.row >= 0 && n.row < this.rows);
+      // Ne garde que les voisins PAS déjà visités : sans ce filtre, une case dont tous les
+      // voisins sont déjà pris resterait indéfiniment en tête du front en mode compact (idx
+      // toujours 0), gaspillant le budget `guard` au lieu de passer à la suivante.
+      const candidates = HexUtils.neighbors(cur.col, cur.row)
+        .filter(n => n.row >= 0 && n.row < this.rows)
+        .filter(n => !visited.has(this.key(HexUtils.wrapCol(n.col, this.cols), n.row)));
       if (candidates.length === 0) { frontier.splice(idx, 1); continue; }
 
       const n = candidates[Math.floor(Math.random() * candidates.length)];
       const wrappedCol = HexUtils.wrapCol(n.col, this.cols);
       const k = this.key(wrappedCol, n.row);
-      if (visited.has(k)) continue;
       visited.add(k);
       if (this._withinStartClearance(n.col, clearance)) continue;
 

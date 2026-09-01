@@ -4,6 +4,13 @@
 // ============================================================
 
 const GameConfig = {
+  // Bascules de test, à remettre à false avant une vraie partie/publication -- PAS des réglages
+  // de gameplay. disableFog (demande utilisateur explicite, pour prévisualiser la nouvelle
+  // ressource montagne sans construire tout un réseau) : GameState.computeRevealedTiles révèle
+  // alors toute la carte d'un coup au lieu de la zone d'action des bâtiments.
+  debug: {
+    disableFog: true,
+  },
   hex: {
     // Taille d'une case hexagonale en pixels (rayon du centre à un coin)
     size: 34,
@@ -56,7 +63,7 @@ const GameConfig = {
     background: 0x10151a,
     ruin: 0x4a4a4a,
     monster: 0xff2222,
-    // Monstre blessé (hp < monsters.startingHp, voir GameScene.redrawMonsters) : teinte plus
+    // Monstre blessé (hp < monsters.hpByType[type], voir GameScene.redrawMonsters) : teinte plus
     // claire/orangée pour rester lisible à la taille minuscule d'un monstre sans dépendre d'une
     // jauge ou d'une icône séparée -- demande utilisateur explicite.
     monsterWounded: 0xffb347,
@@ -110,13 +117,26 @@ const GameConfig = {
   },
   // Ressources naturelles posées sur la carte sous forme de "blobs" (amas irréguliers).
   // Les nombres de blobs gardent la même densité qu'à 80 colonnes (~1 blob d'arbres/6-7
-  // colonnes, ~1 blob de pierre/10 colonnes), doublée (voir demande utilisateur : deux fois plus
-  // de ressource sur la carte), puis mise à l'échelle du nombre de colonnes actuel (voir
-  // world.cols : ces comptes sont pour 200 colonnes -- à ajuster proportionnellement si world.cols
-  // change encore, sous peine de densité deux fois trop faible/forte).
+  // colonnes, ~1 blob de pierre/10 colonnes), doublée UNE PREMIÈRE fois (demande utilisateur :
+  // deux fois plus de ressource sur la carte), puis mise à l'échelle du nombre de colonnes actuel
+  // (voir world.cols : ces comptes sont pour 200 colonnes) -- à ajuster proportionnellement si
+  // world.cols change encore, sous peine de densité deux fois trop faible/forte. La demande "deux
+  // fois plus de ressource" reformulée ensuite (pas plus de blobs, chaque blob contient 2x plus de
+  // ressource, voir amountMin/amountMax de tree/stone juste en dessous) a donc annulé le second
+  // doublement du NOMBRE de blobs, remis à sa valeur précédente.
   resourceNodes: {
-    tree: { color: 0x1f6b3a, amountMin: 20, amountMax: 40 },
-    stone: { color: 0x767a80, amountMin: 25, amountMax: 50 },
+    // amountMin/amountMax doublés (demande utilisateur explicite, deuxième formulation : pas plus
+    // de blobs, mais chaque blob contient deux fois plus de ressource) par rapport aux valeurs
+    // d'origine (tree 20-40, stone 25-50).
+    tree: { color: 0x1f6b3a, amountMin: 40, amountMax: 80 },
+    stone: { color: 0x767a80, amountMin: 50, amountMax: 100 },
+    // Nouvelle ressource (demande utilisateur explicite) : blobs deux fois moins nombreux que la
+    // pierre (blobCountMountain = blobCountStone/2, voir plus bas) mais 1.5x plus de ressource par
+    // case (base = stone.amountMin/amountMax) -- pas encore de bâtiment qui l'extrait (voir ore
+    // plus bas, même situation), juste la ressource posée sur la carte pour l'instant.
+    // compact: true (voir GameState._growBlob) : forme plus ronde/dense qu'un blob normal, demande
+    // utilisateur explicite.
+    mountain: { color: 0x4a4e58, amountMin: 75, amountMax: 150, compact: true },
     // Le blé n'apparaît pas en blobs au démarrage : ce sont les Fermes qui le plantent
     // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
     // au calcul de l'opacité (case bien mûre vs. presque récoltée).
@@ -133,6 +153,8 @@ const GameConfig = {
     corpse: { color: 0x6b1f3a, amountMin: 10, amountMax: 10, edgeRowMargin: 5 },
     blobCountTree: 60,
     blobCountStone: 40,
+    // Moitié du nombre de blobs de pierre (demande utilisateur explicite : "2 fois moins nombreux").
+    blobCountMountain: 20,
     blobSizeMin: 4,
     blobSizeMax: 9,
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
@@ -284,7 +306,9 @@ const GameConfig = {
       // Coût divisé par 2 (demande utilisateur explicite) par rapport à l'original (planks: 20,
       // stoneBlocks: 15) : moitié de 15 arrondie à 8 pour un chiffre entier propre plutôt que 7.5.
       name: 'Donjon', cost: { planks: 10, stoneBlocks: 8 }, color: 0x5a2a3a,
-      kind: 'tower', range: 4, fireInterval: 2, damage: 1,
+      // Portée (aussi la zone d'action/de révélation du brouillard de guerre, voir
+      // GameState.zoneRadiusFor) passée de 4 à 7 cases -- demande utilisateur explicite.
+      kind: 'tower', range: 7, fireInterval: 2, damage: 1,
       ruinLoot: { planks: 10, stoneBlocks: 6 },
     },
     // kind: 'watchtower' => aucune action (pas de tir, pas de production), juste une zone de
@@ -580,11 +604,13 @@ const GameConfig = {
     // (sizeMultiplierByType.lord, voir GameScene.redrawMonsters) a été divisé par 2 en même temps
     // pour compenser et garder exactement sa taille absolue d'avant cette demande.
     sizeFactor: 3.4,
-    // Vie de départ de chaque monstre (voir GameState.tickProduction, section tir de tour, pour
-    // les dégâts infligés par un Donjon) -- demande utilisateur explicite (voir aussi
-    // GameScene.redrawMonsters : un monstre à hp < startingHp est affiché "blessé", couleur plus
-    // claire, pour qu'on distingue au coup d'œil ceux qui vont mourir au prochain tir).
-    startingHp: 2,
+    // Vie de départ PAR TYPE de monstre (voir GameState.tickProduction, section tir de tour, pour
+    // les dégâts infligés par un Donjon) -- demande utilisateur explicite : un gobelin simple meurt
+    // en un seul tir (damage: 1 sur le Donjon), un Chef de guerre en résiste 3, le Seigneur de la
+    // horde 10 (voir aussi GameScene.redrawMonsters : un monstre à hp < hpByType[m.type] est
+    // affiché "blessé", couleur plus claire, pour qu'on distingue au coup d'œil ceux qui vont
+    // mourir au prochain tir).
+    hpByType: { goblin: 1, chief: 3, lord: 10 },
     // Chance qu'un monstre tué (par une tour, voir tickProduction/_maybeDropCorpse) laisse un
     // cadavre sur sa case -- voir resourceNodes.corpse/buildings.recycler, demande utilisateur.
     corpseDropChance: 0.1,
