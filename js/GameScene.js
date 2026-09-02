@@ -1673,25 +1673,27 @@ class GameScene extends Phaser.Scene {
     const catTabRows = Math.ceil(categoryIds.length / catCols);
     const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
     const desktopSidebarWidth = 220;
-    // x1.8, pas x2 (demande utilisateur explicite, voir le commentaire équivalent sur btnHeight
-    // plus bas) -- voir positionBuildButtonContents, dont l'icône (26 -> 47) reste bornée par
-    // h - 6 : la hauteur de bouton doit donc grandir en proportion (38 -> 59 = 47 + les 12px de
-    // marge d'origine) pour que l'icône agrandie ne soit pas re-rognée par ce plafond. Espacement
-    // réduit (demande utilisateur explicite), en plus des boutons plus petits.
-    const desktopBtnHeight = 59, desktopGap = 4;
+    const desktopGap = 4;
     const confirmRowHeight = 42;
-    // catBlockY (voir plus bas) est ancré à h / 2 -- FIXE, ne bouge jamais selon le nombre de
-    // boutons de l'onglet actif (demande utilisateur explicite passée : les onglets sautaient de
-    // position en changeant d'onglet). Onglets + liste de boutons doivent donc tenir dans la
-    // moitié INFÉRIEURE de l'écran SEULE, pas dans sa totalité -- d'où le x2 ci-dessous (bug
-    // corrigé, demande utilisateur explicite : "les boutons de construction de batiment ne
-    // rentrent pas entier dans l'ecran, mais deplasse par en bas") : l'ancien calcul, purement
-    // additif, ignorait cette ancre à mi-hauteur et sous-estimait donc largement la hauteur
-    // réellement nécessaire -- resté invisible tant que chaque onglet avait peu de bâtiments,
-    // mais Civil/Militaire ont depuis grandi (temple/altar/sculpteur/armurier).
-    const desktopBottomHalfNeeded = catBlockHeight + desktopGap
-      + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
-    const desktopNeededHeight = Math.max(2 * desktopBottomHalfNeeded, 216 + confirmRowHeight + desktopGap);
+    // catBlockY (onglets + liste de boutons) reste ancré à h / 2 -- FIXE, ne bouge jamais selon le
+    // nombre de boutons de l'onglet actif (demande utilisateur explicite passée : les onglets
+    // sautaient de position en changeant d'onglet) NI ne remonte près du haut (tentative déjà
+    // rejetée une fois : le panneau d'info, dont la hauteur varie avec le bâtiment sélectionné,
+    // chevauchait alors les boutons -- voir plus bas, il garde ainsi toute la moitié haute pour
+    // respirer, quoi qu'il arrive).
+    const catBlockY = Math.round(h / 2);
+    // Hauteur de bouton DYNAMIQUE plutôt qu'un seuil qui bascule tout le panneau en mode mobile
+    // (demande utilisateur explicite : "le PC a la meme UI que le telephone... c'etait mieux avant
+    // avec le menu qui restait a gauche") -- calée sur la place RÉELLEMENT disponible sous les
+    // onglets (moitié basse de l'écran) plutôt qu'une valeur fixe (59px = icône x1.8 + marge) :
+    // sur un écran bas ou un onglet chargé (Production, Civil), les boutons rétrécissent (jusqu'à
+    // 26px plancher) au lieu de déborder ou de faire changer TOUTE l'interface de forme.
+    // positionBuildButtonContents adapte déjà la taille d'icône en conséquence
+    // (Math.min(h - 6, 47)), rien à changer là-bas.
+    const desktopAvailableForList = h - catBlockY - catBlockHeight - desktopGap - 20;
+    const desktopBtnHeight = Math.max(26, Math.min(59,
+      Math.floor(desktopAvailableForList / Math.max(1, buttonIds.length)) - desktopGap
+    ));
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
     // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
@@ -1704,7 +1706,11 @@ class GameScene extends Phaser.Scene {
     const layoutShowUpgrade = !!(layoutSelectedTile && layoutSelectedTile.type === 'donjon' && !layoutSelectedTile.underConstruction && GameState.isTechUnlocked('def_forgerie'));
     const layoutShowDemolish = !!layoutSelectedTile;
 
-    this.mobileLayout = w < 640 || desktopNeededHeight > h;
+    // Hauteur non prise en compte au-delà d'un plancher extrême (demande utilisateur explicite :
+    // le panneau PC doit rester à gauche même sur un écran bas, voir desktopBtnHeight dynamique
+    // ci-dessus) -- 500 reste un vrai garde-fou, pas un seuil courant : en dessous, même le pavé
+    // mobile serait de toute façon extrêmement à l'étroit.
+    this.mobileLayout = w < 640 || h < 500;
 
     if (!this.mobileLayout) {
       this.sidebarWidth = desktopSidebarWidth;
@@ -1741,14 +1747,8 @@ class GameScene extends Phaser.Scene {
 
       this.populationStatsText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
 
-      // Les onglets de catégorie restent à une hauteur FIXE (environ mi-hauteur de la colonne),
-      // qu'ils ne bougent jamais selon le nombre de bâtiments de la catégorie active -- avant,
-      // tout le bloc (Valider + onglets + liste) était ancré en bas, donc les onglets sautaient
-      // de position à chaque changement d'onglet (Route, 1 bâtiment, vs Production, 6) (voir
-      // demande utilisateur). Le panneau d'info dispose toujours de tout l'espace entre les
-      // ressources et cette ligne pour respirer (voir la fois précédente : ne pas remettre une
-      // hauteur fixe proche du haut, qui avait fait chevaucher le panneau d'info sur les boutons).
-      const catBlockY = Math.round(h / 2);
+      // catBlockY calculé plus haut (voir le commentaire là-bas). Le panneau d'info dispose
+      // toujours de tout l'espace entre les ressources et cette ligne pour respirer.
       const confirmY = catBlockY - desktopGap - confirmRowHeight;
 
       this.infoPanelText.setPosition(10, 10 + iconGridHeight + 34).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
