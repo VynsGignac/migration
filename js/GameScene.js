@@ -1605,12 +1605,12 @@ class GameScene extends Phaser.Scene {
     const catTabRows = Math.ceil(categoryIds.length / catCols);
     const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
     const desktopSidebarWidth = 220;
-    // x2, pas x3 (demande utilisateur explicite : "reduit la taille des icones de batiment de x3
-    // à x2") -- voir positionBuildButtonContents, dont l'icône (26 -> 52) reste bornée par h - 6 :
-    // la hauteur de bouton doit donc grandir en proportion (38 -> 64 = 52 + les 12px de marge
-    // d'origine) pour que l'icône agrandie ne soit pas re-rognée par ce plafond. Espacement réduit
-    // (demande utilisateur explicite), en plus des boutons plus petits.
-    const desktopBtnHeight = 64, desktopGap = 4;
+    // x1.8, pas x2 (demande utilisateur explicite, voir le commentaire équivalent sur btnHeight
+    // plus bas) -- voir positionBuildButtonContents, dont l'icône (26 -> 47) reste bornée par
+    // h - 6 : la hauteur de bouton doit donc grandir en proportion (38 -> 59 = 47 + les 12px de
+    // marge d'origine) pour que l'icône agrandie ne soit pas re-rognée par ce plafond. Espacement
+    // réduit (demande utilisateur explicite), en plus des boutons plus petits.
+    const desktopBtnHeight = 59, desktopGap = 4;
     const confirmRowHeight = 42;
     const desktopNeededHeight = 216 + confirmRowHeight + catBlockHeight + desktopGap
       + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
@@ -1765,11 +1765,13 @@ class GameScene extends Phaser.Scene {
     // catégorie au-dessus, ça grimpe vite -- ici volontairement plus compact, quitte à devoir
     // regarder d'un peu plus près.
     const compact = h < 420;
-    // x2, pas x3 (demande utilisateur explicite : "le menu prend tout l'ecran sur telephone...
-    // reduit la taille des icones de batiment de x3 à x2") -- 30/36 -> 56/60 (même marge
-    // d'origine, ~4-8px, conservée autour de l'icône agrandie à 52px, voir
-    // positionBuildButtonContents).
-    const btnHeight = compact ? 56 : 60;
+    // x1.8, pas x2 (demande utilisateur explicite : "je voudrais que sur telephone, le menu sois
+    // le plus bas possible... reduit encore la taille de x1,8 de la valeur initiale") -- 30/36 ->
+    // 51/55 (même marge d'origine, ~4-8px, conservée autour de l'icône agrandie à 47px, voir
+    // positionBuildButtonContents). Plus petit = menuHeight plus petite = menuTop plus bas (voir
+    // plus bas, menuTop reste ancré au ras du bas de l'écran) : sert directement la demande d'un
+    // pavé "le plus bas possible".
+    const btnHeight = compact ? 51 : 55;
     // Espacement réduit (demande utilisateur explicite), en plus des boutons plus petits.
     const gap = compact ? 3 : 4;
     const mobileCategoryRowHeight = compact ? 18 : 20;
@@ -1827,10 +1829,11 @@ class GameScene extends Phaser.Scene {
     // Une seule rangée de catégories ici (contrairement à la grille 2x2 de la colonne PC) : en
     // paysage mobile, la largeur d'écran suffit largement pour 4 onglets côte à côte.
     const menuHeight = mobileCategoryRowHeight + gap + rows * (btnHeight + gap) + gap;
-    // Ancré au ras du bas (petite marge de 6px) plutôt que laisser 24px de plus au-dessus du
-    // bouton "Construire" : c'est justement cette marge qui faisait "flotter" le pavé plus haut
+    // Ancré au ras du bas (petite marge de 3px, réduite depuis 6px -- demande utilisateur
+    // explicite : "le menu sois le plus bas possible") plutôt que laisser 24px de plus au-dessus
+    // du bouton "Construire" : c'est justement cette marge qui faisait "flotter" le pavé plus haut
     // que nécessaire, façon fenêtre au milieu de l'écran plutôt que bandeau du bas.
-    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - this.buildMenuToggle.height - 6);
+    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - this.buildMenuToggle.height - 3);
 
     this.buildMenuBg.setPosition(0, menuTop - gap).setSize(w, menuHeight + gap * 2).setVisible(this.buildMenuOpen);
 
@@ -1875,11 +1878,11 @@ class GameScene extends Phaser.Scene {
   // à sa suite, le tout centré verticalement dans le rectangle (x, y, w, h) du bouton. Appelé
   // depuis layoutHud (PC ET mobile, même recette) à chaque fois qu'un bouton visible est repositionné.
   positionBuildButtonContents(id, x, y, w, h) {
-    // x2, pas x3 (demande utilisateur explicite : "le menu prend tout l'ecran sur telephone...
-    // reduit la taille des icones de batiment de x3 à x2") -- 26 -> 52. Voir
+    // x1.8, pas x2 (demande utilisateur explicite : "reduit encore la taille de x1,8 de la valeur
+    // initiale", pour que le pavé mobile reste le plus bas possible sur l'écran) -- 26 -> 47. Voir
     // desktopBtnHeight/btnHeight (layoutHud), agrandis en proportion pour que ce plafond h - 6 ne
     // re-rogne pas l'icône agrandie.
-    const iconSize = Math.min(h - 6, 52);
+    const iconSize = Math.min(h - 6, 47);
     const icon = this.buildButtonIcons[id];
     icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
     // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution
