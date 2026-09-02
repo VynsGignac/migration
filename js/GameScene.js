@@ -1684,8 +1684,15 @@ class GameScene extends Phaser.Scene {
     const catCols = 2; // grille 2x2 en colonne PC (voir plus bas) : 4 catégories -> 2 rangées
     const catTabRows = Math.ceil(categoryIds.length / catCols);
     const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
-    const desktopSidebarWidth = 220;
+    // 220 -> 320 (demande utilisateur explicite : "ressere horizontalement les elements des
+    // boutons pour pouvoir en mettre 2 par ligne") -- une seule colonne de boutons pleine largeur
+    // ne laissait pas la place à 2 par rangée une fois icône + coûts pris en compte.
+    const desktopSidebarWidth = 320;
     const desktopGap = 4;
+    // 2 boutons de construction par rangée (demande utilisateur explicite), PAS les onglets de
+    // catégorie ci-dessus (catCols, restent 2x2 sur toute la largeur) ni Valider/Démolir/Améliorer
+    // (restent pleine largeur, voir plus bas) -- seule la grille de buildButtons est concernée.
+    const desktopBuildCols = 2;
     const confirmRowHeight = 42;
     // catBlockY (onglets + liste de boutons) reste ancré à h / 2 -- FIXE, ne bouge jamais selon le
     // nombre de boutons de l'onglet actif (demande utilisateur explicite passée : les onglets
@@ -1701,10 +1708,13 @@ class GameScene extends Phaser.Scene {
     // sur un écran bas ou un onglet chargé (Production, Civil), les boutons rétrécissent (jusqu'à
     // 26px plancher) au lieu de déborder ou de faire changer TOUTE l'interface de forme.
     // positionBuildButtonContents adapte déjà la taille d'icône en conséquence
-    // (Math.min(h - 6, 47)), rien à changer là-bas.
+    // (Math.min(h - 6, 47)), rien à changer là-bas. Math.ceil(.../desktopBuildCols) : 2 boutons
+    // par RANGÉE (voir desktopBuildCols) partagent la même hauteur, donc seul le nombre de
+    // rangées compte ici, pas le nombre total de boutons.
+    const desktopBuildRows = Math.ceil(buttonIds.length / desktopBuildCols);
     const desktopAvailableForList = h - catBlockY - catBlockHeight - desktopGap - 20;
     const desktopBtnHeight = Math.max(26, Math.min(59,
-      Math.floor(desktopAvailableForList / Math.max(1, buttonIds.length)) - desktopGap
+      Math.floor(desktopAvailableForList / Math.max(1, desktopBuildRows)) - desktopGap
     ));
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
@@ -1795,14 +1805,19 @@ class GameScene extends Phaser.Scene {
           .setColor(active ? '#10151a' : '#ffffff');
       });
 
-      let y = catBlockY + catBlockHeight + desktopGap;
-      for (const id of buttonIds) {
-        const btnW = this.sidebarWidth - 20;
-        this.buildButtons[id]
-          .setPosition(10, y).setSize(btnW, desktopBtnHeight).setVisible(true);
-        this.positionBuildButtonContents(id, 10, y, btnW, desktopBtnHeight);
-        y += desktopBtnHeight + desktopGap;
-      }
+      // Grille 2 colonnes (demande utilisateur explicite), remplie ligne par ligne (route en
+      // premier, comme avant) -- PAS le même principe que la grille mobile (colonnes de PAIRES
+      // extracteur+transformateur empilées, voir plus bas) : ici la largeur, pas la hauteur, est la
+      // contrainte à économiser.
+      const listTop = catBlockY + catBlockHeight + desktopGap;
+      const desktopBtnWidth = (this.sidebarWidth - 20 - desktopGap * (desktopBuildCols - 1)) / desktopBuildCols;
+      buttonIds.forEach((id, i) => {
+        const col = i % desktopBuildCols, row = Math.floor(i / desktopBuildCols);
+        const bx = 10 + col * (desktopBtnWidth + desktopGap);
+        const by = listTop + row * (desktopBtnHeight + desktopGap);
+        this.buildButtons[id].setPosition(bx, by).setSize(desktopBtnWidth, desktopBtnHeight).setVisible(true);
+        this.positionBuildButtonContents(id, bx, by, desktopBtnWidth, desktopBtnHeight);
+      });
 
       this.toastText.setPosition(
         this.sidebarWidth + (w - this.sidebarWidth) / 2 - this.toastText.width / 2,
@@ -1972,7 +1987,11 @@ class GameScene extends Phaser.Scene {
     // initiale", pour que le pavé mobile reste le plus bas possible sur l'écran) -- 26 -> 47. Voir
     // desktopBtnHeight/btnHeight (layoutHud), agrandis en proportion pour que ce plafond h - 6 ne
     // re-rogne pas l'icône agrandie.
-    const iconSize = Math.min(h - 6, 47);
+    // Bornée par la largeur EN PLUS de la hauteur (demande utilisateur explicite : "ressere
+    // horizontalement les elements des boutons pour pouvoir en mettre 2 par ligne") -- sur PC,
+    // désormais 2 boutons par rangée (voir desktopBuildCols/desktopBtnWidth dans layoutHud), donc
+    // w peut être bien plus étroit qu'avant (une seule colonne pleine largeur).
+    const iconSize = Math.min(h - 6, w * 0.34, 47);
     const icon = this.buildButtonIcons[id];
     icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
     // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution
@@ -1983,12 +2002,16 @@ class GameScene extends Phaser.Scene {
 
     const costImgSize = Math.min(h - 12, 15);
     const fontSize = Math.max(10, Math.min(13, h - 20));
-    let cx = x + 6 + iconSize + 10;
+    // Espacements resserrés (8/2/6 au lieu de 10/3/10, même demande utilisateur) : laisse assez de
+    // place à 2 coûts (icône + nombre chacun) dans une colonne étroite sans déborder sur la
+    // suivante -- positionBuildButtonContents ne clippe rien, ces marges sont donc la seule chose
+    // qui empêche un débordement visuel dans le bouton voisin.
+    let cx = x + 6 + iconSize + 8;
     for (const { img, txt } of this.buildButtonCostIcons[id]) {
       img.setPosition(cx, y + h / 2).setDisplaySize(costImgSize, costImgSize).setVisible(true);
-      cx += costImgSize + 3;
+      cx += costImgSize + 2;
       txt.setPosition(cx, y + h / 2).setFontSize(fontSize).setVisible(true);
-      cx += txt.width + 10;
+      cx += txt.width + 6;
     }
   }
 
