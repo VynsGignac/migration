@@ -312,6 +312,7 @@ class GameScene extends Phaser.Scene {
   redrawActionZone() {
     const g = this.zoneGraphics;
     g.clear();
+    this.warehouseZoneHighlight = null;
 
     let col, row, type;
     if (this.buildMode && this.buildGhostHex) {
@@ -334,35 +335,15 @@ class GameScene extends Phaser.Scene {
     // d'oiseau -- un Entrepôt ne livre/ne reçoit QUE ce qui est relié par des routes (voir
     // _spawnWarehouseBread/_spawnWarehouseConstructionDeliveries/_spawnShipments, tous des BFS le
     // long des routes, voir GameState.roadReachableFrom qui reprend la même règle de traversée).
-    // Petit point sur chaque route atteignable, contour (sans remplir, pour ne pas cacher son
-    // icône/état) sur chaque bâtiment atteignable.
+    // NE PEUT PAS se dessiner sur `g` (zoneGraphics, Graphics classique de la caméra principale) :
+    // les routes/ressources déjà posées sont redessinées à CHAQUE frame sur tileArtTexture, affiché
+    // via la uiCamera -- une passe de rendu séparée et postérieure à celle de la caméra principale
+    // (voir le commentaire sur shotGraphics dans create()), qui recouvre donc TOUJOURS `g`, quel que
+    // soit son depth. On se contente ici de mémoriser la cible ; le dessin proprement dit se fait
+    // dans redrawWarehouseZoneOverlay(), appelée depuis update() juste après redrawTileArt(), sur ce
+    // même canvas.
     if (type === 'warehouse') {
-      const { roadCells, buildingCells } = GameState.roadReachableFrom(col, row, radius);
-      for (let copy = -1; copy <= 1; copy++) {
-        const offsetX = copy * this.worldWidthPx;
-        g.fillStyle(0x4fd1ff, 0.5);
-        for (const key of roadCells) {
-          const [rc, rr] = key.split(',').map(Number);
-          const { x, y } = HexUtils.offsetToPixel(rc, rr, this.hexSize);
-          const pts = HexUtils.corners(x + offsetX, y, this.hexSize * 0.45);
-          g.beginPath();
-          g.moveTo(pts[0].x, pts[0].y);
-          for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-          g.closePath();
-          g.fillPath();
-        }
-        g.lineStyle(3, 0x4fd1ff, 0.95);
-        for (const key of buildingCells) {
-          const [bc, br] = key.split(',').map(Number);
-          const { x, y } = HexUtils.offsetToPixel(bc, br, this.hexSize);
-          const pts = HexUtils.corners(x + offsetX, y, this.hexSize * 0.92);
-          g.beginPath();
-          g.moveTo(pts[0].x, pts[0].y);
-          for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-          g.closePath();
-          g.strokePath();
-        }
-      }
+      this.warehouseZoneHighlight = { col, row, radius };
       return;
     }
 
@@ -2589,6 +2570,63 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // Surlignage rouge (demande utilisateur explicite) des routes/bâtiments à portée PAR LA ROUTE de
+  // l'Entrepôt sélectionné (voir this.warehouseZoneHighlight, posé par redrawActionZone). Point
+  // plein sur chaque route atteignable, contour (sans remplir, pour ne pas cacher l'icône/état du
+  // bâtiment) sur chaque bâtiment atteignable. Dessiné ici sur tileArtTexture, PAS sur zoneGraphics
+  // (Graphics classique) : même raison que redrawShipments ci-dessous, un Graphics du monde se
+  // retrouve TOUJOURS caché sous une route déjà posée (passe de caméra séparée et postérieure) —
+  // appelé juste après redrawTileArt, jamais avant, sinon les routes le recouvriraient à leur tour.
+  redrawWarehouseZoneOverlay() {
+    const highlight = this.warehouseZoneHighlight;
+    if (!highlight) return;
+
+    const tex = this.tileArtTexture;
+    const ctx = tex.context;
+    const { zoom, worldToScreen } = this.getWorldToScreen();
+    const { col, row, radius } = highlight;
+    const { roadCells, buildingCells } = GameState.roadReachableFrom(col, row, radius);
+
+    const hexPathAt = (cx, cy, size) => {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 180 * (60 * i);
+        const px = cx + size * Math.cos(angle);
+        const py = cy + size * Math.sin(angle);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    };
+
+    // 3 copies (col -cols/0/+cols en pixels) : le monde est cylindrique (voir HexUtils.wrapCol),
+    // la caméra peut afficher n'importe laquelle des copies visuelles d'une même case selon le
+    // défilement -- même principe que les autres surlignages en Graphics (offsetX = copy * worldWidthPx).
+    for (const [cells, isRoad] of [[roadCells, true], [buildingCells, false]]) {
+      ctx.save();
+      if (isRoad) { ctx.fillStyle = '#ff3b3b'; ctx.globalAlpha = 0.75; }
+      else { ctx.strokeStyle = '#ff3b3b'; ctx.globalAlpha = 0.95; }
+      for (const key of cells) {
+        const [c, r] = key.split(',').map(Number);
+        const { x: wx, y: wy } = HexUtils.offsetToPixel(c, r, this.hexSize);
+        for (let copy = -1; copy <= 1; copy++) {
+          const offsetX = copy * this.worldWidthPx;
+          const { x: sx, y: sy } = worldToScreen(wx + offsetX, wy);
+          const size = this.hexSize * zoom;
+          if (sx < -size - 4 || sx > tex.width + size + 4 || sy < -size - 4 || sy > tex.height + size + 4) continue;
+          if (isRoad) {
+            hexPathAt(sx, sy, size * 0.42);
+            ctx.fill();
+          } else {
+            ctx.lineWidth = Math.max(2.5, size * 0.1);
+            hexPathAt(sx, sy, size * 0.9);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+    }
+  }
+
   // Icône (voir js/assets.js) par chargement en transit, interpolée le long de son chemin.
   // Redessinée chaque frame car la progression change en continu (contrairement aux bâtiments/
   // ressources). Dessinée sur tileArtTexture (voir redrawTileArt), PAS sur son propre Graphics :
@@ -3269,6 +3307,7 @@ class GameScene extends Phaser.Scene {
     // shotGraphics dans create() pour pourquoi elles ne peuvent pas rester des Graphics normaux.
     // Un seul refresh() à la fin, pas un par étape.
     this.redrawTileArt();
+    this.redrawWarehouseZoneOverlay();
     this.redrawShipments();
     this.redrawMonsters();
     this.tileArtTexture.refresh();
