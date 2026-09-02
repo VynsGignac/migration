@@ -2585,7 +2585,12 @@ class GameScene extends Phaser.Scene {
     const ctx = tex.context;
     const { zoom, worldToScreen } = this.getWorldToScreen();
     const { col, row, radius } = highlight;
-    const { roadCells, buildingCells } = GameState.roadReachableFrom(col, row, radius);
+    const { roadCells, buildingCells, roadDistance } = GameState.roadReachableFrom(col, row, radius);
+    // Exclut la toute dernière rangée de routes (distance === radius, voir le commentaire sur
+    // roadReachableFrom) : une route à cette distance n'a plus aucun pas de budget restant, un
+    // bâtiment posé juste à côté ne serait donc jamais livré -- ne garder que les routes qui
+    // garantissent encore au moins un bâtiment adjacent atteignable (demande utilisateur explicite).
+    const visibleRoadCells = [...roadCells].filter((key) => roadDistance.get(key) < radius);
 
     const hexPathAt = (cx, cy, size) => {
       ctx.beginPath();
@@ -2601,7 +2606,7 @@ class GameScene extends Phaser.Scene {
     // 3 copies (col -cols/0/+cols en pixels) : le monde est cylindrique (voir HexUtils.wrapCol),
     // la caméra peut afficher n'importe laquelle des copies visuelles d'une même case selon le
     // défilement -- même principe que les autres surlignages en Graphics (offsetX = copy * worldWidthPx).
-    for (const [cells, isRoad] of [[roadCells, true], [buildingCells, false]]) {
+    for (const [cells, isRoad] of [[visibleRoadCells, true], [buildingCells, false]]) {
       ctx.save();
       if (isRoad) { ctx.fillStyle = '#ff3b3b'; ctx.globalAlpha = 0.75; }
       else { ctx.strokeStyle = '#ff3b3b'; ctx.globalAlpha = 0.95; }

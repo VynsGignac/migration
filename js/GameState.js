@@ -517,9 +517,18 @@ const GameState = {
   // uniquement les bâtiments à portée", plus fidèle qu'un simple cercle de cases à vol d'oiseau,
   // qui peut englober des bâtiments non reliés ou exclure des bâtiments reliés par une route
   // sinueuse plus longue que le rayon à vol d'oiseau).
+  // roadDistance (nombre de pas depuis fromCol/fromRow) renvoyée pour chaque route : sert à
+  // GameScene.redrawWarehouseZoneOverlay à exclure la toute dernière rangée de routes (distance
+  // === maxRange) de l'affichage -- demande utilisateur explicite ("le dernier point rouge indique
+  // la route la plus loin, mais un bâtiment construit à côté du dernier point rouge n'est pas
+  // atteignable") : une route à distance === maxRange n'a plus AUCUN pas de budget restant, donc un
+  // bâtiment posé à côté d'elle (distance maxRange+1) ne serait jamais découvert par cette même
+  // boucle (ni par findBestPath, qui a exactement la même limite) -- seules les routes à distance
+  // <= maxRange-1 garantissent qu'un bâtiment adjacent reste dans les maxRange pas autorisés.
   roadReachableFrom(fromCol, fromRow, maxRange) {
     const roadCells = new Set();
     const buildingCells = new Set();
+    const roadDistance = new Map();
     const visited = new Set([this.key(fromCol, fromRow)]);
     let frontier = [{ col: fromCol, row: fromRow }];
 
@@ -537,6 +546,7 @@ const GameState = {
           if (!tile) continue;
           if (tile.type === 'road') {
             roadCells.add(key);
+            roadDistance.set(key, step + 1);
             next.push({ col: n.col, row: n.row });
           } else {
             buildingCells.add(key);
@@ -545,7 +555,7 @@ const GameState = {
       }
       frontier = next;
     }
-    return { roadCells, buildingCells };
+    return { roadCells, buildingCells, roadDistance };
   },
 
   // Répartit les habitants de toutes les Maisons vers les bâtiments de production (extracteurs,
