@@ -854,7 +854,13 @@ class GameScene extends Phaser.Scene {
       // nécessaire au contraste des traits dessinés à la main (voir aussi setBuildMode, qui gère
       // le même choix au moment de la sélection).
       const idleAlpha = this.buildingIconKeys[id] ? 0 : 1;
+      // Contour (demande utilisateur explicite : "dessine moi le contour des boutons dans l'UI")
+      // -- même couleur que la bordure des bâtiments sur la carte (voir GameConfig.colors.
+      // buildingBorder/redrawTileArt.strokeHexBorder), pour rester cohérent avec le reste du jeu.
+      // Toujours visible, y compris quand idleAlpha met le FOND à 0 (icônes-images) : setFillStyle
+      // (voir setBuildMode) ne touche jamais au stroke, les deux sont indépendants dans Phaser.
       const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339, idleAlpha).setOrigin(0, 0)
+        .setStrokeStyle(2, GameConfig.colors.buildingBorder, 0.85)
         // Caché par défaut : layoutHud() ne rend visible que les bâtiments débloqués de la
         // catégorie active (voir isBuildingUnlocked/activeBuildCategory) -- sans ce setVisible(false)
         // initial, un bâtiment pas encore débloqué/hors-onglet resterait affiché à sa position
