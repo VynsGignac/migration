@@ -240,9 +240,7 @@ const GameConfig = {
       // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
       name: 'Camp de Mineur', cost: { planks: 4, stoneBlocks: 2 }, color: 0x5a5a70,
       kind: 'extractor', resource: 'stone', outputResource: 'stone',
-      // extractRadius 2 -> 4 (demande utilisateur explicite : "augmente la zone d'action des
-      // mines à 4 cases").
-      extractRadius: 4, extractRate: 0.5, outputCap: 20,
+      extractRadius: 2, extractRate: 0.5, outputCap: 20,
       linkTargets: ['stonecutter'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
@@ -265,14 +263,15 @@ const GameConfig = {
     // (ironMinerClearsResource) : comme une Route sur du bois/blé, poser un Mineur de Fer efface la
     // ressource sous lui (sinon invisible, voir redrawTileArt qui dessine la case ressource PAR-
     // DESSUS tout bâtiment qui partagerait sa case et `continue` avant de dessiner celui-ci) --
-    // extractRadius=2 continue ensuite de puiser dans les cases de montagne voisines, exactement
-    // comme le Camp de Mineur sur la pierre.
+    // extractRadius continue ensuite de puiser dans les cases de montagne voisines, comme le Camp
+    // de Mineur sur la pierre, mais sur un rayon plus large (voir plus bas).
     ironMiner: {
       // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
       name: 'Mineur de Fer', cost: { planks: 4, stoneBlocks: 2 }, color: 0x707c8a,
       kind: 'extractor', resource: 'mountain', outputResource: 'ore',
       // extractRadius 2 -> 4 (demande utilisateur explicite : "augmente la zone d'action des
-      // mines à 4 cases").
+      // mines à 4 cases", précisé ensuite : SEULEMENT le Mineur de Fer, le Camp de Mineur -- sur
+      // la pierre -- reste à 2).
       extractRadius: 4, extractRate: 0.5, outputCap: 20,
       linkTargets: ['foundry'], linkRange: 6,
       ruinLoot: { planks: 3 },
