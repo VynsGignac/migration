@@ -26,6 +26,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('stoneTile', GameAssets.stoneTile);
     this.load.image('wheatTile', GameAssets.wheatTile);
     this.load.image('mountainTile', GameAssets.mountainTile);
+    this.load.image('corpseTile', GameAssets.corpseTile);
     this.load.image('roadTile', GameAssets.roadTile);
     this.load.image('woodIcon', GameAssets.woodIcon);
     this.load.image('planksIcon', GameAssets.planksIcon);
@@ -2234,7 +2235,7 @@ class GameScene extends Phaser.Scene {
       ctx.restore();
     };
 
-    const resourceKeyByType = { tree: 'treeTile', stone: 'stoneTile', wheat: 'wheatTile', mountain: 'mountainTile' };
+    const resourceKeyByType = { tree: 'treeTile', stone: 'stoneTile', wheat: 'wheatTile', mountain: 'mountainTile', corpse: 'corpseTile' };
 
     for (let col = colMin; col <= colMax; col++) {
       const wrappedCol = HexUtils.wrapCol(col, this.cols);
