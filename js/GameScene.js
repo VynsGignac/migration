@@ -1737,15 +1737,18 @@ class GameScene extends Phaser.Scene {
     const desktopBuildRows = Math.ceil(desktopNonRoadIds.length / desktopBuildCols) + (desktopHasRoad ? 1 : 0);
     const desktopAvailableForList = h - catBlockY - catBlockHeight - desktopGap - 20;
     const desktopRowHeightBudget = Math.floor(desktopAvailableForList / Math.max(1, desktopBuildRows)) - desktopGap;
-    // Bouton CARRÉ (demande utilisateur explicite) : même valeur pour largeur ET hauteur, bornée
-    // par la plus stricte des deux contraintes -- la largeur de colonne (fixe, voir
-    // desktopSidebarWidth/desktopBtnMargin) et la hauteur de rangée dynamique (rétrécit sur un
-    // écran bas/un onglet chargé, comme avant). 170 (au lieu de 110, demande utilisateur explicite
-    // : "boutons plus grand") = plafond esthétique, plus généreux mais toujours borné pour qu'un
-    // bouton carré ne devienne pas absurdement disproportionné par rapport à son contenu (logo +
-    // petite ligne de coût) sur un très grand écran.
+    // PLUS carré à tout prix (demande utilisateur explicite, capture d'écran à l'appui : forcer
+    // largeur = hauteur en se calant sur la plus stricte des deux laissait un ÉNORME vide entre
+    // les 2 colonnes dès que la hauteur de rangée devenait la contrainte -- le bouton rétrécissait
+    // ALORS en largeur aussi, pour rien, et se retrouvait centré avec du vide de chaque côté).
+    // Largeur et hauteur redeviennent indépendantes : largeur = TOUJOURS toute la colonne (pas de
+    // rétrécissement, pas de centrage -- colonnes voisines "collées", desktopGap seulement entre
+    // les deux), hauteur = toujours toute la rangée. positionBuildButtonContentsSquare (logo +
+    // coût) se cale sur la plus petite des deux pour ne jamais déborder si le bouton n'est plus
+    // parfaitement carré.
     const desktopColWidthBudget = (this.sidebarWidth - desktopBtnMargin * 2 - desktopGap * (desktopBuildCols - 1)) / desktopBuildCols;
-    const desktopBtnSize = Math.max(26, Math.min(170, desktopColWidthBudget, desktopRowHeightBudget));
+    const desktopBtnWidth = Math.max(26, desktopColWidthBudget);
+    const desktopBtnHeight = Math.max(26, Math.min(170, desktopRowHeightBudget));
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
     // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
@@ -1759,7 +1762,7 @@ class GameScene extends Phaser.Scene {
     const layoutShowDemolish = !!layoutSelectedTile;
 
     // Hauteur non prise en compte au-delà d'un plancher extrême (demande utilisateur explicite :
-    // le panneau PC doit rester à gauche même sur un écran bas, voir desktopBtnSize dynamique
+    // le panneau PC doit rester à gauche même sur un écran bas, voir desktopBtnWidth/Height dynamiques
     // ci-dessus) -- 500 reste un vrai garde-fou, pas un seuil courant : en dessous, même le pavé
     // mobile serait de toute façon extrêmement à l'étroit.
     this.mobileLayout = w < 640 || h < 500;
@@ -1844,18 +1847,11 @@ class GameScene extends Phaser.Scene {
       // propre rangée, toujours colonne 0 (en bas à gauche, demande utilisateur explicite), après
       // TOUT le reste de la grille.
       const listTop = catBlockY + catBlockHeight + desktopGap;
-      // Centré dans sa colonne (demande utilisateur explicite : boutons carrés) : desktopBtnSize
-      // peut être plus étroit que la colonne elle-même (plafonné à 170, voir plus haut) sur un
-      // écran large, d'où ce décalage plutôt qu'un simple alignement à gauche de la colonne --
-      // reste 0 (donc invisible) dès que la largeur devient la contrainte qui borne réellement
-      // desktopBtnSize, ce qui est maintenant le cas courant (demande utilisateur explicite :
-      // "utiliser toute la largeur").
-      const desktopColCenterOffset = (desktopColWidthBudget - desktopBtnSize) / 2;
       const desktopPlaceBtn = (id, col, row) => {
-        const bx = desktopBtnMargin + col * (desktopColWidthBudget + desktopGap) + desktopColCenterOffset;
-        const by = listTop + row * (desktopBtnSize + desktopGap);
-        this.buildButtons[id].setPosition(bx, by).setSize(desktopBtnSize, desktopBtnSize).setVisible(true);
-        this.positionBuildButtonContentsSquare(id, bx, by, desktopBtnSize);
+        const bx = desktopBtnMargin + col * (desktopColWidthBudget + desktopGap);
+        const by = listTop + row * (desktopBtnHeight + desktopGap);
+        this.buildButtons[id].setPosition(bx, by).setSize(desktopBtnWidth, desktopBtnHeight).setVisible(true);
+        this.positionBuildButtonContentsSquare(id, bx, by, desktopBtnWidth, desktopBtnHeight);
       };
       desktopNonRoadIds.forEach((id, i) => {
         desktopPlaceBtn(id, i % desktopBuildCols, Math.floor(i / desktopBuildCols));
@@ -2063,15 +2059,21 @@ class GameScene extends Phaser.Scene {
   // -- PC uniquement (voir layoutHud, colonne PC) : logo centré horizontalement dans le tiers
   // supérieur du bouton, ligne de coût (icône+nombre par ressource) centrée horizontalement
   // juste en dessous, plutôt que la disposition icône-à-gauche/coûts-à-la-suite de la version
-  // mobile (rectangle large, pas de contrainte de centrage).
-  positionBuildButtonContentsSquare(id, x, y, size) {
-    const cx = x + size / 2;
+  // mobile (rectangle large, pas de contrainte de centrage). w/h désormais INDÉPENDANTS (voir
+  // layoutHud, demande utilisateur explicite : forcer un carré parfait laissait un grand vide
+  // entre les colonnes dès que la hauteur de rangée devenait la contrainte) -- size = le plus
+  // petit des deux sert de référence pour les tailles (icône/coût), pour ne jamais déborder du
+  // bouton même quand il n'est plus parfaitement carré.
+  positionBuildButtonContentsSquare(id, x, y, w, h) {
+    const cx = x + w / 2;
+    const size = Math.min(w, h);
     // 47 -> 85 (demande utilisateur explicite : "aggrandit les icones en consequence", boutons
-    // désormais jusqu'à 170px -- voir desktopBtnSize dans layoutHud) : sans ce relèvement,
-    // l'icône plafonnait bien avant le bouton lui-même et restait petite dans un grand bouton.
+    // désormais bien plus grands -- voir desktopBtnWidth/Height dans layoutHud) : sans ce
+    // relèvement, l'icône plafonnait bien avant le bouton lui-même et restait petite dans un
+    // grand bouton.
     const iconSize = Math.min(size * 0.5, 85);
     const icon = this.buildButtonIcons[id];
-    icon.setPosition(cx, y + size * 0.38).setVisible(true);
+    icon.setPosition(cx, y + h * 0.38).setVisible(true);
     if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
     else icon.setScale(iconSize / 30);
 
@@ -2086,7 +2088,7 @@ class GameScene extends Phaser.Scene {
     costs.forEach(({ txt }) => txt.setFontSize(fontSize));
     let totalW = -gapAfterTxt;
     costs.forEach(({ txt }) => { totalW += costImgSize + gapAfterImg + txt.width + gapAfterTxt; });
-    const costY = y + size * 0.78;
+    const costY = y + h * 0.78;
     let cxRun = cx - totalW / 2;
     for (const { img, txt } of costs) {
       img.setPosition(cxRun, costY).setDisplaySize(costImgSize, costImgSize).setVisible(true);
