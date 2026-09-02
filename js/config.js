@@ -161,6 +161,12 @@ const GameConfig = {
     blobSizeMax: 9,
     // Aucun blob ne peut apparaître à moins de cette distance (en colonnes) de l'Entrepôt de départ.
     startClearance: 4,
+    // Anti-softlock (voir GameState._ensureStartingVisibility) : rayon (en cases, pas en colonnes,
+    // contrairement à startClearance ci-dessus) dans lequel chaque ressource en blob doit avoir au
+    // moins une case garantie autour de l'Entrepôt de départ -- valeur FIXE demandée explicitement
+    // par l'utilisateur ("10 cases"), indépendante de warehouseZoneRadius() (portée réelle du jeu,
+    // qui grandit avec la techno Aménagement urbain -- ce filet de sécurité ne doit pas en dépendre).
+    startingVisibilityRadius: 10,
     // Cadavre de monstre : PAS un blob (voir _spawnSingleTiles) -- une case isolée et rare,
     // dispersée sur toute la carte. Densité de base ~1 par écran plein à dézoom maximum (le
     // monde montre toujours ses 45 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur

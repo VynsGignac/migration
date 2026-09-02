@@ -259,23 +259,23 @@ const GameState = {
     this._ensureStartingVisibility(cfg);
   },
 
-  // Anti-softlock (demande utilisateur explicite) : garantit qu'au moins une case de bois ET une
-  // case de pierre sont dans la ZONE D'ACTION de l'Entrepôt de départ dès le lancement (pas
-  // seulement visibles dans le brouillard de guerre, un rayon plus large mais inutile si aucun
-  // Camp posé à portée ne peut jamais expédier jusqu'à l'Entrepôt -- voir demande utilisateur
-  // explicite). Même rayon que warehouseZoneRadius() (zoneRadiusFor('warehouse'), SANS la marge
-  // +2 de computeRevealedTiles) : la portée réelle à laquelle un Camp de Bûcheron/Mineur posé là
-  // peut relier l'Entrepôt. Les blobs ci-dessus sont placés au hasard sur toute la carte -- rien
-  // ne garantissait qu'un joueur ait ne serait-ce qu'UNE case de chaque ressource exploitable
-  // sans déjà avoir étendu son réseau de routes au petit bonheur. Appelé après _spawnBlobs, donc
-  // ce filet de sécurité ne s'active que si le hasard n'a vraiment rien mis à portée.
+  // Anti-softlock (demande utilisateur explicite) : garantit qu'au moins une case (ou une partie de
+  // blob, voir plus bas) de CHAQUE ressource en blob (bois, pierre, montagne) est dans un rayon FIXE
+  // de resourceNodes.startingVisibilityRadius cases autour de l'Entrepôt de départ dès le
+  // lancement (pas seulement visible dans le brouillard de guerre, un rayon qui ne garantit rien
+  // si aucun Camp posé là ne peut jamais expédier jusqu'à l'Entrepôt). Rayon FIXE (demande
+  // utilisateur explicite : "10 cases"), volontairement PAS warehouseZoneRadius() (qui grandit avec
+  // la techno Aménagement urbain -- ce filet de sécurité doit rester constant, pas suivre les
+  // améliorations du joueur). Les blobs ci-dessus sont placés au hasard sur toute la carte -- rien
+  // ne garantissait qu'un joueur ait ne serait-ce qu'UNE case de chaque ressource exploitable sans
+  // déjà avoir étendu son réseau de routes au petit bonheur. Appelé après _spawnBlobs, donc ce
+  // filet de sécurité ne s'active que si le hasard n'a vraiment rien mis à portée.
   _ensureStartingVisibility(cfg) {
     const startCol = GameConfig.world.startCol;
     const startRow = Math.floor(this.rows / 2);
-    const actionRadius = this.warehouseZoneRadius();
-    const ring = HexUtils.hexesInRange(startCol, startRow, actionRadius, this.cols, this.rows);
+    const ring = HexUtils.hexesInRange(startCol, startRow, cfg.startingVisibilityRadius, this.cols, this.rows);
 
-    for (const type of ['tree', 'stone']) {
+    for (const type of ['tree', 'stone', 'mountain']) {
       const alreadyVisible = ring.some((c) => {
         const t = this.resourceTiles.get(this.key(c.col, c.row));
         return t && t.type === type;
