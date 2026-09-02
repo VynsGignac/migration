@@ -1688,11 +1688,13 @@ class GameScene extends Phaser.Scene {
     // largeur") -- plus de place par colonne pour des boutons carrés vraiment grands, pas juste
     // confortables.
     const desktopSidebarWidth = 300;
-    const desktopGap = 4;
-    // Marge resserrée (demande utilisateur explicite : boutons "presque jointifs") -- seulement
-    // pour la GRILLE de construction (voir desktopColWidthBudget/desktopPlaceBtn plus bas) ; les
-    // autres éléments de la colonne (onglets, Valider, texte) gardent leur marge de 10px habituelle.
-    const desktopBtnMargin = 6;
+    // 4 -> 2 (demande utilisateur explicite : "colle les boutons entre eux, tu peux laisser que
+    // quelque pixel d'ecart").
+    const desktopGap = 2;
+    // Marge resserrée à l'extrême (demande utilisateur explicite, même raison) -- seulement pour
+    // la GRILLE de construction (voir desktopColWidthBudget/desktopPlaceBtn plus bas) ; les autres
+    // éléments de la colonne (onglets, Valider, texte) gardent leur marge de 10px habituelle.
+    const desktopBtnMargin = 2;
     // 2 boutons de construction par rangée (demande utilisateur explicite), PAS les onglets de
     // catégorie ci-dessus (catCols, restent 2x2 sur toute la largeur) ni Valider/Démolir/Améliorer
     // (restent pleine largeur, voir plus bas) -- seule la grille de buildButtons est concernée.
