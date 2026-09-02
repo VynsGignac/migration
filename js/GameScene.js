@@ -601,19 +601,23 @@ class GameScene extends Phaser.Scene {
     this.resourceBarIconsGraphics = this.add.graphics().setDepth(1000).setVisible(false);
     this.uiElements.push(this.resourceBarIconsGraphics);
     // Uniquement les produits finaux (voir demande utilisateur) : le bois, la pierre brute et le
-    // blé restent des ressources internes (production/stock) mais ne s'affichent plus ici.
-    // "ore"/"codex" restent affichés même à 0/hors recherche (voir techTree.nodes.ind_tunnelier/
-    // rec_imprimerie) : ni plus clair ni plus simple de les faire apparaître/disparaître selon
-    // l'état de l'arbre techno. "codex" n'a pas encore de vraie icône (voir js/assets.js) : passe
-    // par le dessin vectoriel de secours (drawResourceBarIcon), comme "wheat"/"stone" à l'origine.
+    // blé restent des ressources internes (production/stock) mais ne s'affichent plus ici. "ore"
+    // retiré du suivi (demande utilisateur explicite) -- reste une ressource jouable normale
+    // (stockée/transportée comme les autres, voir tickProduction/_spawnShipments), juste plus
+    // affichée dans ce bandeau. "codex" reste affiché même à 0/hors recherche (voir
+    // techTree.nodes.rec_imprimerie) : ni plus clair ni plus simple de le faire apparaître/
+    // disparaître selon l'état de l'arbre techno. "codex" n'a pas encore de vraie icône (voir
+    // js/assets.js) : passe par le dessin vectoriel de secours (drawResourceBarIcon), comme
+    // "wheat"/"stone" à l'origine.
     // ironIngot juste après bread (demande utilisateur explicite : "à côté des planches, pierre
-    // et pain") -- regroupe les PRODUITS FINIS des chaînes de production ensemble, ore (matière
-    // première, jamais transformée directement en objectif du joueur) et codex restent après.
-    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'ore', 'codex'];
+    // et pain") -- regroupe les PRODUITS FINIS des chaînes de production ensemble, codex après.
+    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'codex'];
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
-    // dessinée ci-dessus (drawResourceBarIcon).
+    // dessinée ci-dessus (drawResourceBarIcon). "ore" absent ici (voir resourceOrder ci-dessus) :
+    // oreIcon reste chargée/utilisée ailleurs (voir iconKeyByResource dans redrawShipments, pour
+    // le jeton en transit sur les routes), juste plus dans ce bandeau.
     this.resourceBarIconTextureKeys = {
-      planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon', ore: 'oreIcon',
+      planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon',
       ironIngot: 'ironIngotIcon',
     };
     this.resourceBarIconImages = {};
@@ -1596,7 +1600,11 @@ class GameScene extends Phaser.Scene {
     const catTabRows = Math.ceil(categoryIds.length / catCols);
     const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
     const desktopSidebarWidth = 220;
-    const desktopBtnHeight = 38, desktopGap = 6;
+    // x3 (demande utilisateur explicite : "multiplie par 3 la taille des icones de batiment dans
+    // l'UI") -- voir positionBuildButtonContents, dont l'icône (26 -> 78) reste bornée par
+    // h - 6 : la hauteur de bouton doit donc grandir en proportion (38 -> 90 = 78 + les 12px de
+    // marge d'origine) pour que l'icône agrandie ne soit pas re-rognée par ce plafond.
+    const desktopBtnHeight = 90, desktopGap = 6;
     const confirmRowHeight = 42;
     const desktopNeededHeight = 216 + confirmRowHeight + catBlockHeight + desktopGap
       + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
@@ -1751,7 +1759,9 @@ class GameScene extends Phaser.Scene {
     // catégorie au-dessus, ça grimpe vite -- ici volontairement plus compact, quitte à devoir
     // regarder d'un peu plus près.
     const compact = h < 420;
-    const btnHeight = compact ? 30 : 36;
+    // x3 (demande utilisateur explicite, voir le même commentaire sur desktopBtnHeight) : 30/36 ->
+    // 84/90 (même marge d'origine, ~4-8px, conservée autour de l'icône agrandie à 78px).
+    const btnHeight = compact ? 84 : 90;
     const gap = compact ? 4 : 6;
     const mobileCategoryRowHeight = compact ? 18 : 20;
     this.buildMenuToggle.setFontSize(compact ? 12 : 13);
@@ -1839,7 +1849,10 @@ class GameScene extends Phaser.Scene {
   // à sa suite, le tout centré verticalement dans le rectangle (x, y, w, h) du bouton. Appelé
   // depuis layoutHud (PC ET mobile, même recette) à chaque fois qu'un bouton visible est repositionné.
   positionBuildButtonContents(id, x, y, w, h) {
-    const iconSize = Math.min(h - 6, 26);
+    // x3 (demande utilisateur explicite : "multiplie par 3 la taille des icones de batiment dans
+    // l'UI") -- 26 -> 78. Voir desktopBtnHeight/btnHeight (layoutHud), agrandis en proportion pour
+    // que ce plafond h - 6 ne re-rogne pas l'icône agrandie.
+    const iconSize = Math.min(h - 6, 78);
     const icon = this.buildButtonIcons[id];
     icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
     // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution
