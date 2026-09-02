@@ -9,7 +9,7 @@ const GameState = {
   cols: GameConfig.world.cols,
   rows: GameConfig.world.rows,
   // Stock central : seuls les Entrepôts y déposent (via une expédition qui arrive à destination).
-  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, codex: 0 }, GameConfig.resources.starting),
+  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, codex: 0 }, GameConfig.resources.starting),
   // Clé "col,row" -> { type, outputBuffer?, inputBuffer?, ruinLoot? }
   // Une case absente de la Map est considérée "vide".
   tiles: new Map(),
@@ -90,9 +90,12 @@ const GameState = {
     const resTile = this.resourceTiles.get(key);
     if (resTile) {
       // Seule une Route peut être posée sur du bois/blé, ce qui détruit la ressource (voir
-      // demande utilisateur) -- la pierre reste bloquante, pas demandée.
+      // demande utilisateur) -- la pierre reste bloquante, pas demandée. Même principe pour le
+      // Mineur de Fer sur une case de montagne (demande utilisateur explicite : "peut être
+      // construit sur une case de montagne") -- reste cohérent avec GameScene.isValidBuildSpot.
       const roadClearsResource = buildingId === 'road' && (resTile.type === 'tree' || resTile.type === 'wheat');
-      if (!roadClearsResource) return { ok: false, reason: 'resource' };
+      const ironMinerClearsResource = buildingId === 'ironMiner' && resTile.type === 'mountain';
+      if (!roadClearsResource && !ironMinerClearsResource) return { ok: false, reason: 'resource' };
     }
     // Une route ne peut s'étendre qu'à partir d'une route déjà posée (voir _hasAdjacentRoad,
     // partagé avec la condition d'activation des Tours/Universités) : empêche de semer des
@@ -697,12 +700,12 @@ const GameState = {
     const alphabetisationBonus = alphabetisationLevel > 0 ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
     const formateurBonus = this.isTechUnlocked('rec_formateur') ? GameConfig.techTree.nodes.rec_formateur.zoneBonus : 0;
 
-    const perSecond = { planks: 0, stoneBlocks: 0, bread: 0 };
+    const perSecond = { planks: 0, stoneBlocks: 0, bread: 0, ironIngot: 0 };
 
     // Entrées : débit soutenable producteur -> Entrepôt (voir _spawnShipments). Un chemin
     // structurel qui existe suffit (voir findBestPathToBuildingType, scoreFn constant -- on ne
     // cherche pas ici quelle cible précise a le plus de place, juste qu'UNE existe).
-    const outputResourceOf = { sawmill: 'planks', stonecutter: 'stoneBlocks', bakery: 'bread' };
+    const outputResourceOf = { sawmill: 'planks', stonecutter: 'stoneBlocks', bakery: 'bread', foundry: 'ironIngot' };
     for (const [key, tile] of this.tiles) {
       const res = outputResourceOf[tile.type];
       const def = GameConfig.buildings[tile.type];
@@ -1544,7 +1547,7 @@ const GameState = {
     this.cols = GameConfig.world.cols;
     this.rows = GameConfig.world.rows;
     this.resources = Object.assign(
-      { wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, codex: 0 },
+      { wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, codex: 0 },
       GameConfig.resources.starting
     );
     this.tiles = new Map();
@@ -1584,7 +1587,7 @@ const GameState = {
   },
 
   deserialize(data) {
-    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, codex: 0 }, data.resources);
+    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, codex: 0 }, data.resources);
     this.tiles = new Map(data.tiles.map(([k, t]) => [k, { ...t }]));
     this.resourceTiles = new Map(data.resourceTiles.map(([k, t]) => [k, { ...t }]));
     this.shipments = data.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) }));

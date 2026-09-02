@@ -250,11 +250,13 @@ class GameScene extends Phaser.Scene {
     const resTile = GameState.resourceTiles.get(key);
     if (resTile) {
       // Seule une Route peut être posée sur du bois/blé (détruit la ressource, voir demande
-      // utilisateur) -- la pierre reste bloquante, pas demandée. Doit rester cohérent avec la
+      // utilisateur) -- la pierre reste bloquante, pas demandée. Même chose pour le Mineur de Fer
+      // sur une case de montagne (demande utilisateur explicite). Doit rester cohérent avec la
       // même règle dans GameState.placeBuilding (vérification faite là-bas de toute façon, mais
       // le fantôme doit déjà refléter la bonne réponse avant même de taper).
       const roadClearsResource = this.buildMode === 'road' && (resTile.type === 'tree' || resTile.type === 'wheat');
-      if (!roadClearsResource) return false;
+      const ironMinerClearsResource = this.buildMode === 'ironMiner' && resTile.type === 'mountain';
+      if (!roadClearsResource && !ironMinerClearsResource) return false;
     }
     if (this.buildMode === 'road') {
       if (!GameState._hasAdjacentRoad(col, row)) return false;
@@ -421,6 +423,26 @@ class GameScene extends Phaser.Scene {
         g.lineTo(cx, y + size * 0.94);
         g.strokePath();
         break;
+      case 'ore':
+        // Amas de trois éclats bruts, pour se distinguer de la pierre (simple disque plein).
+        g.fillStyle(color, 1);
+        g.fillCircle(x + size * 0.32, y + size * 0.62, size * 0.26);
+        g.fillCircle(x + size * 0.68, y + size * 0.62, size * 0.26);
+        g.fillCircle(cx, y + size * 0.36, size * 0.28);
+        break;
+      case 'ironIngot':
+        // Lingot : trapèze métallique, forme reconnaissable même sans illustration dédiée.
+        g.fillStyle(color, 1);
+        g.lineStyle(Math.max(1, size * 0.05), 0x000000, 0.35);
+        g.beginPath();
+        g.moveTo(x + size * 0.12, y + size * 0.30);
+        g.lineTo(x + size * 0.88, y + size * 0.30);
+        g.lineTo(x + size * 0.98, y + size * 0.74);
+        g.lineTo(x + size * 0.02, y + size * 0.74);
+        g.closePath();
+        g.fillPath();
+        g.strokePath();
+        break;
       default:
         break;
     }
@@ -578,7 +600,7 @@ class GameScene extends Phaser.Scene {
     // rec_imprimerie) : ni plus clair ni plus simple de les faire apparaître/disparaître selon
     // l'état de l'arbre techno. "codex" n'a pas encore de vraie icône (voir js/assets.js) : passe
     // par le dessin vectoriel de secours (drawResourceBarIcon), comme "wheat"/"stone" à l'origine.
-    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ore', 'codex'];
+    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ore', 'ironIngot', 'codex'];
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
     // dessinée ci-dessus (drawResourceBarIcon).
     this.resourceBarIconTextureKeys = {
@@ -605,7 +627,7 @@ class GameScene extends Phaser.Scene {
     // icône (juste le nombre signé, ex. "+12" -- pas de "Pl"/"PT"/"/min", l'icône juste à côté
     // identifie déjà la ressource, voir demande utilisateur), positionné juste après le nombre
     // principal (voir layoutHud, qui réserve un peu de largeur en plus pour CES 3 emplacements).
-    this.mainRateResources = ['planks', 'stoneBlocks', 'bread'];
+    this.mainRateResources = ['planks', 'stoneBlocks', 'bread', 'ironIngot'];
     this.resourceRateTexts = {};
     for (const res of this.mainRateResources) {
       const t = this.add.text(0, 0, '', {
@@ -726,8 +748,8 @@ class GameScene extends Phaser.Scene {
     // l'icône et le coût sont des objets à part, positionnés par-dessus (voir
     // positionBuildButtonContents, appelé depuis layoutHud).
     const buildIds = [
-      'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery', 'recycler',
-      'house', 'warehouse', 'donjon', 'watchtower', 'university',
+      'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'ironMiner', 'foundry',
+      'farm', 'bakery', 'recycler', 'house', 'warehouse', 'donjon', 'watchtower', 'university',
     ];
     this.buildButtons = {};
     this.buildButtonIcons = {};
@@ -2563,6 +2585,32 @@ class GameScene extends Phaser.Scene {
           this.tracePoly(g, [[t * 1.6, 0.20], [t * 0.5, -0.24]], x, y, s, false);
           g.strokePath();
         }
+        break;
+      }
+      case 'ironMiner': {
+        // Pioche : manche en diagonale (même esprit que la hache du Bûcheron) + fer à deux
+        // pointes, pour la distinguer d'un coup d'œil malgré la silhouette similaire.
+        g.lineStyle(s * 0.09, ink, 0.95);
+        this.tracePoly(g, [[-0.22, 0.30], [0.10, -0.16]], x, y, s, false);
+        g.strokePath();
+        g.fillStyle(0xd9d9d9, 1);
+        g.lineStyle(s * 0.025, ink, 0.9);
+        this.tracePoly(g, [[-0.34, -0.18], [-0.02, -0.38], [0.34, -0.14], [0.10, -0.16], [-0.14, -0.02]], x, y, s);
+        g.fillPath(); g.strokePath();
+        break;
+      }
+      case 'foundry': {
+        // Fournaise : corps trapézoïdal sombre, bouche incandescente + petite flamme au sommet.
+        g.fillStyle(0x3a2a24, 1);
+        g.lineStyle(s * 0.03, ink, 0.9);
+        this.tracePoly(g, [[-0.28, 0.32], [-0.20, -0.10], [0.20, -0.10], [0.28, 0.32]], x, y, s);
+        g.fillPath(); g.strokePath();
+        g.fillStyle(0xff8a3d, 1);
+        this.tracePoly(g, [[-0.14, 0.30], [-0.10, 0.06], [0.10, 0.06], [0.14, 0.30]], x, y, s);
+        g.fillPath();
+        g.fillStyle(0xffce6b, 1);
+        this.tracePoly(g, [[0, -0.10], [-0.08, -0.28], [0, -0.36], [0.08, -0.28]], x, y, s);
+        g.fillPath();
         break;
       }
       default:

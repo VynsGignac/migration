@@ -80,7 +80,7 @@ const GameConfig = {
     // codex modeste (voir demande utilisateur) : les Codex se récupèrent maintenant pour de vrai
     // sur les cadavres de monstres recyclés (voir buildings.recycler, 10 par cadavre) -- un petit
     // coussin de départ suffit à lancer les premières recherches avant d'avoir un Recycleur actif.
-    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, codex: 50 },
+    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, ironIngot: 0, codex: 50 },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
   // qui voyage sur les routes, pour chaque ressource.
@@ -91,9 +91,14 @@ const GameConfig = {
     stoneBlocks: { long: 'Pierre taillée', short: 'PT', color: 0xb0b0b0 },
     wheat: { long: 'Blé', short: 'Blé', color: 0xdbc245 },
     bread: { long: 'Pain', short: 'Pain', color: 0xe8a33d },
-    // Introduit par la techno Tunnelier (voir techTree.nodes.ind_tunnelier) : pas encore de
-    // bâtiment qui la consomme, s'accumule simplement dans le stock central pour l'instant.
+    // Introduit par la techno Tunnelier (voir techTree.nodes.ind_tunnelier, une chance que le Camp
+    // de Mineur en produise aussi en creusant la pierre), et par le Mineur de Fer (voir
+    // buildings.ironMiner, demande utilisateur explicite) qui l'extrait directement des montagnes.
     ore: { long: 'Minerai', short: 'Minerai', color: 0x8a6d4f },
+    // Chaîne du fer (demande utilisateur explicite) : Mineur de Fer -> minerai -> Fonderie ->
+    // lingot de fer (voir buildings.ironMiner/foundry), même principe que bois/planches ou
+    // pierre/pierre taillée.
+    ironIngot: { long: 'Lingot de fer', short: 'Fer', color: 0x9aa0a6 },
     // Monnaie des recherches (voir techTree.researchCostPerLevel), globale et jamais transportée
     // sur les routes (directement dépensée/gagnée dans le stock central) : récupérée en recyclant
     // des cadavres de monstres (voir buildings.recycler, 10 Codex par cadavre, 20 avec Imprimerie
@@ -132,12 +137,14 @@ const GameConfig = {
     stone: { color: 0x767a80, amountMin: 50, amountMax: 100 },
     // Nouvelle ressource (demande utilisateur explicite) : blobs à l'origine deux fois moins
     // nombreux que la pierre (blobCountMountain = blobCountStone/2, voir plus bas) et 1.5x plus de
-    // ressource par case (base = stone.amountMin/amountMax) -- pas encore de bâtiment qui
-    // l'extrait (voir ore plus bas, même situation), juste la ressource posée sur la carte pour
-    // l'instant. compact: true (voir GameState._growBlob) : forme plus ronde/dense qu'un blob
-    // normal. sizeMin/sizeMax (demande utilisateur explicite ultérieure, "3 fois plus gros mais 2
-    // fois plus rare") : 3x blobSizeMin/blobSizeMax (4-9) plutôt que ces valeurs partagées avec
-    // tree/stone -- voir aussi blobCountMountain, divisé par 2 en même temps (20 -> 10).
+    // ressource par case (base = stone.amountMin/amountMax). Extraite par le Mineur de Fer (voir
+    // buildings.ironMiner, demande utilisateur explicite ultérieure), le SEUL extracteur du jeu
+    // qui se construit DIRECTEMENT sur sa case de ressource plutôt qu'à côté (voir
+    // GameState.placeBuilding/GameScene.isValidBuildSpot, ironMinerClearsResource) -- compact: true
+    // (voir GameState._growBlob) : forme plus ronde/dense qu'un blob normal. sizeMin/sizeMax
+    // (demande utilisateur explicite ultérieure, "3 fois plus gros mais 2 fois plus rare") : 3x
+    // blobSizeMin/blobSizeMax (4-9) plutôt que ces valeurs partagées avec tree/stone -- voir aussi
+    // blobCountMountain, divisé par 2 en même temps (20 -> 10).
     mountain: { color: 0x4a4e58, amountMin: 75, amountMax: 150, compact: true, sizeMin: 12, sizeMax: 27 },
     // Le blé n'apparaît pas en blobs au démarrage : ce sont les Fermes qui le plantent
     // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
@@ -182,7 +189,7 @@ const GameConfig = {
   // demande utilisateur explicite : il ne contenait QUE elle) -- 'road' est injecté directement
   // dans la liste de boutons quel que soit l'onglet actif, voir GameScene.layoutHud/buttonIds.
   buildingCategories: {
-    production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery', 'recycler'] },
+    production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'ironMiner', 'foundry', 'farm', 'bakery', 'recycler'] },
     civil: { label: 'Civil', ids: ['warehouse', 'university', 'house'] },
     defense: { label: 'Défense', ids: ['donjon', 'watchtower'] },
   },
@@ -236,6 +243,30 @@ const GameConfig = {
     warehouse: {
       name: 'Entrepôt', cost: { planks: 15, stoneBlocks: 8 }, color: 0xffd23f,
       ruinLoot: { planks: 8, stoneBlocks: 4 },
+    },
+    // Nouvelle chaîne du fer (demande utilisateur explicite). Seul extracteur du jeu construit
+    // DIRECTEMENT sur sa case de ressource (une case de montagne, voir resourceNodes.mountain) au
+    // lieu d'à côté -- voir GameState.placeBuilding/GameScene.isValidBuildSpot
+    // (ironMinerClearsResource) : comme une Route sur du bois/blé, poser un Mineur de Fer efface la
+    // ressource sous lui (sinon invisible, voir redrawTileArt qui dessine la case ressource PAR-
+    // DESSUS tout bâtiment qui partagerait sa case et `continue` avant de dessiner celui-ci) --
+    // extractRadius=2 continue ensuite de puiser dans les cases de montagne voisines, exactement
+    // comme le Camp de Mineur sur la pierre.
+    ironMiner: {
+      // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
+      name: 'Mineur de Fer', cost: { planks: 4, stoneBlocks: 2 }, color: 0x707c8a,
+      kind: 'extractor', resource: 'mountain', outputResource: 'ore',
+      extractRadius: 2, extractRate: 0.5, outputCap: 20,
+      linkTargets: ['foundry'], linkRange: 6,
+      ruinLoot: { planks: 3 },
+    },
+    foundry: {
+      // 25 % de 10 planches (2,5, arrondi à 3) transféré en pierre taillée.
+      name: 'Fonderie', cost: { planks: 7, stoneBlocks: 3 }, color: 0x8a4a35,
+      kind: 'processor', inputResource: 'ore', outputResource: 'ironIngot', rate: 1.5,
+      inputCap: 15, outputCap: 15,
+      linkTargets: ['warehouse'], linkRange: 6,
+      ruinLoot: { planks: 5 },
     },
     // plants: true => en plus de récolter comme un extracteur classique, ce bâtiment crée
     // lui-même de nouvelles cases de sa ressource dans son rayon (voir GameState.tickProduction) :
