@@ -130,14 +130,17 @@ const GameConfig = {
   // ressource, voir amountMin/amountMax de tree/stone juste en dessous) a donc annulé le second
   // doublement du NOMBRE de blobs, remis à sa valeur précédente.
   resourceNodes: {
-    // amountMin/amountMax doublés (demande utilisateur explicite, deuxième formulation : pas plus
-    // de blobs, mais chaque blob contient deux fois plus de ressource) par rapport aux valeurs
-    // d'origine (tree 20-40, stone 25-50).
-    tree: { color: 0x1f6b3a, amountMin: 40, amountMax: 80 },
-    stone: { color: 0x767a80, amountMin: 50, amountMax: 100 },
+    // amount FIXE, pas une fourchette aléatoire (demande utilisateur explicite : "toutes les
+    // ressources naturelles d'un meme type aient la meme quantité de ressource initiale") --
+    // remplace l'ancien amountMin/amountMax (tirage aléatoire par case). Valeur = moyenne de
+    // l'ancienne fourchette, pour ne pas changer le total de ressource dispo sur la carte en
+    // moyenne (tree était 40-80, doublé depuis l'origine 20-40 ; stone 50-100, doublé depuis
+    // 25-50).
+    tree: { color: 0x1f6b3a, amount: 60 },
+    stone: { color: 0x767a80, amount: 75 },
     // Nouvelle ressource (demande utilisateur explicite) : blobs à l'origine deux fois moins
     // nombreux que la pierre (blobCountMountain = blobCountStone/2, voir plus bas) et 1.5x plus de
-    // ressource par case (base = stone.amountMin/amountMax). Extraite par le Mineur de Fer (voir
+    // ressource par case (base = stone.amount). Extraite par le Mineur de Fer (voir
     // buildings.ironMiner, demande utilisateur explicite ultérieure), le SEUL extracteur du jeu
     // qui se construit DIRECTEMENT sur sa case de ressource plutôt qu'à côté (voir
     // GameState.placeBuilding/GameScene.isValidBuildSpot, ironMinerClearsResource) -- compact: true
@@ -145,11 +148,11 @@ const GameConfig = {
     // (demande utilisateur explicite ultérieure, "3 fois plus gros mais 2 fois plus rare") : 3x
     // blobSizeMin/blobSizeMax (4-9) plutôt que ces valeurs partagées avec tree/stone -- voir aussi
     // blobCountMountain, divisé par 2 en même temps (20 -> 10).
-    mountain: { color: 0x4a4e58, amountMin: 75, amountMax: 150, compact: true, sizeMin: 12, sizeMax: 27 },
+    mountain: { color: 0x4a4e58, amount: 112, compact: true, sizeMin: 12, sizeMax: 27 },
     // Le blé n'apparaît pas en blobs au démarrage : ce sont les Fermes qui le plantent
-    // elles-mêmes autour d'elles (voir buildings.farm.plants). amountMax sert quand même
-    // au calcul de l'opacité (case bien mûre vs. presque récoltée).
-    wheat: { color: 0xdbc245, amountMin: 8, amountMax: 8 },
+    // elles-mêmes autour d'elles (voir buildings.farm.plants). amount sert quand même au calcul
+    // de l'opacité (case bien mûre vs. presque récoltée).
+    wheat: { color: 0xdbc245, amount: 8 },
     // Cadavre de monstre (voir buildings.recycler/demande utilisateur) : amount toujours 10 --
     // pas la vraie quantité de Codex versée (toujours 10, ou 20 avec Imprimerie, voir
     // tickProduction), juste ce qui permet à la case de décroître visiblement 10 -> 0 pendant la
@@ -159,7 +162,7 @@ const GameConfig = {
     // edgeRowMargin (demande utilisateur explicite) : aucun cadavre posé à la génération du monde
     // dans les 5 premières/dernières rangées (voir GameState._spawnSingleTiles) -- ne concerne
     // QUE cette génération de départ, pas ceux laissés par un monstre tué (_maybeDropCorpse).
-    corpse: { color: 0x6b1f3a, amountMin: 10, amountMax: 10, edgeRowMargin: 5 },
+    corpse: { color: 0x6b1f3a, amount: 10, edgeRowMargin: 5 },
     blobCountTree: 60,
     blobCountStone: 40,
     // Moitié du nombre de blobs de pierre (demande utilisateur explicite : "2 fois moins nombreux").
@@ -171,9 +174,10 @@ const GameConfig = {
     // Anti-softlock (voir GameState._ensureStartingVisibility) : rayon (en cases, pas en colonnes,
     // contrairement à startClearance ci-dessus) dans lequel chaque ressource en blob doit avoir au
     // moins une case garantie autour de l'Entrepôt de départ -- valeur FIXE demandée explicitement
-    // par l'utilisateur ("10 cases"), indépendante de warehouseZoneRadius() (portée réelle du jeu,
-    // qui grandit avec la techno Aménagement urbain -- ce filet de sécurité ne doit pas en dépendre).
-    startingVisibilityRadius: 10,
+    // par l'utilisateur (initialement "10 cases", resserré ensuite à "8 cases"), indépendante de
+    // warehouseZoneRadius() (portée réelle du jeu, qui grandit avec la techno Aménagement urbain --
+    // ce filet de sécurité ne doit pas en dépendre).
+    startingVisibilityRadius: 8,
     // Cadavre de monstre : PAS un blob (voir _spawnSingleTiles) -- une case isolée et rare,
     // dispersée sur toute la carte. Densité de base ~1 par écran plein à dézoom maximum (le
     // monde montre toujours ses 45 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur
@@ -313,7 +317,7 @@ const GameConfig = {
     // de cadavre est entièrement épuisée, 10 Codex sont versés d'un coup au stock central (20 avec
     // une chance liée à Imprimerie, voir techTree.nodes.rec_imprimerie), cas spécial dans
     // tickProduction juste après celui du Tunnelier/minerai. extractRate = 10/60 : un cadavre
-    // (resourceNodes.corpse.amountMin/Max = 10, voir plus haut -- juste pour un affichage "10
+    // (resourceNodes.corpse.amount = 10, voir plus haut -- juste pour un affichage "10
     // restant" -> "0" lisible pendant la récolte, PAS la vraie quantité de Codex) prend environ
     // 1 minute à recycler à pleine main-d'œuvre.
     recycler: {

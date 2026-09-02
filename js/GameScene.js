@@ -2304,7 +2304,7 @@ class GameScene extends Phaser.Scene {
             // Même indice visuel d'épuisement qu'avant (voir l'ancien redrawResources) : la case
             // s'éclaircit vers la transparence à mesure que le stock baisse.
             const nodeCfg = GameConfig.resourceNodes[res.type];
-            const fraction = Phaser.Math.Clamp(res.amount / nodeCfg.amountMax, 0, 1);
+            const fraction = Phaser.Math.Clamp(res.amount / nodeCfg.amount, 0, 1);
             drawTile(col, row, textureKey, 0.35 + 0.65 * fraction);
           } else {
             // Pas d'illustration photo pour cette ressource (voir js/assets.js -- ex. le cadavre

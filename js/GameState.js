@@ -267,7 +267,8 @@ const GameState = {
   // de resourceNodes.startingVisibilityRadius cases autour de l'Entrepôt de départ dès le
   // lancement (pas seulement visible dans le brouillard de guerre, un rayon qui ne garantit rien
   // si aucun Camp posé là ne peut jamais expédier jusqu'à l'Entrepôt). Rayon FIXE (demande
-  // utilisateur explicite : "10 cases"), volontairement PAS warehouseZoneRadius() (qui grandit avec
+  // utilisateur explicite : initialement "10 cases", resserré ensuite à "8 cases"), volontairement
+  // PAS warehouseZoneRadius() (qui grandit avec
   // la techno Aménagement urbain -- ce filet de sécurité doit rester constant, pas suivre les
   // améliorations du joueur). Les blobs ci-dessus sont placés au hasard sur toute la carte -- rien
   // ne garantissait qu'un joueur ait ne serait-ce qu'UNE case de chaque ressource exploitable sans
@@ -295,7 +296,7 @@ const GameState = {
         const blobTiles = this._growBlob(cand.col, cand.row, cfg.blobSizeMin, cfg.startClearance);
         if (blobTiles.length === 0) continue;
         for (const t of blobTiles) {
-          const amount = cfg[type].amountMin + Math.floor(Math.random() * (cfg[type].amountMax - cfg[type].amountMin + 1));
+          const amount = cfg[type].amount;
           this.resourceTiles.set(this.key(t.col, t.row), { type, amount });
         }
         break;
@@ -321,7 +322,7 @@ const GameState = {
       if (row < edgeRowMargin || row >= this.rows - edgeRowMargin) continue;
       if (this._withinStartClearance(col, clearance)) continue;
       if (!this._tileIsFreeForResource(col, row)) continue;
-      const amount = cfg[type].amountMin + Math.floor(Math.random() * (cfg[type].amountMax - cfg[type].amountMin + 1));
+      const amount = cfg[type].amount;
       this.resourceTiles.set(this.key(col, row), { type, amount });
       placed++;
     }
@@ -350,7 +351,7 @@ const GameState = {
       if (blobTiles.length === 0) continue;
 
       for (const t of blobTiles) {
-        const amount = cfg[type].amountMin + Math.floor(Math.random() * (cfg[type].amountMax - cfg[type].amountMin + 1));
+        const amount = cfg[type].amount;
         this.resourceTiles.set(this.key(t.col, t.row), { type, amount });
       }
       placed++;
