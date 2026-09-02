@@ -1680,8 +1680,18 @@ class GameScene extends Phaser.Scene {
     // réduit (demande utilisateur explicite), en plus des boutons plus petits.
     const desktopBtnHeight = 59, desktopGap = 4;
     const confirmRowHeight = 42;
-    const desktopNeededHeight = 216 + confirmRowHeight + catBlockHeight + desktopGap
+    // catBlockY (voir plus bas) est ancré à h / 2 -- FIXE, ne bouge jamais selon le nombre de
+    // boutons de l'onglet actif (demande utilisateur explicite passée : les onglets sautaient de
+    // position en changeant d'onglet). Onglets + liste de boutons doivent donc tenir dans la
+    // moitié INFÉRIEURE de l'écran SEULE, pas dans sa totalité -- d'où le x2 ci-dessous (bug
+    // corrigé, demande utilisateur explicite : "les boutons de construction de batiment ne
+    // rentrent pas entier dans l'ecran, mais deplasse par en bas") : l'ancien calcul, purement
+    // additif, ignorait cette ancre à mi-hauteur et sous-estimait donc largement la hauteur
+    // réellement nécessaire -- resté invisible tant que chaque onglet avait peu de bâtiments,
+    // mais Civil/Militaire ont depuis grandi (temple/altar/sculpteur/armurier).
+    const desktopBottomHalfNeeded = catBlockHeight + desktopGap
       + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
+    const desktopNeededHeight = Math.max(2 * desktopBottomHalfNeeded, 216 + confirmRowHeight + desktopGap);
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
     // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
