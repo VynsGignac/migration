@@ -132,12 +132,10 @@ const GameConfig = {
   resourceNodes: {
     // amount FIXE, pas une fourchette aléatoire (demande utilisateur explicite : "toutes les
     // ressources naturelles d'un meme type aient la meme quantité de ressource initiale") --
-    // remplace l'ancien amountMin/amountMax (tirage aléatoire par case). Valeur = moyenne de
-    // l'ancienne fourchette, pour ne pas changer le total de ressource dispo sur la carte en
-    // moyenne (tree était 40-80, doublé depuis l'origine 20-40 ; stone 50-100, doublé depuis
-    // 25-50).
-    tree: { color: 0x1f6b3a, amount: 60 },
-    stone: { color: 0x767a80, amount: 75 },
+    // remplace l'ancien amountMin/amountMax (tirage aléatoire par case). Valeurs (demande
+    // utilisateur explicite ultérieure : "70 dans le bois et la pierre, 30 dans les montagnes").
+    tree: { color: 0x1f6b3a, amount: 70 },
+    stone: { color: 0x767a80, amount: 70 },
     // Nouvelle ressource (demande utilisateur explicite) : blobs à l'origine deux fois moins
     // nombreux que la pierre (blobCountMountain = blobCountStone/2, voir plus bas) et 1.5x plus de
     // ressource par case (base = stone.amount). Extraite par le Mineur de Fer (voir
@@ -148,7 +146,7 @@ const GameConfig = {
     // (demande utilisateur explicite ultérieure, "3 fois plus gros mais 2 fois plus rare") : 3x
     // blobSizeMin/blobSizeMax (4-9) plutôt que ces valeurs partagées avec tree/stone -- voir aussi
     // blobCountMountain, divisé par 2 en même temps (20 -> 10).
-    mountain: { color: 0x4a4e58, amount: 112, compact: true, sizeMin: 12, sizeMax: 27 },
+    mountain: { color: 0x4a4e58, amount: 30, compact: true, sizeMin: 12, sizeMax: 27 },
     // Le blé n'apparaît pas en blobs au démarrage : ce sont les Fermes qui le plantent
     // elles-mêmes autour d'elles (voir buildings.farm.plants). amount sert quand même au calcul
     // de l'opacité (case bien mûre vs. presque récoltée).
@@ -242,7 +240,9 @@ const GameConfig = {
       // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
       name: 'Camp de Mineur', cost: { planks: 4, stoneBlocks: 2 }, color: 0x5a5a70,
       kind: 'extractor', resource: 'stone', outputResource: 'stone',
-      extractRadius: 2, extractRate: 0.5, outputCap: 20,
+      // extractRadius 2 -> 4 (demande utilisateur explicite : "augmente la zone d'action des
+      // mines à 4 cases").
+      extractRadius: 4, extractRate: 0.5, outputCap: 20,
       linkTargets: ['stonecutter'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
@@ -271,7 +271,9 @@ const GameConfig = {
       // 25 % de 6 planches (~1,5, arrondi à 2) transféré en pierre taillée.
       name: 'Mineur de Fer', cost: { planks: 4, stoneBlocks: 2 }, color: 0x707c8a,
       kind: 'extractor', resource: 'mountain', outputResource: 'ore',
-      extractRadius: 2, extractRate: 0.5, outputCap: 20,
+      // extractRadius 2 -> 4 (demande utilisateur explicite : "augmente la zone d'action des
+      // mines à 4 cases").
+      extractRadius: 4, extractRate: 0.5, outputCap: 20,
       linkTargets: ['foundry'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
