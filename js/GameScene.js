@@ -1684,25 +1684,35 @@ class GameScene extends Phaser.Scene {
     const catCols = 2; // grille 2x2 en colonne PC (voir plus bas) : 4 catégories -> 2 rangées
     const catTabRows = Math.ceil(categoryIds.length / catCols);
     const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
-    // 220 -> 240 (demande utilisateur explicite : boutons CARRÉS, logo centré + coût en dessous,
-    // plutôt que rectangulaires icône-à-gauche/coût-à-droite -- voir positionBuildButtonContentsSquare)
-    // -- 2 colonnes de ~108px chacune, la bonne largeur pour un bouton carré confortable une fois
-    // logo + petite ligne de coût empilés, sans le surplus de largeur qu'exigeait la disposition
-    // horizontale précédente.
-    const desktopSidebarWidth = 240;
+    // 240 -> 300 (demande utilisateur explicite : "boutons plus grand, pour utiliser toute la
+    // largeur") -- plus de place par colonne pour des boutons carrés vraiment grands, pas juste
+    // confortables.
+    const desktopSidebarWidth = 300;
     const desktopGap = 4;
+    // Marge resserrée (demande utilisateur explicite : boutons "presque jointifs") -- seulement
+    // pour la GRILLE de construction (voir desktopColWidthBudget/desktopPlaceBtn plus bas) ; les
+    // autres éléments de la colonne (onglets, Valider, texte) gardent leur marge de 10px habituelle.
+    const desktopBtnMargin = 6;
     // 2 boutons de construction par rangée (demande utilisateur explicite), PAS les onglets de
     // catégorie ci-dessus (catCols, restent 2x2 sur toute la largeur) ni Valider/Démolir/Améliorer
     // (restent pleine largeur, voir plus bas) -- seule la grille de buildButtons est concernée.
     const desktopBuildCols = 2;
     const confirmRowHeight = 42;
-    // catBlockY (onglets + liste de boutons) reste ancré à h / 2 -- FIXE, ne bouge jamais selon le
-    // nombre de boutons de l'onglet actif (demande utilisateur explicite passée : les onglets
-    // sautaient de position en changeant d'onglet) NI ne remonte près du haut (tentative déjà
-    // rejetée une fois : le panneau d'info, dont la hauteur varie avec le bâtiment sélectionné,
-    // chevauchait alors les boutons -- voir plus bas, il garde ainsi toute la moitié haute pour
-    // respirer, quoi qu'il arrive).
-    const catBlockY = Math.round(h / 2);
+    // catBlockY (onglets + liste de boutons) remonte près du haut au lieu de rester ancré à h / 2
+    // (demande utilisateur explicite : "utiliser de la hauteur en haut", pour des boutons plus
+    // grands) -- juste après la grille de ressources/le panneau d'info, PAS une hauteur fixe
+    // arbitraire proche du haut (déjà tentée puis rejetée une fois pour cette même raison : le
+    // panneau d'info, dont la hauteur varie avec le bâtiment sélectionné, risquait de chevaucher
+    // les boutons) : desktopInfoPanelReserve (160px) lui réserve volontairement une marge généreuse
+    // (~8 lignes de texte) pour éviter ce chevauchement même avec un texte d'info long. Reste
+    // indépendant du nombre de boutons de l'onglet actif (pas de "saut" en changeant d'onglet,
+    // demande utilisateur explicite plus ancienne).
+    // 20/6 = pcIconSize/pcRowGap plus bas (grille de ressources) ; 2 = pcCols -- dupliqués ici en
+    // dur pour rester calculables AVANT le bloc de rendu PC (qui décide s'il s'applique), à garder
+    // synchronisés si ces constantes changent.
+    const desktopIconGridHeight = Math.ceil(this.resourceOrder.length / 2) * (20 + 6);
+    const desktopInfoPanelReserve = 160;
+    const catBlockY = 10 + desktopIconGridHeight + 34 + desktopInfoPanelReserve;
     // Hauteur de bouton DYNAMIQUE plutôt qu'un seuil qui bascule tout le panneau en mode mobile
     // (demande utilisateur explicite : "le PC a la meme UI que le telephone... c'etait mieux avant
     // avec le menu qui restait a gauche") -- calée sur la place RÉELLEMENT disponible sous les
@@ -1727,11 +1737,13 @@ class GameScene extends Phaser.Scene {
     const desktopRowHeightBudget = Math.floor(desktopAvailableForList / Math.max(1, desktopBuildRows)) - desktopGap;
     // Bouton CARRÉ (demande utilisateur explicite) : même valeur pour largeur ET hauteur, bornée
     // par la plus stricte des deux contraintes -- la largeur de colonne (fixe, voir
-    // desktopSidebarWidth) et la hauteur de rangée dynamique (rétrécit sur un écran bas/un onglet
-    // chargé, comme avant). 110 = plafond esthétique (au-delà, un bouton carré devient
-    // disproportionné par rapport à son contenu, logo + petite ligne de coût).
-    const desktopColWidthBudget = (this.sidebarWidth - 20 - desktopGap * (desktopBuildCols - 1)) / desktopBuildCols;
-    const desktopBtnSize = Math.max(26, Math.min(110, desktopColWidthBudget, desktopRowHeightBudget));
+    // desktopSidebarWidth/desktopBtnMargin) et la hauteur de rangée dynamique (rétrécit sur un
+    // écran bas/un onglet chargé, comme avant). 170 (au lieu de 110, demande utilisateur explicite
+    // : "boutons plus grand") = plafond esthétique, plus généreux mais toujours borné pour qu'un
+    // bouton carré ne devienne pas absurdement disproportionné par rapport à son contenu (logo +
+    // petite ligne de coût) sur un très grand écran.
+    const desktopColWidthBudget = (this.sidebarWidth - desktopBtnMargin * 2 - desktopGap * (desktopBuildCols - 1)) / desktopBuildCols;
+    const desktopBtnSize = Math.max(26, Math.min(170, desktopColWidthBudget, desktopRowHeightBudget));
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
     // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
@@ -1831,11 +1843,14 @@ class GameScene extends Phaser.Scene {
       // TOUT le reste de la grille.
       const listTop = catBlockY + catBlockHeight + desktopGap;
       // Centré dans sa colonne (demande utilisateur explicite : boutons carrés) : desktopBtnSize
-      // peut être plus étroit que la colonne elle-même (plafonné à 110, voir plus haut) sur un
-      // écran large, d'où ce décalage plutôt qu'un simple alignement à gauche de la colonne.
+      // peut être plus étroit que la colonne elle-même (plafonné à 170, voir plus haut) sur un
+      // écran large, d'où ce décalage plutôt qu'un simple alignement à gauche de la colonne --
+      // reste 0 (donc invisible) dès que la largeur devient la contrainte qui borne réellement
+      // desktopBtnSize, ce qui est maintenant le cas courant (demande utilisateur explicite :
+      // "utiliser toute la largeur").
       const desktopColCenterOffset = (desktopColWidthBudget - desktopBtnSize) / 2;
       const desktopPlaceBtn = (id, col, row) => {
-        const bx = 10 + col * (desktopColWidthBudget + desktopGap) + desktopColCenterOffset;
+        const bx = desktopBtnMargin + col * (desktopColWidthBudget + desktopGap) + desktopColCenterOffset;
         const by = listTop + row * (desktopBtnSize + desktopGap);
         this.buildButtons[id].setPosition(bx, by).setSize(desktopBtnSize, desktopBtnSize).setVisible(true);
         this.positionBuildButtonContentsSquare(id, bx, by, desktopBtnSize);
@@ -2049,15 +2064,19 @@ class GameScene extends Phaser.Scene {
   // mobile (rectangle large, pas de contrainte de centrage).
   positionBuildButtonContentsSquare(id, x, y, size) {
     const cx = x + size / 2;
-    const iconSize = Math.min(size * 0.5, 47);
+    // 47 -> 85 (demande utilisateur explicite : "aggrandit les icones en consequence", boutons
+    // désormais jusqu'à 170px -- voir desktopBtnSize dans layoutHud) : sans ce relèvement,
+    // l'icône plafonnait bien avant le bouton lui-même et restait petite dans un grand bouton.
+    const iconSize = Math.min(size * 0.5, 85);
     const icon = this.buildButtonIcons[id];
     icon.setPosition(cx, y + size * 0.38).setVisible(true);
     if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
     else icon.setScale(iconSize / 30);
 
     const costs = this.buildButtonCostIcons[id];
-    const costImgSize = Math.max(9, Math.min(14, size * 0.16));
-    const fontSize = Math.max(10, Math.min(12, Math.round(size * 0.15)));
+    // Plafonds relevés en proportion de l'icône ci-dessus (14 -> 22, 12 -> 18), même raison.
+    const costImgSize = Math.max(9, Math.min(22, size * 0.16));
+    const fontSize = Math.max(10, Math.min(18, Math.round(size * 0.15)));
     const gapAfterImg = 2, gapAfterTxt = 8;
     // Largeur totale mesurée D'ABORD (police déjà fixée, .width lisible) pour pouvoir centrer le
     // groupe entier sous le logo -- contrairement à la version mobile, alignée à gauche sans
