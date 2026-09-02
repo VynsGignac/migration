@@ -871,7 +871,11 @@ const GameState = {
         if (toExtract <= 0) break;
         const resKey = this.key(pos.col, pos.row);
         const resTile = this.resourceTiles.get(resKey);
-        if (!resTile || resTile.type !== def.resource) continue;
+        // amount <= 0 exclu ici (voir plus bas) : une montagne épuisée reste dans resourceTiles
+        // (demande utilisateur explicite) au lieu d'être supprimée -- sans ce garde-fou, elle
+        // serait retrouvée à CHAQUE tick suivant par ce même scan (type toujours 'mountain'),
+        // pour un take de 0 à chaque fois.
+        if (!resTile || resTile.type !== def.resource || resTile.amount <= 0) continue;
 
         const take = Math.min(toExtract, resTile.amount);
         resTile.amount -= take;
@@ -883,16 +887,28 @@ const GameState = {
         extracted += take;
         this.dirty = true;
         if (resTile.amount <= 0.0001) {
-          this.resourceTiles.delete(resKey);
-          // Cadavre entièrement recyclé (voir buildings.recycler/demande utilisateur explicite) :
-          // 10 Codex d'un coup, doublés (20) avec une chance liée à Imprimerie -- PAS un simple
-          // +1 comme l'ancienne version (voir techTree.nodes.rec_imprimerie, description mise à
-          // jour en conséquence). Un vrai jet UNIQUE par cadavre, pas une accumulation fractionnée
-          // qui aurait lissé la variance au fil des ticks.
-          if (tile.type === 'recycler') {
-            const doubled = imprimerieChance > 0 && Math.random() < imprimerieChance;
-            this.resources.codex += doubled ? 20 : 10;
-            this.dirty = true;
+          // Montagne épuisée (demande utilisateur explicite : "je veux que les cases de montagnes
+          // ne disparaissent pas... elles se vident de leurs ressources, mais restent là") : SEULE
+          // exception parmi les ressources en blob -- contrairement au bois/à la pierre, qui
+          // redeviennent de l'herbe nue une fois la case entièrement récoltée, une montagne est un
+          // relief, pas un tas de ressource consommable. Reste donc dans resourceTiles (amount
+          // pinné à 0, jamais négatif) au lieu d'être supprimée : redrawTileArt continue de
+          // dessiner sa tuile (alpha plancher à 0.35 même à amount=0), juste sans plus rien à
+          // extraire (voir le garde-fou "amount <= 0" ajouté ci-dessus).
+          if (resTile.type === 'mountain') {
+            resTile.amount = 0;
+          } else {
+            this.resourceTiles.delete(resKey);
+            // Cadavre entièrement recyclé (voir buildings.recycler/demande utilisateur explicite) :
+            // 10 Codex d'un coup, doublés (20) avec une chance liée à Imprimerie -- PAS un simple
+            // +1 comme l'ancienne version (voir techTree.nodes.rec_imprimerie, description mise à
+            // jour en conséquence). Un vrai jet UNIQUE par cadavre, pas une accumulation fractionnée
+            // qui aurait lissé la variance au fil des ticks.
+            if (tile.type === 'recycler') {
+              const doubled = imprimerieChance > 0 && Math.random() < imprimerieChance;
+              this.resources.codex += doubled ? 20 : 10;
+              this.dirty = true;
+            }
           }
         }
       }
