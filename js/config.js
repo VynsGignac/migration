@@ -80,7 +80,10 @@ const GameConfig = {
     // codex modeste (voir demande utilisateur) : les Codex se récupèrent maintenant pour de vrai
     // sur les cadavres de monstres recyclés (voir buildings.recycler, 10 par cadavre) -- un petit
     // coussin de départ suffit à lancer les premières recherches avant d'avoir un Recycleur actif.
-    starting: { wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, ironIngot: 0, codex: 50 },
+    starting: {
+      wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, ironIngot: 0,
+      weapons: 0, statues: 0, devotion: 0, codex: 50,
+    },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
   // qui voyage sur les routes, pour chaque ressource.
@@ -99,6 +102,15 @@ const GameConfig = {
     // lingot de fer (voir buildings.ironMiner/foundry), même principe que bois/planches ou
     // pierre/pierre taillée.
     ironIngot: { long: 'Lingot de fer', short: 'Fer', color: 0x9aa0a6 },
+    // Armurier (demande utilisateur explicite) : lingot de fer + bois brut -> armes.
+    weapons: { long: 'Armes', short: 'Armes', color: 0x8a3030 },
+    // Sculpteur (demande utilisateur explicite) : pierre brute + lingot de fer -> statues.
+    statues: { long: 'Statues', short: 'Stat.', color: 0xa8a190 },
+    // Temple (demande utilisateur explicite) : monnaie globale comme le Codex, jamais transportée
+    // sur les routes -- produite en continu proportionnellement au nombre d'Autels dans la zone
+    // d'action de chaque Temple (voir buildings.temple/altar, GameState.tickProduction section
+    // "Temple").
+    devotion: { long: 'Dévotion', short: 'Dévo.', color: 0xe8c96a },
     // Monnaie des recherches (voir techTree.researchCostPerLevel), globale et jamais transportée
     // sur les routes (directement dépensée/gagnée dans le stock central) : récupérée en recyclant
     // des cadavres de monstres (voir buildings.recycler, 10 Codex par cadavre, 20 avec Imprimerie
@@ -198,12 +210,13 @@ const GameConfig = {
   // directement) -- ids ici ne sert qu'à déterminer QUELS boutons apparaissent dans cet onglet.
   buildingCategories: {
     production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery', 'ironMiner', 'foundry'] },
-    civil: { label: 'Civil', ids: ['warehouse', 'university', 'house'] },
+    // temple/sculpteur/altar ajoutés (demande utilisateur explicite).
+    civil: { label: 'Civil', ids: ['warehouse', 'university', 'house', 'temple', 'altar', 'sculpteur'] },
     // Renommé Défense -> Militaire (demande utilisateur explicite) en même temps que Recycleur y
     // est déplacé depuis Production (n'a pas vraiment sa place dans les paires
     // extracteur/transformateur ci-dessus, voir la demande utilisateur : "deplace le dans la
-    // colonne militaire").
-    defense: { label: 'Militaire', ids: ['donjon', 'watchtower', 'recycler'] },
+    // colonne militaire"). armurier ajouté (demande utilisateur explicite ultérieure).
+    defense: { label: 'Militaire', ids: ['donjon', 'watchtower', 'recycler', 'armurier'] },
   },
   // Chaque bâtiment producteur a son propre stock local (inputBuffer/outputBuffer), pas un
   // pool global : les ressources doivent être physiquement acheminées d'un bâtiment à l'autre.
@@ -225,7 +238,9 @@ const GameConfig = {
       name: 'Camp de Bûcheron', cost: { planks: 4, stoneBlocks: 2 }, color: 0x8b5a2b,
       kind: 'extractor', resource: 'tree', outputResource: 'wood',
       extractRadius: 2, extractRate: 0.5, outputCap: 20,
-      linkTargets: ['sawmill'], linkRange: 6,
+      // 'armurier' ajouté (demande utilisateur explicite) : l'Armurier consomme du bois BRUT, pas
+      // des planches -- livré directement comme la Scierie, pas via l'Entrepôt.
+      linkTargets: ['sawmill', 'armurier'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
     sawmill: {
@@ -241,13 +256,26 @@ const GameConfig = {
       name: 'Camp de Mineur', cost: { planks: 4, stoneBlocks: 2 }, color: 0x5a5a70,
       kind: 'extractor', resource: 'stone', outputResource: 'stone',
       extractRadius: 2, extractRate: 0.5, outputCap: 20,
-      linkTargets: ['stonecutter'], linkRange: 6,
+      // 'sculpteur' ajouté (demande utilisateur explicite) : le Sculpteur consomme de la pierre
+      // BRUTE, pas de la pierre taillée -- livré directement comme le Tailleur, pas via l'Entrepôt.
+      linkTargets: ['stonecutter', 'sculpteur'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
     stonecutter: {
       // 25 % de 10 planches (2,5, arrondi à 3) transféré en pierre taillée.
       name: 'Tailleur de pierre', cost: { planks: 7, stoneBlocks: 3 }, color: 0xb0b0b0,
       kind: 'processor', inputResource: 'stone', outputResource: 'stoneBlocks', rate: 1.5,
+      inputCap: 15, outputCap: 15,
+      linkTargets: ['warehouse'], linkRange: 6,
+      ruinLoot: { planks: 5 },
+    },
+    // Sculpteur (demande utilisateur explicite, catégorie Civil) : même principe que l'Armurier
+    // (voir plus haut, deux ressources en entrée) -- pierre BRUTE livrée directement par un Camp de
+    // Mineur (voir buildings.minerCamp.linkTargets), lingot de fer livré depuis le stock central
+    // d'un Entrepôt (voir GameState._spawnWarehouseIronIngot). Recette 1:1:1.
+    sculpteur: {
+      name: 'Sculpteur', cost: { planks: 7, stoneBlocks: 3 }, color: 0x8a8578,
+      kind: 'processor', inputResources: ['stone', 'ironIngot'], outputResource: 'statues', rate: 1.2,
       inputCap: 15, outputCap: 15,
       linkTargets: ['warehouse'], linkRange: 6,
       ruinLoot: { planks: 5 },
@@ -280,6 +308,22 @@ const GameConfig = {
       // 25 % de 10 planches (2,5, arrondi à 3) transféré en pierre taillée.
       name: 'Fonderie', cost: { planks: 7, stoneBlocks: 3 }, color: 0x8a4a35,
       kind: 'processor', inputResource: 'ore', outputResource: 'ironIngot', rate: 1.5,
+      inputCap: 15, outputCap: 15,
+      linkTargets: ['warehouse'], linkRange: 6,
+      ruinLoot: { planks: 5 },
+    },
+    // Armurier (demande utilisateur explicite, catégorie Militaire) : PREMIER processeur du jeu à
+    // deux ressources en entrée (voir inputResources -- pas juste inputResource comme les autres
+    // processeurs, un seul suffisait jusqu'ici). Bois brut livré DIRECTEMENT par un Camp de
+    // Bûcheron (voir buildings.lumberjackCamp.linkTargets), lingot de fer livré depuis le stock
+    // central d'un Entrepôt (voir GameState._spawnWarehouseIronIngot -- PAS directement depuis une
+    // Fonderie : le lingot de fer reste centralisé à l'Entrepôt, demande utilisateur explicite
+    // d'une session précédente, "le fer est stocké dans les entrepots comme les autres
+    // ressources"). Recette 1:1:1 (voir GameState.tickProduction section 2, boucle sur
+    // inputResources) : 1 bois + 1 lingot -> 1 arme.
+    armurier: {
+      name: 'Armurier', cost: { planks: 7, stoneBlocks: 3 }, color: 0x5a4238,
+      kind: 'processor', inputResources: ['wood', 'ironIngot'], outputResource: 'weapons', rate: 1.2,
       inputCap: 15, outputCap: 15,
       linkTargets: ['warehouse'], linkRange: 6,
       ruinLoot: { planks: 5 },
@@ -351,6 +395,27 @@ const GameConfig = {
       populationCap: 4, startPopulation: 1,
       consumptionPerPerson: 0.15, growthInterval: 2.5,
       ruinLoot: { planks: 4 },
+    },
+    // Autel (demande utilisateur explicite, catégorie Civil) : bâtiment purement passif, sans
+    // kind -- ne produit/ne consomme rien lui-même, ne reçoit jamais de main-d'œuvre (voir
+    // GameState.allocateLabor, qui ne s'applique qu'aux kind extractor/processor/tower). Compté
+    // par chaque Temple à portée (voir buildings.temple ci-dessous), c'est tout son rôle.
+    altar: {
+      name: 'Autel', cost: { planks: 3, stoneBlocks: 3 }, color: 0xc9b896,
+      ruinLoot: { planks: 2 },
+    },
+    // Temple (demande utilisateur explicite, catégorie Civil) : NOUVEAU kind 'shrine', différent
+    // d'un extracteur (aucune ressource de terrain à épuiser) -- produit de la Dévotion en continu,
+    // proportionnellement au nombre d'Autels dans son extractRadius (voir GameState.tickProduction,
+    // section "Temple" ; devotionPerAltar = Dévotion/s PAR Autel à pleine efficacité). Versée
+    // directement au stock central, jamais transportée sur les routes -- même principe que le
+    // Codex du Recycleur. Main-d'œuvre normale (contrairement au Recycleur, pas de raison
+    // particulière de l'exempter ici) : voir GameState.allocateLabor/zoneRadiusFor, kind 'shrine'
+    // ajouté aux deux à côté d'extractor/processor/tower.
+    temple: {
+      name: 'Temple', cost: { planks: 15, stoneBlocks: 10 }, color: 0xd4af6a,
+      kind: 'shrine', extractRadius: 3, devotionPerAltar: 0.1,
+      ruinLoot: { planks: 8 },
     },
     // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval
     // secondes à pleine main-d'œuvre (même système que les extracteurs/processeurs : un

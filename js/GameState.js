@@ -9,7 +9,7 @@ const GameState = {
   cols: GameConfig.world.cols,
   rows: GameConfig.world.rows,
   // Stock central : seuls les Entrepôts y déposent (via une expédition qui arrive à destination).
-  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, codex: 0 }, GameConfig.resources.starting),
+  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, codex: 0 }, GameConfig.resources.starting),
   // Clé "col,row" -> { type, outputBuffer?, inputBuffer?, ruinLoot? }
   // Une case absente de la Map est considérée "vide".
   tiles: new Map(),
@@ -139,7 +139,14 @@ const GameState = {
     delete tile.constructionDelivered;
     const def = GameConfig.buildings[tile.type];
     if (def.kind === 'extractor' || def.kind === 'processor') tile.outputBuffer = 0;
-    if (def.kind === 'processor' || def.kind === 'house') tile.inputBuffer = 0;
+    if (def.kind === 'processor' || def.kind === 'house') {
+      // inputResources (pluriel, voir buildings.armurier/sculpteur) : PREMIERS processeurs à deux
+      // ressources en entrée -- inputBuffers (objet, une entrée par ressource) plutôt que le
+      // inputBuffer (nombre unique) de tous les autres processeurs/de la Maison (bois brut de
+      // l'Armurier, pierre brute du Sculpteur, chacun en plus de leur lingot de fer).
+      if (def.inputResources) tile.inputBuffers = Object.fromEntries(def.inputResources.map((r) => [r, 0]));
+      else tile.inputBuffer = 0;
+    }
     if (def.plants) tile.plantTimer = 0;
     if (def.kind === 'house') {
       tile.population = def.startPopulation;
@@ -179,6 +186,7 @@ const GameState = {
     const def = GameConfig.buildings[type];
     if (!def) return null;
     if (def.kind === 'extractor') return def.extractRadius;
+    if (def.kind === 'shrine') return def.extractRadius;
     if (def.kind === 'processor') return def.linkRange;
     if (def.kind === 'house') return GameConfig.population.laborRadius;
     if (def.kind === 'tower') return this.towerRange(def);
@@ -578,7 +586,10 @@ const GameState = {
       if (def.kind === 'house') {
         const [col, row] = key.split(',').map(Number);
         houses.push({ col, row, population: tile.population });
-      } else if ((def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower') && tile.type !== 'recycler') {
+      } else if (
+        (def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower' || def.kind === 'shrine')
+        && tile.type !== 'recycler'
+      ) {
         // Recycleur exclu (voir buildings.recycler/tickProduction) : toujours à pleine efficacité
         // sans main-d'œuvre, ça ne servirait qu'à détourner inutilement des habitants d'un
         // bâtiment qui, lui, en profiterait vraiment.
@@ -655,7 +666,7 @@ const GameState = {
       // Le Château (voir buildings.castle.capMultiplier) absorbe utilement 2x plus de
       // travailleurs qu'un Donjon normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
       // pourrait encore en accueillir 4 de plus (voir efficiencyForWorkers).
-      const isProduction = def.kind === 'extractor' || def.kind === 'processor';
+      const isProduction = def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'shrine';
       const fullStaff = (isProduction ? productionFullStaff : baseFullStaff) * (def.capMultiplier || 1);
       needed += Math.max(0, fullStaff - entry.workers);
     }
@@ -701,12 +712,17 @@ const GameState = {
     const alphabetisationBonus = alphabetisationLevel > 0 ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
     const formateurBonus = this.isTechUnlocked('rec_formateur') ? GameConfig.techTree.nodes.rec_formateur.zoneBonus : 0;
 
-    const perSecond = { planks: 0, stoneBlocks: 0, bread: 0, ironIngot: 0 };
+    const perSecond = { planks: 0, stoneBlocks: 0, bread: 0, ironIngot: 0, weapons: 0, statues: 0 };
 
     // Entrées : débit soutenable producteur -> Entrepôt (voir _spawnShipments). Un chemin
     // structurel qui existe suffit (voir findBestPathToBuildingType, scoreFn constant -- on ne
-    // cherche pas ici quelle cible précise a le plus de place, juste qu'UNE existe).
-    const outputResourceOf = { sawmill: 'planks', stonecutter: 'stoneBlocks', bakery: 'bread', foundry: 'ironIngot' };
+    // cherche pas ici quelle cible précise a le plus de place, juste qu'UNE existe). Fonctionne
+    // aussi pour l'Armurier/le Sculpteur (voir buildings.armurier/sculpteur) sans changement : ce
+    // calcul ne lit que def.rate/linkTargets/linkRange, jamais inputResource/inputBuffer.
+    const outputResourceOf = {
+      sawmill: 'planks', stonecutter: 'stoneBlocks', bakery: 'bread', foundry: 'ironIngot',
+      armurier: 'weapons', sculpteur: 'statues',
+    };
     for (const [key, tile] of this.tiles) {
       const res = outputResourceOf[tile.type];
       const def = GameConfig.buildings[tile.type];
@@ -953,11 +969,50 @@ const GameState = {
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
       const roomInOutput = def.outputCap + this.capBonus() - tile.outputBuffer;
-      const actual = Math.min(def.rate * efficiency * speedMultiplier * dtSeconds, tile.inputBuffer, roomInOutput);
+      let actual = Math.min(def.rate * efficiency * speedMultiplier * dtSeconds, roomInOutput);
+      // inputResources (voir buildings.armurier/sculpteur) : recette 1:1:1, bornée par la ressource
+      // la PLUS RARE des deux plutôt qu'une seule (tile.inputBuffer, tous les autres processeurs).
+      if (def.inputResources) {
+        for (const res of def.inputResources) actual = Math.min(actual, tile.inputBuffers[res]);
+      } else {
+        actual = Math.min(actual, tile.inputBuffer);
+      }
       if (actual <= 0) continue;
 
-      tile.inputBuffer -= actual;
+      if (def.inputResources) {
+        for (const res of def.inputResources) tile.inputBuffers[res] -= actual;
+      } else {
+        tile.inputBuffer -= actual;
+      }
       tile.outputBuffer += actual;
+    }
+
+    // Temple : Dévotion versée directement au stock central (comme le Codex du Recycleur), jamais
+    // transportée sur les routes -- proportionnelle au nombre d'Autels dans son extractRadius
+    // (voir buildings.temple/altar, demande utilisateur explicite). Même courbe de main-d'œuvre que
+    // les extracteurs/processeurs ci-dessus.
+    for (const [key, tile] of this.tiles) {
+      const def = GameConfig.buildings[tile.type];
+      if (!def || def.kind !== 'shrine' || tile.underConstruction) continue;
+
+      const [col, row] = key.split(',').map(Number);
+      const inRange = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows);
+      const altarCount = inRange.reduce((sum, p) => {
+        const t = this.tiles.get(this.key(p.col, p.row));
+        return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
+      }, 0);
+      if (altarCount === 0) continue;
+
+      const workers = labor.get(key) ? labor.get(key).workers : 0;
+      const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
+      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
+        + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (this.universityZone.has(key) ? formateurBonus : 0);
+      const devotion = def.devotionPerAltar * altarCount * efficiency * speedMultiplier * dtSeconds;
+      if (devotion <= 0) continue;
+
+      this.resources.devotion += devotion;
+      this.dirty = true;
     }
 
     // 2.5 Population : chaque Maison consomme du pain proportionnellement à ses habitants.
@@ -1072,6 +1127,7 @@ const GameState = {
 
     this._spawnShipments();
     this._spawnWarehouseBread();
+    this._spawnWarehouseIronIngot();
     this._spawnWarehouseConstructionDeliveries();
     this._updateMaxStats();
   },
@@ -1272,6 +1328,14 @@ const GameState = {
     this.shots = this.shots.filter(s => (s.ttl -= dtSeconds) > 0);
   },
 
+  // Lit le stock d'ENTRÉE d'une case pour une ressource précise, que ce bâtiment ait un seul
+  // inputBuffer (nombre, la plupart des processeurs/la Maison) ou plusieurs inputBuffers (objet,
+  // voir buildings.armurier/sculpteur) -- centralise ce choix pour tous les appelants ci-dessous
+  // (scoreFn de routage, calcul de capacité, arrivée d'un chargement) plutôt que de le répéter.
+  _inputBufferOf(tile, def, resource) {
+    return def.inputResources ? (tile.inputBuffers[resource] || 0) : tile.inputBuffer;
+  },
+
   // Pour chaque bâtiment ayant du stock en sortie et pas déjà de chargement en route,
   // cherche un partenaire compatible à portée et lui expédie un chargement.
   _spawnShipments() {
@@ -1293,7 +1357,8 @@ const GameState = {
       for (const targetType of def.linkTargets) {
         found = this.findBestPathToBuildingType(col, row, [targetType], def.linkRange, (t) => {
           if (t.type === 'warehouse') return Infinity;
-          return GameConfig.buildings[t.type].inputCap + this.capBonus() - t.inputBuffer;
+          const tdef = GameConfig.buildings[t.type];
+          return tdef.inputCap + this.capBonus() - this._inputBufferOf(t, tdef, def.outputResource);
         });
         if (found) break;
       }
@@ -1303,7 +1368,9 @@ const GameState = {
       const destTile = this.tiles.get(destKey);
       const destDef = GameConfig.buildings[destTile.type];
 
-      const capacity = destTile.type === 'warehouse' ? Infinity : (destDef.inputCap + this.capBonus() - destTile.inputBuffer);
+      const capacity = destTile.type === 'warehouse'
+        ? Infinity
+        : (destDef.inputCap + this.capBonus() - this._inputBufferOf(destTile, destDef, def.outputResource));
       const amount = Math.min(batch, tile.outputBuffer, capacity);
       if (amount <= 0) continue;
 
@@ -1363,6 +1430,51 @@ const GameState = {
         fromKey: key,
         toKey: destKey,
         toType: 'house',
+      });
+      this.dirty = true;
+    }
+  },
+
+  // Second segment du cycle du fer pour l'Armurier/le Sculpteur (voir buildings.armurier/
+  // sculpteur, demande utilisateur explicite) : même mécanique que _spawnWarehouseBread, mais vers
+  // DEUX types de destination possibles (voir linkTargets, essayés dans l'ordre) au lieu d'un
+  // seul -- l'Armurier ET le Sculpteur consomment tous les deux du lingot de fer, en plus de leur
+  // ressource brute respective livrée DIRECTEMENT par la route depuis un Camp de Bûcheron/de
+  // Mineur (voir buildings.lumberjackCamp/minerCamp.linkTargets). Garde-fou anti-doublon PAR
+  // RESSOURCE (s.resource === 'ironIngot'), pas juste "!s.forConstruction" comme le pain -- sinon
+  // un envoi de pain en cours bloquerait aussi un envoi de fer depuis le même Entrepôt, et
+  // inversement (même bug que celui déjà corrigé entre pain et construction, voir plus haut).
+  _spawnWarehouseIronIngot() {
+    const batch = GameConfig.logistics.shipBatchSize;
+    for (const [key, tile] of this.tiles) {
+      if (tile.type !== 'warehouse' || tile.underConstruction) continue;
+      if (this.resources.ironIngot <= 0) continue;
+      if (this.shipments.some(s => s.fromKey === key && s.resource === 'ironIngot')) continue;
+
+      const [col, row] = key.split(',').map(Number);
+      const found = this.findBestPathToBuildingType(col, row, ['armurier', 'sculpteur'], this.warehouseZoneRadius(), (t) => {
+        const tdef = GameConfig.buildings[t.type];
+        return tdef.inputCap + this.capBonus() - this._inputBufferOf(t, tdef, 'ironIngot');
+      });
+      if (!found) continue;
+
+      const destKey = this.key(found.targetCol, found.targetRow);
+      const destTile = this.tiles.get(destKey);
+      const destDef = GameConfig.buildings[destTile.type];
+      const capacity = destDef.inputCap + this.capBonus() - this._inputBufferOf(destTile, destDef, 'ironIngot');
+      const amount = Math.min(batch, this.resources.ironIngot, capacity);
+      if (amount <= 0) continue;
+
+      this.resources.ironIngot -= amount;
+      this.shipments.push({
+        id: this.nextShipmentId++,
+        resource: 'ironIngot',
+        amount,
+        path: found.path,
+        progress: 0,
+        fromKey: key,
+        toKey: destKey,
+        toType: destTile.type,
       });
       this.dirty = true;
     }
@@ -1493,8 +1605,15 @@ const GameState = {
         } else if (s.toType === 'warehouse') {
           this.resources[s.resource] = (this.resources[s.resource] || 0) + amount;
         } else {
-          const cap = GameConfig.buildings[destTile.type].inputCap + this.capBonus();
-          destTile.inputBuffer = Math.min(destTile.inputBuffer + amount, cap);
+          const destDef = GameConfig.buildings[destTile.type];
+          const cap = destDef.inputCap + this.capBonus();
+          // inputResources (voir buildings.armurier/sculpteur) : la bonne des deux entrées d'après
+          // la ressource EFFECTIVEMENT transportée (s.resource), pas les deux à la fois.
+          if (destDef.inputResources) {
+            destTile.inputBuffers[s.resource] = Math.min((destTile.inputBuffers[s.resource] || 0) + amount, cap);
+          } else {
+            destTile.inputBuffer = Math.min(destTile.inputBuffer + amount, cap);
+          }
         }
       }
       // Sinon : le bâtiment de destination a été détruit entre-temps, le chargement est perdu.
@@ -1564,7 +1683,7 @@ const GameState = {
     this.cols = GameConfig.world.cols;
     this.rows = GameConfig.world.rows;
     this.resources = Object.assign(
-      { wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, codex: 0 },
+      { wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, codex: 0 },
       GameConfig.resources.starting
     );
     this.tiles = new Map();
@@ -1604,7 +1723,7 @@ const GameState = {
   },
 
   deserialize(data) {
-    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, codex: 0 }, data.resources);
+    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, codex: 0 }, data.resources);
     this.tiles = new Map(data.tiles.map(([k, t]) => [k, { ...t }]));
     this.resourceTiles = new Map(data.resourceTiles.map(([k, t]) => [k, { ...t }]));
     this.shipments = data.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) }));

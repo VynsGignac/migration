@@ -449,6 +449,38 @@ class GameScene extends Phaser.Scene {
         g.fillPath();
         g.strokePath();
         break;
+      case 'weapons':
+        // Épée simplifiée : lame + garde + pommeau.
+        g.fillStyle(color, 1);
+        g.fillRect(x + size * 0.44, y + size * 0.06, size * 0.12, size * 0.62);
+        g.fillRect(x + size * 0.20, y + size * 0.60, size * 0.60, size * 0.12);
+        g.fillTriangle(
+          x + size * 0.50, y + size * 0.94,
+          x + size * 0.40, y + size * 0.72,
+          x + size * 0.60, y + size * 0.72
+        );
+        break;
+      case 'statues':
+        // Buste stylisé : socle + torse + tête ronde.
+        g.fillStyle(color, 1);
+        g.fillRect(x + size * 0.24, y + size * 0.72, size * 0.52, size * 0.22);
+        g.fillTriangle(
+          cx, y + size * 0.30,
+          x + size * 0.22, y + size * 0.72,
+          x + size * 0.78, y + size * 0.72
+        );
+        g.fillCircle(cx, y + size * 0.22, size * 0.16);
+        break;
+      case 'devotion':
+        // Petite flamme dorée.
+        g.fillStyle(color, 1);
+        g.fillTriangle(
+          cx, y + size * 0.06,
+          x + size * 0.24, y + size * 0.62,
+          x + size * 0.76, y + size * 0.62
+        );
+        g.fillCircle(cx, y + size * 0.72, size * 0.22);
+        break;
       default:
         break;
     }
@@ -493,7 +525,9 @@ class GameScene extends Phaser.Scene {
     // 100 % à 3 travailleurs au lieu de 4 (voir GameState.tickProduction/population.
     // efficiencyByWorkersProduction) -- sinon ce panneau afficherait un pourcentage différent de
     // celui réellement appliqué. Les tours (def.kind === 'tower') gardent efficiencyByWorkers.
-    const isProduction = def.kind === 'extractor' || def.kind === 'processor';
+    // 'shrine' (Temple, voir buildings.temple) inclus : même courbe que extracteur/processeur dans
+    // GameState.tickProduction, section "Temple".
+    const isProduction = def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'shrine';
     const table = isProduction ? GameConfig.population.efficiencyByWorkersProduction : GameConfig.population.efficiencyByWorkers;
     const pct = Math.round(GameState.efficiencyForWorkers(workers, def.capMultiplier || 1, table) * 100);
     return workers > 0
@@ -543,8 +577,30 @@ class GameScene extends Phaser.Scene {
         lines.push(this.laborStatusLine(col, row, def));
       }
     } else if (def.kind === 'processor') {
-      lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
+      // inputResources (voir buildings.armurier/sculpteur, demande utilisateur explicite) : une
+      // ligne PAR ressource d'entrée plutôt qu'une seule (tile.inputBuffer n'existe même pas pour
+      // ces bâtiments-là, voir GameState._completeConstruction).
+      if (def.inputResources) {
+        for (const res of def.inputResources) {
+          lines.push(`En entrée (${GameConfig.resourceLabels[res].long}) : ${Math.round(tile.inputBuffers[res])}/${def.inputCap + GameState.capBonus()}`);
+        }
+      } else {
+        lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
+      }
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
+      lines.push(this.laborStatusLine(col, row, def));
+    } else if (def.kind === 'shrine') {
+      // Temple (voir buildings.temple/altar, demande utilisateur explicite) : Dévotion versée
+      // directement au stock central, proportionnelle au nombre d'Autels dans extractRadius --
+      // pas d'outputBuffer/inputBuffer à afficher, juste ce décompte.
+      const altarCount = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows)
+        .reduce((sum, p) => {
+          const t = GameState.tiles.get(GameState.key(p.col, p.row));
+          return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
+        }, 0);
+      lines.push(`Autels à portée : ${altarCount}`);
+      lines.push(`Dévotion/s à pleine main-d'œuvre : ${(def.devotionPerAltar * altarCount).toFixed(2)}`);
+      lines.push('Dévotion versée directement au stock central (pas de livraison par la route).');
       lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'house') {
       lines.push(`Habitants : ${tile.population}/${GameState.housePopulationCap(def)}`);
@@ -610,12 +666,18 @@ class GameScene extends Phaser.Scene {
     // js/assets.js) : passe par le dessin vectoriel de secours (drawResourceBarIcon), comme
     // "wheat"/"stone" à l'origine.
     // ironIngot juste après bread (demande utilisateur explicite : "à côté des planches, pierre
-    // et pain") -- regroupe les PRODUITS FINIS des chaînes de production ensemble, codex après.
-    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'codex'];
+    // et pain") -- regroupe les PRODUITS FINIS des chaînes de production ensemble (voir aussi
+    // weapons/statues, mêmes chaînes Armurier/Sculpteur, demande utilisateur explicite ultérieure).
+    // devotion juste avant codex : même principe que le Codex (monnaie globale jamais transportée
+    // sur les routes, voir buildings.temple), pas un produit fini livré par la route comme les
+    // autres ci-dessus.
+    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'weapons', 'statues', 'devotion', 'codex'];
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
     // dessinée ci-dessus (drawResourceBarIcon). "ore" absent ici (voir resourceOrder ci-dessus) :
     // oreIcon reste chargée/utilisée ailleurs (voir iconKeyByResource dans redrawShipments, pour
-    // le jeton en transit sur les routes), juste plus dans ce bandeau.
+    // le jeton en transit sur les routes), juste plus dans ce bandeau. weapons/statues/devotion :
+    // pas encore de vraie icône (voir js/assets.js) -- passent par le dessin vectoriel de secours
+    // (drawResourceBarIcon), comme "codex".
     this.resourceBarIconTextureKeys = {
       planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon',
       ironIngot: 'ironIngotIcon',
@@ -641,7 +703,7 @@ class GameScene extends Phaser.Scene {
     // icône (juste le nombre signé, ex. "+12" -- pas de "Pl"/"PT"/"/min", l'icône juste à côté
     // identifie déjà la ressource, voir demande utilisateur), positionné juste après le nombre
     // principal (voir layoutHud, qui réserve un peu de largeur en plus pour CES 3 emplacements).
-    this.mainRateResources = ['planks', 'stoneBlocks', 'bread', 'ironIngot'];
+    this.mainRateResources = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'weapons', 'statues'];
     this.resourceRateTexts = {};
     for (const res of this.mainRateResources) {
       const t = this.add.text(0, 0, '', {
@@ -766,9 +828,15 @@ class GameScene extends Phaser.Scene {
     // ferme/boulangerie, mineur de fer/fonderie -- pilote directement l'ordre d'affichage de
     // layoutHud (buttonIds = Object.keys(this.buildButtons) filtré, PAS l'ordre de ids ci-dessus
     // dans config.js, qui ne sert qu'à décider quels boutons appartiennent à quel onglet).
+    // Civil : house+warehouse, temple+altar (Autel compté par le Temple, paire naturelle),
+    // university+sculpteur. Militaire : donjon+watchtower, recycler+armurier. Paires par colonne
+    // dans le pavé mobile (voir layoutHud), même principe que production plus haut (demande
+    // utilisateur explicite -- ordonnancement précisé lors de l'ajout de temple/altar/sculpteur/
+    // armurier).
     const buildIds = [
       'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery',
-      'ironMiner', 'foundry', 'house', 'warehouse', 'donjon', 'watchtower', 'recycler', 'university',
+      'ironMiner', 'foundry', 'house', 'warehouse', 'temple', 'altar', 'donjon', 'watchtower',
+      'recycler', 'armurier', 'university', 'sculpteur',
     ];
     this.buildButtons = {};
     this.buildButtonIcons = {};
@@ -2638,6 +2706,63 @@ class GameScene extends Phaser.Scene {
           this.tracePoly(g, [[t * 1.6, 0.20], [t * 0.5, -0.24]], x, y, s, false);
           g.strokePath();
         }
+        break;
+      }
+      case 'armurier': {
+        // Épée : lame claire + garde + poignée sombre.
+        g.fillStyle(0xd9d9d9, 1);
+        g.lineStyle(s * 0.025, ink, 0.9);
+        this.tracePoly(g, [[-0.05, -0.36], [0.05, -0.36], [0.08, 0.14], [-0.08, 0.14]], x, y, s);
+        g.fillPath(); g.strokePath();
+        g.fillStyle(ink, 0.95);
+        this.tracePoly(g, [[-0.22, 0.14], [0.22, 0.14], [0.22, 0.22], [-0.22, 0.22]], x, y, s);
+        g.fillPath();
+        g.fillStyle(0x5a4030, 1);
+        this.tracePoly(g, [[-0.06, 0.22], [0.06, 0.22], [0.06, 0.38], [-0.06, 0.38]], x, y, s);
+        g.fillPath();
+        break;
+      }
+      case 'sculpteur': {
+        // Buste sculpté stylisé : socle + torse + tête ronde, teinte pierre claire.
+        g.fillStyle(0xcfc9ba, 1);
+        g.lineStyle(s * 0.025, ink, 0.85);
+        this.tracePoly(g, [[-0.18, 0.34], [0.18, 0.34], [0.18, 0.20], [-0.18, 0.20]], x, y, s);
+        g.fillPath(); g.strokePath();
+        this.tracePoly(g, [[-0.16, 0.20], [0.16, 0.20], [0.10, -0.06], [-0.10, -0.06]], x, y, s);
+        g.fillPath(); g.strokePath();
+        g.fillCircle(x, y - s * 0.20, s * 0.14);
+        g.strokeCircle(x, y - s * 0.20, s * 0.14);
+        break;
+      }
+      case 'temple': {
+        // Fronton triangulaire + colonnes + base : silhouette de temple classique.
+        g.fillStyle(0xd4af6a, 1);
+        g.lineStyle(s * 0.03, ink, 0.85);
+        this.tracePoly(g, [[-0.30, -0.10], [0, -0.34], [0.30, -0.10]], x, y, s);
+        g.fillPath(); g.strokePath();
+        g.fillStyle(ink, 0.9);
+        for (const cx of [-0.22, -0.07, 0.07, 0.22]) {
+          this.tracePoly(g, [[cx - 0.035, -0.08], [cx + 0.035, -0.08], [cx + 0.035, 0.28], [cx - 0.035, 0.28]], x, y, s);
+          g.fillPath();
+        }
+        g.fillStyle(0xd4af6a, 1);
+        g.lineStyle(s * 0.025, ink, 0.85);
+        this.tracePoly(g, [[-0.32, 0.28], [0.32, 0.28], [0.32, 0.36], [-0.32, 0.36]], x, y, s);
+        g.fillPath(); g.strokePath();
+        break;
+      }
+      case 'altar': {
+        // Petit bloc de pierre + flamme (compté par le Temple, voir buildings.temple).
+        g.fillStyle(0xc9b896, 1);
+        g.lineStyle(s * 0.025, ink, 0.85);
+        this.tracePoly(g, [[-0.16, 0.10], [0.16, 0.10], [0.20, 0.32], [-0.20, 0.32]], x, y, s);
+        g.fillPath(); g.strokePath();
+        g.fillStyle(0xff8a3d, 1);
+        this.tracePoly(g, [[0, -0.10], [-0.10, 0.08], [0.10, 0.08]], x, y, s);
+        g.fillPath();
+        g.fillStyle(0xffce6b, 1);
+        this.tracePoly(g, [[0, -0.22], [-0.05, -0.02], [0.05, -0.02]], x, y, s);
+        g.fillPath();
         break;
       }
       default:
