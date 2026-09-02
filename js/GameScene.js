@@ -139,6 +139,12 @@ class GameScene extends Phaser.Scene {
       foundry: 'foundryIcon',
       watchtower: 'watchtowerIcon',
       farm: 'farmIcon',
+      // roadTile (demande utilisateur explicite : "utilise l'image de la route comme icone de
+      // route") -- même texture que sur la carte (voir buildingTileArtKeys), pas une icône dédiée
+      // séparée : redrawTileArt/redrawBuildings vérifient buildingTileArtKeys AVANT
+      // buildingIconKeys, donc ce doublon ne change rien à l'affichage de la route sur la carte,
+      // seulement au bouton du menu de construction (voir positionBuildButtonContents).
+      road: 'roadTile',
     };
 
     // Entrepôt de départ, offert, pour que le joueur ait un réseau à étendre tout de suite. Entouré
@@ -844,7 +850,7 @@ class GameScene extends Phaser.Scene {
     buildIds.forEach((id) => {
       // Pas de fond coloré derrière une icône-image (voir buildingIconKeys) tant qu'elle n'est
       // pas le mode de construction actif (demande utilisateur explicite, "sans arrière-plan") --
-      // Route/Recycleur (icône vectorielle) gardent leur fond vert habituel dès la création,
+      // Recycleur (icône vectorielle, seul bâtiment sans vraie image désormais) garde son fond vert habituel dès la création,
       // nécessaire au contraste des traits dessinés à la main (voir aussi setBuildMode, qui gère
       // le même choix au moment de la sélection).
       const idleAlpha = this.buildingIconKeys[id] ? 0 : 1;
@@ -861,7 +867,7 @@ class GameScene extends Phaser.Scene {
 
       // Même icône que sur la carte (voir buildingIconKeys/redrawTileArt, demande utilisateur
       // explicite) quand une image dédiée existe ; repli sur le dessin vectoriel (drawBuildingIcon)
-      // sinon (Route/Recycleur, aucune image fournie). Un Image (voir positionBuildButtonContents,
+      // sinon (Recycleur, aucune image fournie). Un Image (voir positionBuildButtonContents,
       // setDisplaySize) se comporte comme le Graphics qu'il remplace pour tout le reste du code
       // (setPosition/setAlpha/setVisible, utilisés génériquement ailleurs sans distinguer les deux).
       const iconKey = this.buildingIconKeys[id];
@@ -1964,7 +1970,7 @@ class GameScene extends Phaser.Scene {
     const icon = this.buildButtonIcons[id];
     icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
     // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution
-    // native du fichier source. Graphics de secours (Route/Recycleur) : dessinée à s=30 en
+    // native du fichier source. Graphics de secours (Recycleur) : dessinée à s=30 en
     // référence dans buildHud, setScale reste donc le bon levier pour celui-là.
     if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
     else icon.setScale(iconSize / 30);
@@ -2703,19 +2709,6 @@ class GameScene extends Phaser.Scene {
         this.tracePoly(g, [[-0.16, 0.18], [0.16, 0.18], [0.12, 0.30], [-0.12, 0.30]], x, y, s);
         g.fillPath();
         g.strokePath();
-        break;
-      }
-      case 'road': {
-        // Chemin pavé : bande en diagonale + ligne de joints, pour rester lisible même en tout
-        // petit (icône de bouton) plutôt que la texture photo utilisée sur la carte (roadTile).
-        g.fillStyle(0x8a8a8a, 0.95);
-        this.tracePoly(g, [[-0.32, 0.22], [-0.10, -0.30], [0.10, -0.30], [0.32, 0.22]], x, y, s);
-        g.fillPath();
-        g.lineStyle(s * 0.04, ink, 0.6);
-        for (const t of [-0.14, 0, 0.14]) {
-          this.tracePoly(g, [[t * 1.6, 0.20], [t * 0.5, -0.24]], x, y, s, false);
-          g.strokePath();
-        }
         break;
       }
       case 'armurier': {
