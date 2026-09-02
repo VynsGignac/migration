@@ -255,7 +255,8 @@ const GameConfig = {
       ruinLoot: { planks: 5 },
     },
     warehouse: {
-      name: 'Entrepôt', cost: { planks: 15, stoneBlocks: 8 }, color: 0xffd23f,
+      // Coût réduit (demande utilisateur explicite : "10 de bois et 5 de pierre") depuis 15/8.
+      name: 'Entrepôt', cost: { planks: 10, stoneBlocks: 5 }, color: 0xffd23f,
       ruinLoot: { planks: 8, stoneBlocks: 4 },
     },
     // Nouvelle chaîne du fer (demande utilisateur explicite). Seul extracteur du jeu construit
