@@ -49,6 +49,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('houseIcon', GameAssets.houseIcon);
     this.load.image('minerCampIcon', GameAssets.minerCampIcon);
     this.load.image('stonecutterIcon', GameAssets.stonecutterIcon);
+    this.load.image('ironMinerIcon', GameAssets.ironMinerIcon);
     this.load.image('watchtowerIcon', GameAssets.watchtowerIcon);
     this.load.image('farmIcon', GameAssets.farmIcon);
     this.load.image('goblinIcon', GameAssets.goblinIcon);
@@ -132,6 +133,7 @@ class GameScene extends Phaser.Scene {
       house: 'houseIcon',
       minerCamp: 'minerCampIcon',
       stonecutter: 'stonecutterIcon',
+      ironMiner: 'ironMinerIcon',
       watchtower: 'watchtowerIcon',
       farm: 'farmIcon',
     };
@@ -2586,18 +2588,6 @@ class GameScene extends Phaser.Scene {
           this.tracePoly(g, [[t * 1.6, 0.20], [t * 0.5, -0.24]], x, y, s, false);
           g.strokePath();
         }
-        break;
-      }
-      case 'ironMiner': {
-        // Pioche : manche en diagonale (même esprit que la hache du Bûcheron) + fer à deux
-        // pointes, pour la distinguer d'un coup d'œil malgré la silhouette similaire.
-        g.lineStyle(s * 0.09, ink, 0.95);
-        this.tracePoly(g, [[-0.22, 0.30], [0.10, -0.16]], x, y, s, false);
-        g.strokePath();
-        g.fillStyle(0xd9d9d9, 1);
-        g.lineStyle(s * 0.025, ink, 0.9);
-        this.tracePoly(g, [[-0.34, -0.18], [-0.02, -0.38], [0.34, -0.14], [0.10, -0.16], [-0.14, -0.02]], x, y, s);
-        g.fillPath(); g.strokePath();
         break;
       }
       case 'foundry': {
