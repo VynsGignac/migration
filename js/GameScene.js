@@ -1729,12 +1729,16 @@ class GameScene extends Phaser.Scene {
     // buildHud, seule la route en trop la cassait).
     const desktopHasRoad = buttonIds.includes('road');
     const desktopNonRoadIds = desktopHasRoad ? buttonIds.filter((id) => id !== 'road') : buttonIds;
-    // positionBuildButtonContents adapte déjà la taille d'icône en conséquence
-    // (Math.min(h - 6, 47)), rien à changer là-bas. Math.ceil(.../desktopBuildCols) : 2 boutons
-    // par RANGÉE (voir desktopBuildCols) partagent la même hauteur, donc seul le nombre de
-    // rangées compte ici, pas le nombre total de boutons -- + 1 rangée dédiée à la route (voir
-    // desktopHasRoad), toujours seule sur SA PROPRE rangée, jamais mêlée au reste de la grille.
-    const desktopBuildRows = Math.ceil(desktopNonRoadIds.length / desktopBuildCols) + (desktopHasRoad ? 1 : 0);
+    // Boutons TOUS de la même taille quel que soit l'onglet actif (demande utilisateur explicite :
+    // "je voudrais que les boutons soient tous de la meme taille, prend comme reference les plus
+    // contraignants, ceux dans production") -- le nombre de rangées ne dépend donc plus de
+    // desktopNonRoadIds (qui varie avec l'onglet actif ET les bâtiments encore verrouillés) mais
+    // de la catégorie Production, la plus fournie (8 bâtiments + route), fixée une fois pour
+    // toutes ici plutôt que recalculée à chaque onglet.
+    const desktopMaxCategoryCount = Math.max(
+      ...Object.values(GameConfig.buildingCategories).map((cat) => cat.ids.filter((id) => id !== 'road').length)
+    );
+    const desktopBuildRows = Math.ceil(desktopMaxCategoryCount / desktopBuildCols) + 1;
     const desktopAvailableForList = h - catBlockY - catBlockHeight - desktopGap - 20;
     const desktopRowHeightBudget = Math.floor(desktopAvailableForList / Math.max(1, desktopBuildRows)) - desktopGap;
     // PLUS carré à tout prix (demande utilisateur explicite, capture d'écran à l'appui : forcer
