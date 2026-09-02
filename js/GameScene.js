@@ -761,9 +761,14 @@ class GameScene extends Phaser.Scene {
     // bouton lui-même. buildButtons devient un simple rectangle interactif (fond + zone de clic) ;
     // l'icône et le coût sont des objets à part, positionnés par-dessus (voir
     // positionBuildButtonContents, appelé depuis layoutHud).
+    // Ordre en paires extracteur+transformateur (demande utilisateur explicite, voir
+    // GameConfig.buildingCategories.production) : bûcheron/scierie, mineur de pierre/tailleur,
+    // ferme/boulangerie, mineur de fer/fonderie -- pilote directement l'ordre d'affichage de
+    // layoutHud (buttonIds = Object.keys(this.buildButtons) filtré, PAS l'ordre de ids ci-dessus
+    // dans config.js, qui ne sert qu'à décider quels boutons appartiennent à quel onglet).
     const buildIds = [
-      'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'ironMiner', 'foundry',
-      'farm', 'bakery', 'recycler', 'house', 'warehouse', 'donjon', 'watchtower', 'university',
+      'road', 'lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery',
+      'ironMiner', 'foundry', 'house', 'warehouse', 'donjon', 'watchtower', 'recycler', 'university',
     ];
     this.buildButtons = {};
     this.buildButtonIcons = {};
@@ -1600,11 +1605,12 @@ class GameScene extends Phaser.Scene {
     const catTabRows = Math.ceil(categoryIds.length / catCols);
     const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
     const desktopSidebarWidth = 220;
-    // x3 (demande utilisateur explicite : "multiplie par 3 la taille des icones de batiment dans
-    // l'UI") -- voir positionBuildButtonContents, dont l'icône (26 -> 78) reste bornée par
-    // h - 6 : la hauteur de bouton doit donc grandir en proportion (38 -> 90 = 78 + les 12px de
-    // marge d'origine) pour que l'icône agrandie ne soit pas re-rognée par ce plafond.
-    const desktopBtnHeight = 90, desktopGap = 6;
+    // x2, pas x3 (demande utilisateur explicite : "reduit la taille des icones de batiment de x3
+    // à x2") -- voir positionBuildButtonContents, dont l'icône (26 -> 52) reste bornée par h - 6 :
+    // la hauteur de bouton doit donc grandir en proportion (38 -> 64 = 52 + les 12px de marge
+    // d'origine) pour que l'icône agrandie ne soit pas re-rognée par ce plafond. Espacement réduit
+    // (demande utilisateur explicite), en plus des boutons plus petits.
+    const desktopBtnHeight = 64, desktopGap = 4;
     const confirmRowHeight = 42;
     const desktopNeededHeight = 216 + confirmRowHeight + catBlockHeight + desktopGap
       + buttonIds.length * (desktopBtnHeight + desktopGap) + 20;
@@ -1759,10 +1765,13 @@ class GameScene extends Phaser.Scene {
     // catégorie au-dessus, ça grimpe vite -- ici volontairement plus compact, quitte à devoir
     // regarder d'un peu plus près.
     const compact = h < 420;
-    // x3 (demande utilisateur explicite, voir le même commentaire sur desktopBtnHeight) : 30/36 ->
-    // 84/90 (même marge d'origine, ~4-8px, conservée autour de l'icône agrandie à 78px).
-    const btnHeight = compact ? 84 : 90;
-    const gap = compact ? 4 : 6;
+    // x2, pas x3 (demande utilisateur explicite : "le menu prend tout l'ecran sur telephone...
+    // reduit la taille des icones de batiment de x3 à x2") -- 30/36 -> 56/60 (même marge
+    // d'origine, ~4-8px, conservée autour de l'icône agrandie à 52px, voir
+    // positionBuildButtonContents).
+    const btnHeight = compact ? 56 : 60;
+    // Espacement réduit (demande utilisateur explicite), en plus des boutons plus petits.
+    const gap = compact ? 3 : 4;
     const mobileCategoryRowHeight = compact ? 18 : 20;
     this.buildMenuToggle.setFontSize(compact ? 12 : 13);
     this.buildMenuToggle.setText(
@@ -1801,9 +1810,20 @@ class GameScene extends Phaser.Scene {
       .setFixedSize(demolishBtnWidth, upgradeBtnHeight)
       .setPosition(demolishX, h - upgradeBtnHeight - 8);
 
-    const cols = 3;
+    // Disposition en colonnes de 2 (demande utilisateur explicite, voir GameConfig.
+    // buildingCategories.production/GameScene.buildHud : bûcheron+scierie, mineur de
+    // pierre+tailleur, ferme+boulangerie, mineur de fer+fonderie, une colonne par paire, dans cet
+    // ordre) PLUTÔT que l'ancienne grille 3 colonnes remplie ligne par ligne -- Route toujours
+    // seule dans sa PROPRE colonne, la DERNIÈRE (demande utilisateur explicite : "que la route
+    // soit toujours au-dessus du bouton en bas à droite") : cette dernière colonne finit contre le
+    // bord droit de l'écran, juste au-dessus de buildMenuToggle (lui-même ancré à w - 8, voir plus
+    // haut), sans dépendre du nombre de boutons du reste de l'onglet actif.
+    const hasRoad = buttonIds.includes('road');
+    const nonRoadIds = hasRoad ? buttonIds.filter((id) => id !== 'road') : buttonIds;
+    const contentCols = Math.max(1, Math.ceil(nonRoadIds.length / 2));
+    const cols = contentCols + (hasRoad ? 1 : 0);
     const btnWidth = (w - gap * (cols + 1)) / cols;
-    const rows = Math.ceil(buttonIds.length / cols);
+    const rows = nonRoadIds.length > 0 ? Math.ceil(nonRoadIds.length / contentCols) : 1;
     // Une seule rangée de catégories ici (contrairement à la grille 2x2 de la colonne PC) : en
     // paysage mobile, la largeur d'écran suffit largement pour 4 onglets côte à côte.
     const menuHeight = mobileCategoryRowHeight + gap + rows * (btnHeight + gap) + gap;
@@ -1826,8 +1846,7 @@ class GameScene extends Phaser.Scene {
     });
 
     const gridTop = menuTop + gap + mobileCategoryRowHeight + gap;
-    buttonIds.forEach((id, i) => {
-      const col = i % cols, row = Math.floor(i / cols);
+    const placeButton = (id, col, row) => {
       const bx = gap + col * (btnWidth + gap), by = gridTop + row * (btnHeight + gap);
       this.buildButtons[id].setPosition(bx, by).setSize(btnWidth, btnHeight).setVisible(this.buildMenuOpen);
       this.positionBuildButtonContents(id, bx, by, btnWidth, btnHeight);
@@ -1835,7 +1854,14 @@ class GameScene extends Phaser.Scene {
         this.buildButtonIcons[id].setVisible(false);
         for (const { img, txt } of this.buildButtonCostIcons[id]) { img.setVisible(false); txt.setVisible(false); }
       }
+    };
+    nonRoadIds.forEach((id, i) => {
+      const col = Math.floor(i / 2), row = i % 2;
+      placeButton(id, col, row);
     });
+    // Seule dans sa colonne (voir le commentaire ci-dessus) : toujours rangée 0, jamais empilée
+    // sous un autre bouton.
+    if (hasRoad) placeButton('road', cols - 1, 0);
 
     // Le panneau d'info flotte juste sous le bandeau du haut ; sa visibilité/contenu réel est
     // géré par updateInfoPanel() (affiché seulement s'il y a quelque chose à montrer).
@@ -1849,10 +1875,11 @@ class GameScene extends Phaser.Scene {
   // à sa suite, le tout centré verticalement dans le rectangle (x, y, w, h) du bouton. Appelé
   // depuis layoutHud (PC ET mobile, même recette) à chaque fois qu'un bouton visible est repositionné.
   positionBuildButtonContents(id, x, y, w, h) {
-    // x3 (demande utilisateur explicite : "multiplie par 3 la taille des icones de batiment dans
-    // l'UI") -- 26 -> 78. Voir desktopBtnHeight/btnHeight (layoutHud), agrandis en proportion pour
-    // que ce plafond h - 6 ne re-rogne pas l'icône agrandie.
-    const iconSize = Math.min(h - 6, 78);
+    // x2, pas x3 (demande utilisateur explicite : "le menu prend tout l'ecran sur telephone...
+    // reduit la taille des icones de batiment de x3 à x2") -- 26 -> 52. Voir
+    // desktopBtnHeight/btnHeight (layoutHud), agrandis en proportion pour que ce plafond h - 6 ne
+    // re-rogne pas l'icône agrandie.
+    const iconSize = Math.min(h - 6, 52);
     const icon = this.buildButtonIcons[id];
     icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
     // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution

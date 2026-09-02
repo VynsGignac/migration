@@ -188,10 +188,20 @@ const GameConfig = {
   // ne se construit pas depuis ce menu (voir buildings.castle). Pas d'onglet "Route" (supprimé,
   // demande utilisateur explicite : il ne contenait QUE elle) -- 'road' est injecté directement
   // dans la liste de boutons quel que soit l'onglet actif, voir GameScene.layoutHud/buttonIds.
+  // Ordre de "ids" pour production (demande utilisateur explicite, disposition en paires
+  // extracteur+transformateur : bûcheron/scierie, mineur de pierre/tailleur, ferme/boulangerie,
+  // mineur de fer/fonderie) -- doit rester synchronisé avec l'ordre correspondant dans
+  // GameScene.buildHud (buildIds), qui est ce qui pilote VRAIMENT l'ordre d'affichage (voir
+  // GameScene.layoutHud/buttonIds, qui filtre Object.keys(this.buildButtons), PAS ce tableau ids
+  // directement) -- ids ici ne sert qu'à déterminer QUELS boutons apparaissent dans cet onglet.
   buildingCategories: {
-    production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'ironMiner', 'foundry', 'farm', 'bakery', 'recycler'] },
+    production: { label: 'Production', ids: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter', 'farm', 'bakery', 'ironMiner', 'foundry'] },
     civil: { label: 'Civil', ids: ['warehouse', 'university', 'house'] },
-    defense: { label: 'Défense', ids: ['donjon', 'watchtower'] },
+    // Renommé Défense -> Militaire (demande utilisateur explicite) en même temps que Recycleur y
+    // est déplacé depuis Production (n'a pas vraiment sa place dans les paires
+    // extracteur/transformateur ci-dessus, voir la demande utilisateur : "deplace le dans la
+    // colonne militaire").
+    defense: { label: 'Militaire', ids: ['donjon', 'watchtower', 'recycler'] },
   },
   // Chaque bâtiment producteur a son propre stock local (inputBuffer/outputBuffer), pas un
   // pool global : les ressources doivent être physiquement acheminées d'un bâtiment à l'autre.
