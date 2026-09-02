@@ -35,6 +35,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('wheatIcon', GameAssets.wheatIcon);
     this.load.image('breadIcon', GameAssets.breadIcon);
     this.load.image('oreIcon', GameAssets.oreIcon);
+    this.load.image('ironIngotIcon', GameAssets.ironIngotIcon);
     // Icones de batiment (fond uni + icone -- demande utilisateur explicite, remplace les
     // anciennes tuiles photo completes de lumberjackCamp/minerCamp/sawmill/stonecutter/warehouse
     // ET les icones vectorielles dessinees a la main de tous les autres, voir
@@ -50,6 +51,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('minerCampIcon', GameAssets.minerCampIcon);
     this.load.image('stonecutterIcon', GameAssets.stonecutterIcon);
     this.load.image('ironMinerIcon', GameAssets.ironMinerIcon);
+    this.load.image('foundryIcon', GameAssets.foundryIcon);
     this.load.image('watchtowerIcon', GameAssets.watchtowerIcon);
     this.load.image('farmIcon', GameAssets.farmIcon);
     this.load.image('goblinIcon', GameAssets.goblinIcon);
@@ -134,6 +136,7 @@ class GameScene extends Phaser.Scene {
       minerCamp: 'minerCampIcon',
       stonecutter: 'stonecutterIcon',
       ironMiner: 'ironMinerIcon',
+      foundry: 'foundryIcon',
       watchtower: 'watchtowerIcon',
       farm: 'farmIcon',
     };
@@ -603,11 +606,15 @@ class GameScene extends Phaser.Scene {
     // rec_imprimerie) : ni plus clair ni plus simple de les faire apparaître/disparaître selon
     // l'état de l'arbre techno. "codex" n'a pas encore de vraie icône (voir js/assets.js) : passe
     // par le dessin vectoriel de secours (drawResourceBarIcon), comme "wheat"/"stone" à l'origine.
-    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ore', 'ironIngot', 'codex'];
+    // ironIngot juste après bread (demande utilisateur explicite : "à côté des planches, pierre
+    // et pain") -- regroupe les PRODUITS FINIS des chaînes de production ensemble, ore (matière
+    // première, jamais transformée directement en objectif du joueur) et codex restent après.
+    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'ore', 'codex'];
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
     // dessinée ci-dessus (drawResourceBarIcon).
     this.resourceBarIconTextureKeys = {
       planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon', ore: 'oreIcon',
+      ironIngot: 'ironIngotIcon',
     };
     this.resourceBarIconImages = {};
     for (const res in this.resourceBarIconTextureKeys) {
@@ -2590,20 +2597,6 @@ class GameScene extends Phaser.Scene {
         }
         break;
       }
-      case 'foundry': {
-        // Fournaise : corps trapézoïdal sombre, bouche incandescente + petite flamme au sommet.
-        g.fillStyle(0x3a2a24, 1);
-        g.lineStyle(s * 0.03, ink, 0.9);
-        this.tracePoly(g, [[-0.28, 0.32], [-0.20, -0.10], [0.20, -0.10], [0.28, 0.32]], x, y, s);
-        g.fillPath(); g.strokePath();
-        g.fillStyle(0xff8a3d, 1);
-        this.tracePoly(g, [[-0.14, 0.30], [-0.10, 0.06], [0.10, 0.06], [0.14, 0.30]], x, y, s);
-        g.fillPath();
-        g.fillStyle(0xffce6b, 1);
-        this.tracePoly(g, [[0, -0.10], [-0.08, -0.28], [0, -0.36], [0.08, -0.28]], x, y, s);
-        g.fillPath();
-        break;
-      }
       default:
         break;
     }
@@ -2681,7 +2674,7 @@ class GameScene extends Phaser.Scene {
     const { worldToScreen, zoom } = this.getWorldToScreen();
     const iconKeyByResource = {
       wood: 'woodIcon', planks: 'planksIcon', stone: 'stoneIcon', stoneBlocks: 'stoneBlocksIcon',
-      wheat: 'wheatIcon', bread: 'breadIcon',
+      wheat: 'wheatIcon', bread: 'breadIcon', ore: 'oreIcon', ironIngot: 'ironIngotIcon',
     };
 
     for (const s of GameState.shipments) {
