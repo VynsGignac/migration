@@ -1684,10 +1684,12 @@ class GameScene extends Phaser.Scene {
     const catCols = 2; // grille 2x2 en colonne PC (voir plus bas) : 4 catégories -> 2 rangées
     const catTabRows = Math.ceil(categoryIds.length / catCols);
     const catBlockHeight = catTabRows * categoryRowHeight + (catTabRows - 1) * categoryGap;
-    // 220 -> 320 (demande utilisateur explicite : "ressere horizontalement les elements des
-    // boutons pour pouvoir en mettre 2 par ligne") -- une seule colonne de boutons pleine largeur
-    // ne laissait pas la place à 2 par rangée une fois icône + coûts pris en compte.
-    const desktopSidebarWidth = 320;
+    // 220 -> 240 (demande utilisateur explicite : boutons CARRÉS, logo centré + coût en dessous,
+    // plutôt que rectangulaires icône-à-gauche/coût-à-droite -- voir positionBuildButtonContentsSquare)
+    // -- 2 colonnes de ~108px chacune, la bonne largeur pour un bouton carré confortable une fois
+    // logo + petite ligne de coût empilés, sans le surplus de largeur qu'exigeait la disposition
+    // horizontale précédente.
+    const desktopSidebarWidth = 240;
     const desktopGap = 4;
     // 2 boutons de construction par rangée (demande utilisateur explicite), PAS les onglets de
     // catégorie ci-dessus (catCols, restent 2x2 sur toute la largeur) ni Valider/Démolir/Améliorer
@@ -1707,15 +1709,29 @@ class GameScene extends Phaser.Scene {
     // onglets (moitié basse de l'écran) plutôt qu'une valeur fixe (59px = icône x1.8 + marge) :
     // sur un écran bas ou un onglet chargé (Production, Civil), les boutons rétrécissent (jusqu'à
     // 26px plancher) au lieu de déborder ou de faire changer TOUTE l'interface de forme.
+    // Route à part (demande utilisateur explicite : "les routes soient toujours en bas à
+    // gauche") -- sortie de la grille 2 colonnes plutôt que remplie avec le reste (voir plus bas) :
+    // sa présence EN TÊTE de buildIds décalait sinon chaque paire chaîne extracteur+transformateur
+    // d'une case (demande utilisateur explicite : "dans production, les batiments soient allignés
+    // par chaine de production" -- buildIds est déjà dans le bon ordre pour ça, voir GameScene.
+    // buildHud, seule la route en trop la cassait).
+    const desktopHasRoad = buttonIds.includes('road');
+    const desktopNonRoadIds = desktopHasRoad ? buttonIds.filter((id) => id !== 'road') : buttonIds;
     // positionBuildButtonContents adapte déjà la taille d'icône en conséquence
     // (Math.min(h - 6, 47)), rien à changer là-bas. Math.ceil(.../desktopBuildCols) : 2 boutons
     // par RANGÉE (voir desktopBuildCols) partagent la même hauteur, donc seul le nombre de
-    // rangées compte ici, pas le nombre total de boutons.
-    const desktopBuildRows = Math.ceil(buttonIds.length / desktopBuildCols);
+    // rangées compte ici, pas le nombre total de boutons -- + 1 rangée dédiée à la route (voir
+    // desktopHasRoad), toujours seule sur SA PROPRE rangée, jamais mêlée au reste de la grille.
+    const desktopBuildRows = Math.ceil(desktopNonRoadIds.length / desktopBuildCols) + (desktopHasRoad ? 1 : 0);
     const desktopAvailableForList = h - catBlockY - catBlockHeight - desktopGap - 20;
-    const desktopBtnHeight = Math.max(26, Math.min(59,
-      Math.floor(desktopAvailableForList / Math.max(1, desktopBuildRows)) - desktopGap
-    ));
+    const desktopRowHeightBudget = Math.floor(desktopAvailableForList / Math.max(1, desktopBuildRows)) - desktopGap;
+    // Bouton CARRÉ (demande utilisateur explicite) : même valeur pour largeur ET hauteur, bornée
+    // par la plus stricte des deux contraintes -- la largeur de colonne (fixe, voir
+    // desktopSidebarWidth) et la hauteur de rangée dynamique (rétrécit sur un écran bas/un onglet
+    // chargé, comme avant). 110 = plafond esthétique (au-delà, un bouton carré devient
+    // disproportionné par rapport à son contenu, logo + petite ligne de coût).
+    const desktopColWidthBudget = (this.sidebarWidth - 20 - desktopGap * (desktopBuildCols - 1)) / desktopBuildCols;
+    const desktopBtnSize = Math.max(26, Math.min(110, desktopColWidthBudget, desktopRowHeightBudget));
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
     // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
@@ -1729,7 +1745,7 @@ class GameScene extends Phaser.Scene {
     const layoutShowDemolish = !!layoutSelectedTile;
 
     // Hauteur non prise en compte au-delà d'un plancher extrême (demande utilisateur explicite :
-    // le panneau PC doit rester à gauche même sur un écran bas, voir desktopBtnHeight dynamique
+    // le panneau PC doit rester à gauche même sur un écran bas, voir desktopBtnSize dynamique
     // ci-dessus) -- 500 reste un vrai garde-fou, pas un seuil courant : en dessous, même le pavé
     // mobile serait de toute façon extrêmement à l'étroit.
     this.mobileLayout = w < 640 || h < 500;
@@ -1805,19 +1821,31 @@ class GameScene extends Phaser.Scene {
           .setColor(active ? '#10151a' : '#ffffff');
       });
 
-      // Grille 2 colonnes (demande utilisateur explicite), remplie ligne par ligne (route en
-      // premier, comme avant) -- PAS le même principe que la grille mobile (colonnes de PAIRES
-      // extracteur+transformateur empilées, voir plus bas) : ici la largeur, pas la hauteur, est la
-      // contrainte à économiser.
+      // Grille 2 colonnes (demande utilisateur explicite), remplie ligne par ligne PAR CHAÎNE DE
+      // PRODUCTION (demande utilisateur explicite : buildIds est déjà ordonné en paires
+      // extracteur+transformateur, voir buildHud -- un simple remplissage ligne par ligne suffit
+      // donc à aligner chaque paire sur sa propre rangée). PAS le même principe que la grille
+      // mobile (colonnes de paires empilées, voir plus bas) : ici la largeur, pas la hauteur, est
+      // la contrainte à économiser. Route exclue (voir desktopHasRoad/desktopNonRoadIds) : sa
+      // propre rangée, toujours colonne 0 (en bas à gauche, demande utilisateur explicite), après
+      // TOUT le reste de la grille.
       const listTop = catBlockY + catBlockHeight + desktopGap;
-      const desktopBtnWidth = (this.sidebarWidth - 20 - desktopGap * (desktopBuildCols - 1)) / desktopBuildCols;
-      buttonIds.forEach((id, i) => {
-        const col = i % desktopBuildCols, row = Math.floor(i / desktopBuildCols);
-        const bx = 10 + col * (desktopBtnWidth + desktopGap);
-        const by = listTop + row * (desktopBtnHeight + desktopGap);
-        this.buildButtons[id].setPosition(bx, by).setSize(desktopBtnWidth, desktopBtnHeight).setVisible(true);
-        this.positionBuildButtonContents(id, bx, by, desktopBtnWidth, desktopBtnHeight);
+      // Centré dans sa colonne (demande utilisateur explicite : boutons carrés) : desktopBtnSize
+      // peut être plus étroit que la colonne elle-même (plafonné à 110, voir plus haut) sur un
+      // écran large, d'où ce décalage plutôt qu'un simple alignement à gauche de la colonne.
+      const desktopColCenterOffset = (desktopColWidthBudget - desktopBtnSize) / 2;
+      const desktopPlaceBtn = (id, col, row) => {
+        const bx = 10 + col * (desktopColWidthBudget + desktopGap) + desktopColCenterOffset;
+        const by = listTop + row * (desktopBtnSize + desktopGap);
+        this.buildButtons[id].setPosition(bx, by).setSize(desktopBtnSize, desktopBtnSize).setVisible(true);
+        this.positionBuildButtonContentsSquare(id, bx, by, desktopBtnSize);
+      };
+      desktopNonRoadIds.forEach((id, i) => {
+        desktopPlaceBtn(id, i % desktopBuildCols, Math.floor(i / desktopBuildCols));
       });
+      if (desktopHasRoad) {
+        desktopPlaceBtn('road', 0, Math.ceil(desktopNonRoadIds.length / desktopBuildCols));
+      }
 
       this.toastText.setPosition(
         this.sidebarWidth + (w - this.sidebarWidth) / 2 - this.toastText.width / 2,
@@ -1980,17 +2008,15 @@ class GameScene extends Phaser.Scene {
 
   // Positionne l'icône du bâtiment + les pictos de coût par-dessus son bouton rectangle (voir
   // buildButtonIcons/buildButtonCostIcons, créés une fois dans buildHud) : icône à gauche, coûts
-  // à sa suite, le tout centré verticalement dans le rectangle (x, y, w, h) du bouton. Appelé
-  // depuis layoutHud (PC ET mobile, même recette) à chaque fois qu'un bouton visible est repositionné.
+  // à sa suite, le tout centré verticalement dans le rectangle (x, y, w, h) du bouton. MOBILE
+  // UNIQUEMENT désormais (demande utilisateur explicite : boutons CARRÉS sur PC, logo centré +
+  // coût en dessous -- voir positionBuildButtonContentsSquare/layoutHud, colonne PC).
   positionBuildButtonContents(id, x, y, w, h) {
     // x1.8, pas x2 (demande utilisateur explicite : "reduit encore la taille de x1,8 de la valeur
     // initiale", pour que le pavé mobile reste le plus bas possible sur l'écran) -- 26 -> 47. Voir
-    // desktopBtnHeight/btnHeight (layoutHud), agrandis en proportion pour que ce plafond h - 6 ne
-    // re-rogne pas l'icône agrandie.
-    // Bornée par la largeur EN PLUS de la hauteur (demande utilisateur explicite : "ressere
-    // horizontalement les elements des boutons pour pouvoir en mettre 2 par ligne") -- sur PC,
-    // désormais 2 boutons par rangée (voir desktopBuildCols/desktopBtnWidth dans layoutHud), donc
-    // w peut être bien plus étroit qu'avant (une seule colonne pleine largeur).
+    // btnHeight (layoutHud, grille mobile), agrandi en proportion pour que ce plafond h - 6 ne
+    // re-rogne pas l'icône agrandie. Bornée par la largeur en plus de la hauteur, au cas où une
+    // colonne mobile serait un jour plus étroite que haute.
     const iconSize = Math.min(h - 6, w * 0.34, 47);
     const icon = this.buildButtonIcons[id];
     icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
@@ -2012,6 +2038,40 @@ class GameScene extends Phaser.Scene {
       cx += costImgSize + 2;
       txt.setPosition(cx, y + h / 2).setFontSize(fontSize).setVisible(true);
       cx += txt.width + 6;
+    }
+  }
+
+  // Version CARRÉE de positionBuildButtonContents (demande utilisateur explicite : "des boutons
+  // plus carré avec en central le logo du batiment et en dessous le cout en planche et pierre")
+  // -- PC uniquement (voir layoutHud, colonne PC) : logo centré horizontalement dans le tiers
+  // supérieur du bouton, ligne de coût (icône+nombre par ressource) centrée horizontalement
+  // juste en dessous, plutôt que la disposition icône-à-gauche/coûts-à-la-suite de la version
+  // mobile (rectangle large, pas de contrainte de centrage).
+  positionBuildButtonContentsSquare(id, x, y, size) {
+    const cx = x + size / 2;
+    const iconSize = Math.min(size * 0.5, 47);
+    const icon = this.buildButtonIcons[id];
+    icon.setPosition(cx, y + size * 0.38).setVisible(true);
+    if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
+    else icon.setScale(iconSize / 30);
+
+    const costs = this.buildButtonCostIcons[id];
+    const costImgSize = Math.max(9, Math.min(14, size * 0.16));
+    const fontSize = Math.max(10, Math.min(12, Math.round(size * 0.15)));
+    const gapAfterImg = 2, gapAfterTxt = 8;
+    // Largeur totale mesurée D'ABORD (police déjà fixée, .width lisible) pour pouvoir centrer le
+    // groupe entier sous le logo -- contrairement à la version mobile, alignée à gauche sans
+    // besoin de connaître la largeur totale à l'avance.
+    costs.forEach(({ txt }) => txt.setFontSize(fontSize));
+    let totalW = -gapAfterTxt;
+    costs.forEach(({ txt }) => { totalW += costImgSize + gapAfterImg + txt.width + gapAfterTxt; });
+    const costY = y + size * 0.78;
+    let cxRun = cx - totalW / 2;
+    for (const { img, txt } of costs) {
+      img.setPosition(cxRun, costY).setDisplaySize(costImgSize, costImgSize).setVisible(true);
+      cxRun += costImgSize + gapAfterImg;
+      txt.setPosition(cxRun, costY).setVisible(true);
+      cxRun += txt.width + gapAfterTxt;
     }
   }
 
