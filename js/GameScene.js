@@ -473,6 +473,42 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // Bulle nom complet d'une ressource du bandeau (voir resourceHitZones/resourceTooltipText,
+  // demande utilisateur explicite : "un mousseover sur les ressources... un clic sur telephone").
+  // zone sert à positionner la bulle juste sous l'icône/le nombre survolé ou tapé, jamais hors
+  // écran (clampée à droite comme à gauche).
+  showResourceTooltip(res, zone) {
+    const t = this.resourceTooltipText;
+    t.setText(GameConfig.resourceLabels[res].long).setVisible(true);
+    const bounds = zone.getBounds();
+    // À droite de la zone par défaut, centrée verticalement dessus (PAS en dessous : les
+    // ressources sont sur une grille compacte -- PC 2 colonnes, mobile 1 rangée -- une bulle sous
+    // la zone chevauchait systématiquement la ligne suivante, illisible). Bascule à gauche si ça
+    // déborderait à droite (dernière colonne PC/ressources tout à droite du bandeau mobile).
+    let tx = bounds.x + bounds.width + 6;
+    if (tx + t.width + 4 > this.scale.width) tx = bounds.x - t.width - 6;
+    tx = Math.max(4, tx);
+    let ty = bounds.y + bounds.height / 2 - t.height / 2;
+    ty = Math.max(4, Math.min(ty, this.scale.height - t.height - 4));
+    t.setPosition(tx, ty);
+    this.resourceTooltipVisibleFor = res;
+  }
+
+  hideResourceTooltip() {
+    this.resourceTooltipText.setVisible(false);
+    this.resourceTooltipVisibleFor = null;
+  }
+
+  // Repositionne/redimensionne une zone de survol (voir resourceHitZones) -- .setSize() seul ne
+  // suffit pas : Phaser calcule la zone de détection du pointeur (zone.input.hitArea) UNE FOIS à
+  // setInteractive() d'après la taille du moment, elle ne suit pas les setSize() suivants (bug
+  // Phaser bien connu, vécu pour de vrai ici : la zone restait détectable seulement sur son tout
+  // petit rectangle de création 10x10, invisible/impossible à viser une fois repositionnée).
+  positionResourceZone(zone, x, y, w, h) {
+    zone.setPosition(x, y).setSize(w, h);
+    if (zone.input) { zone.input.hitArea.width = w; zone.input.hitArea.height = h; }
+  }
+
   // Vrai si une fenêtre modale plein écran est ouverte (sauvegardes, arbre technologique...) :
   // ces vues bloquent toute interaction avec la carte en dessous, comme isPointerOverHud le fait
   // déjà pour les éléments du HUD classique.
@@ -726,6 +762,41 @@ class GameScene extends Phaser.Scene {
     this.resourceRates = {};
     for (const res of this.mainRateResources) this.resourceRates[res] = 0;
     this.rateRefreshAccum = 999; // force un premier calcul dès la 1ère frame
+
+    // Survol des ressources du bandeau (demande utilisateur explicite : "un mousseover... un clic
+    // sur telephone") : une zone invisible par ressource (voir resourceHitZones, repositionnée à
+    // chaque layoutHud comme le reste du bandeau), au-dessus de tout le reste (depth 1005) pour
+    // capter le pointeur même si elle chevauche visuellement l'icône/le texte en dessous. Un seul
+    // texte-bulle partagé (resourceTooltipText, positionné dynamiquement) plutôt qu'un par
+    // ressource : une seule bulle affichée à la fois de toute façon.
+    this.resourceTooltipText = this.add.text(0, 0, '', {
+      font: 'bold 13px sans-serif', color: '#ffffff', backgroundColor: '#10151aee', padding: { x: 8, y: 5 },
+    }).setDepth(1100).setVisible(false);
+    this.uiElements.push(this.resourceTooltipText);
+    this.resourceTooltipVisibleFor = null;
+    // Mis à true par la zone tapée elle-même (voir plus bas) juste avant que onPointerDown (l'
+    // écouteur global, voir create()) ne s'exécute pour CE MÊME tap -- sans quoi il refermerait
+    // instantanément la bulle qu'on vient d'ouvrir (les écouteurs pointerdown des objets
+    // interactifs individuels s'exécutent avant l'écouteur global du scope de la scène, voir
+    // onPointerDown : même mécanisme déjà utilisé par techTreeNodeClickedThisPointer).
+    this.resourceTooltipJustToggled = false;
+
+    this.resourceHitZones = {};
+    for (const res of this.resourceOrder) {
+      const zone = this.add.zone(0, 0, 10, 10).setOrigin(0, 0).setDepth(1005).setInteractive();
+      this.resourceHitZones[res] = zone;
+      this.uiElements.push(zone);
+      // Survol (souris, PC) : montre/cache au passage. Tap (téléphone, pas de vrai survol) : bascule
+      // au clic, voir this.mobileLayout -- mis à jour à chaque layoutHud, donc toujours à jour ici.
+      zone.on('pointerover', () => { if (!this.mobileLayout) this.showResourceTooltip(res, zone); });
+      zone.on('pointerout', () => { if (!this.mobileLayout) this.hideResourceTooltip(); });
+      zone.on('pointerdown', () => {
+        if (!this.mobileLayout) return;
+        this.resourceTooltipJustToggled = true;
+        if (this.resourceTooltipVisibleFor === res) this.hideResourceTooltip();
+        else this.showResourceTooltip(res, zone);
+      });
+    }
 
     // Panneau d'info : contenu variable (aide de construction / infos du bâtiment sélectionné /
     // dernière case tapée). Sur PC toujours à la même position ; sur mobile, n'apparaît que
@@ -1811,6 +1882,12 @@ class GameScene extends Phaser.Scene {
         if (this.resourceRateTexts[res]) {
           this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + 4).setFontSize(11).setVisible(true);
         }
+        // Zone de survol/tap (voir showResourceTooltip/resourceHitZones/positionResourceZone) :
+        // toute la largeur de la colonne (icône + nombre + gain/perte), pas juste l'icône -- plus
+        // facile à viser.
+        this.positionResourceZone(
+          this.resourceHitZones[res], bx, by, pcIconSize + pcIconGap + pcNumberSlotWidth + pcRateSlotWidth, pcIconSize
+        );
       });
       const iconGridHeight = Math.ceil(this.resourceOrder.length / pcCols) * (pcIconSize + pcRowGap);
 
@@ -1946,6 +2023,12 @@ class GameScene extends Phaser.Scene {
       if (this.resourceRateTexts[res]) {
         this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap + numberSlotWidth, barY + 3).setFontSize(11).setVisible(true);
       }
+      // Zone de tap (voir showResourceTooltip/resourceHitZones/positionResourceZone) : toute la
+      // largeur de l'emplacement (icône + nombre + gain/perte), pas juste l'icône -- plus facile à
+      // viser au doigt.
+      this.positionResourceZone(
+        this.resourceHitZones[res], bx, barY, barIconSize + iconGap + numberSlotWidth + extra, barIconSize
+      );
       bx += barIconSize + iconGap + numberSlotWidth + extra + groupGap;
     }
     // Deuxième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
@@ -3225,6 +3308,13 @@ class GameScene extends Phaser.Scene {
   }
 
   onPointerDown(pointer) {
+    // Ferme la bulle de ressource (voir showResourceTooltip/resourceHitZones) sur tout tap qui
+    // n'est pas celui qui vient de l'ouvrir/la fermer elle-même (resourceTooltipJustToggled, mis à
+    // true par la zone AVANT que cet écouteur global ne s'exécute pour ce même tap -- voir le
+    // commentaire sur ce flag dans buildHud).
+    if (this.resourceTooltipJustToggled) this.resourceTooltipJustToggled = false;
+    else if (this.resourceTooltipVisibleFor) this.hideResourceTooltip();
+
     if (this.techTreeOpen) {
       // Un glisser dans la zone des nœuds fait naviguer le diagramme (voir onPointerMove) ; un
       // simple tap sur un nœud est géré séparément par son propre écouteur 'pointerup' (dépose ce
