@@ -124,13 +124,17 @@ const GameConfig = {
   // voir GameState.upgradeBuildingWithDevotion -- le déclencheur/l'effet concret restent à
   // définir, demande utilisateur explicite : "on verra après"). Chaque bâtiment amélioré ajoute
   // upkeepPerBuilding (%/s) à cette baisse ; si la Dévotion retombe à 0, TOUS les bâtiments
-  // améliorés repassent en version de base (voir tickProduction). Valeurs volontairement
-  // provisoires (demande utilisateur explicite : "on ajustera les valeurs ensuite").
+  // améliorés repassent en version de base (voir tickProduction). templeBaseGain (%/s) : chaque
+  // Temple en fournit un peu MÊME sans Autel à portée (voir tickProduction -- "le temple lui même
+  // fournit aussi 0.25 % par seconde", en plus de buildings.temple.devotionPerAltar par Autel,
+  // demande utilisateur explicite). decayRate 0,5%/5s = 0,1 %/s ; upkeepPerBuilding 1%/5s = 0,2 %/s
+  // (valeurs précisées par l'utilisateur, plus provisoires).
   devotion: {
     cap: 100,
-    decayRate: 1,
+    decayRate: 0.1,
     upgradeCost: 10,
-    upkeepPerBuilding: 0.3,
+    upkeepPerBuilding: 0.2,
+    templeBaseGain: 0.25,
   },
   // Transport des ressources le long des routes.
   logistics: {
@@ -415,7 +419,10 @@ const GameConfig = {
     // GameState.allocateLabor, qui ne s'applique qu'aux kind extractor/processor/tower). Compté
     // par chaque Temple à portée (voir buildings.temple ci-dessous), c'est tout son rôle.
     altar: {
-      name: 'Autel', cost: { planks: 3, stoneBlocks: 3 }, color: 0xc9b896,
+      // Coût en Statues (demande utilisateur explicite), pas planches/pierre comme les autres
+      // bâtiments -- livré/déduit exactement comme n'importe quelle ressource (voir
+      // _spawnWarehouseConstructionDeliveries, générique sur tile.constructionNeeded).
+      name: 'Autel', cost: { statues: 10 }, color: 0xc9b896,
       ruinLoot: { planks: 2 },
     },
     // Temple (demande utilisateur explicite, catégorie Civil) : NOUVEAU kind 'shrine', différent
@@ -427,13 +434,14 @@ const GameConfig = {
     // particulière de l'exempter ici) : voir GameState.allocateLabor/zoneRadiusFor, kind 'shrine'
     // ajouté aux deux à côté d'extractor/processor/tower.
     temple: {
-      name: 'Temple', cost: { planks: 15, stoneBlocks: 10 }, color: 0xd4af6a,
+      // Coût précisé par l'utilisateur (planches/pierre/fer/statues, pas juste planches/pierre
+      // comme les autres bâtiments).
+      name: 'Temple', cost: { planks: 5, stoneBlocks: 5, ironIngot: 5, statues: 20 }, color: 0xd4af6a,
       // extractRadius 3 -> 10 (demande utilisateur explicite : "zone d'action (10 cases)").
-      // devotionPerAltar : maintenant en POINTS DE POURCENTAGE/s par Autel (voir GameConfig.
-      // devotion, la Dévotion n'est plus un stock qui s'accumule sans limite), pas encore
-      // recalibré après ce changement de nature (demande utilisateur explicite : valeurs
-      // provisoires, ajustées ensuite).
-      kind: 'shrine', extractRadius: 10, devotionPerAltar: 0.5,
+      // devotionPerAltar : 0,25 %/5s par Autel = 0,05 %/s (voir GameConfig.devotion pour le taux
+      // de base du Temple lui-même, gagné même sans Autel à portée -- valeurs précisées par
+      // l'utilisateur).
+      kind: 'shrine', extractRadius: 10, devotionPerAltar: 0.05,
       ruinLoot: { planks: 8 },
     },
     // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval

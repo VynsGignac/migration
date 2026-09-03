@@ -651,7 +651,10 @@ class GameScene extends Phaser.Scene {
       // devotion), pas un stock qui s'accumule sans limite comme les autres ressources -- ce Temple
       // ne fait qu'en ralentir la baisse naturelle (GameConfig.devotion.decayRate), pas "produire"
       // au sens habituel.
-      lines.push(`Dévotion/s à pleine main-d'œuvre : +${(def.devotionPerAltar * altarCount).toFixed(2)} %`);
+      // templeBaseGain : gagné même sans Autel à portée (voir GameConfig.devotion, demande
+      // utilisateur explicite), le reste proportionnel au nombre d'Autels ci-dessus.
+      const shrineRate = GameConfig.devotion.templeBaseGain + def.devotionPerAltar * altarCount;
+      lines.push(`Dévotion/s à pleine main-d'œuvre : +${shrineRate.toFixed(2)} %`);
       lines.push(`Baisse naturelle : -${GameConfig.devotion.decayRate}%/s (voir bandeau du haut).`);
       lines.push('Dévotion versée directement au stock central (pas de livraison par la route).');
       lines.push(this.laborStatusLine(col, row, def));
@@ -2254,18 +2257,35 @@ class GameScene extends Phaser.Scene {
     if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
     else icon.setScale(iconSize / 30);
 
-    const costImgSize = Math.min(h - 12, 15);
-    const fontSize = Math.max(10, Math.min(13, h - 20));
+    let costImgSize = Math.min(h - 12, 15);
+    let fontSize = Math.max(10, Math.min(13, h - 20));
+    let gapImg = 2, gapTxt = 6;
+    const costs = this.buildButtonCostIcons[id];
+    // Mesure d'abord la largeur totale nécessaire à cette taille "normale" (comme la version PC,
+    // voir positionBuildButtonContentsSquare) : rétrécit TOUT (icônes/police/espacements) si ça
+    // déborderait du bouton -- jusqu'ici jamais plus de 2 coûts, jamais arrivé en pratique (demande
+    // utilisateur explicite : coût du Temple à 4 ressources).
+    costs.forEach(({ txt }) => txt.setFontSize(fontSize));
+    let totalCostW = -gapTxt;
+    costs.forEach(({ txt }) => { totalCostW += costImgSize + gapImg + txt.width + gapTxt; });
+    const availableW = x + w - (x + 6 + iconSize + 8) - 6;
+    if (totalCostW > availableW && totalCostW > 0) {
+      const scale = Math.max(0.45, availableW / totalCostW);
+      costImgSize = Math.max(7, costImgSize * scale);
+      fontSize = Math.max(8, Math.round(fontSize * scale));
+      gapImg = Math.max(1, gapImg * scale);
+      gapTxt = Math.max(3, gapTxt * scale);
+      costs.forEach(({ txt }) => txt.setFontSize(fontSize));
+    }
     // Espacements resserrés (8/2/6 au lieu de 10/3/10, même demande utilisateur) : laisse assez de
     // place à 2 coûts (icône + nombre chacun) dans une colonne étroite sans déborder sur la
-    // suivante -- positionBuildButtonContents ne clippe rien, ces marges sont donc la seule chose
-    // qui empêche un débordement visuel dans le bouton voisin.
+    // suivante.
     let cx = x + 6 + iconSize + 8;
-    for (const { img, txt } of this.buildButtonCostIcons[id]) {
+    for (const { img, txt } of costs) {
       img.setPosition(cx, y + h / 2).setDisplaySize(costImgSize, costImgSize).setVisible(true);
-      cx += costImgSize + 2;
-      txt.setPosition(cx, y + h / 2).setFontSize(fontSize).setVisible(true);
-      cx += txt.width + 6;
+      cx += costImgSize + gapImg;
+      txt.setPosition(cx, y + h / 2).setVisible(true);
+      cx += txt.width + gapTxt;
     }
   }
 
@@ -2294,15 +2314,31 @@ class GameScene extends Phaser.Scene {
 
     const costs = this.buildButtonCostIcons[id];
     // Plafonds relevés en proportion de l'icône ci-dessus (14 -> 22, 12 -> 18), même raison.
-    const costImgSize = Math.max(9, Math.min(22, size * 0.16));
-    const fontSize = Math.max(10, Math.min(18, Math.round(size * 0.15)));
-    const gapAfterImg = 2, gapAfterTxt = 8;
+    let costImgSize = Math.max(9, Math.min(22, size * 0.16));
+    let fontSize = Math.max(10, Math.min(18, Math.round(size * 0.15)));
+    let gapAfterImg = 2, gapAfterTxt = 8;
     // Largeur totale mesurée D'ABORD (police déjà fixée, .width lisible) pour pouvoir centrer le
     // groupe entier sous le logo -- contrairement à la version mobile, alignée à gauche sans
     // besoin de connaître la largeur totale à l'avance.
     costs.forEach(({ txt }) => txt.setFontSize(fontSize));
     let totalW = -gapAfterTxt;
     costs.forEach(({ txt }) => { totalW += costImgSize + gapAfterImg + txt.width + gapAfterTxt; });
+    // Rétrécit toute la ligne si elle déborderait du bouton (demande utilisateur explicite : coût
+    // du Temple à 4 ressources -- jusqu'ici jamais plus de 2, ces tailles n'avaient jamais eu
+    // besoin de tenir compte de la largeur réellement disponible). Reproportionne TOUT (icônes,
+    // police, espacements) plutôt que de laisser la police fixe et juste rapprocher les éléments,
+    // qui aurait fini par les faire se chevaucher au lieu de rester lisibles mais petits.
+    const maxRowWidth = w - 8;
+    if (totalW > maxRowWidth && totalW > 0) {
+      const scale = Math.max(0.45, maxRowWidth / totalW);
+      costImgSize = Math.max(7, costImgSize * scale);
+      fontSize = Math.max(8, Math.round(fontSize * scale));
+      gapAfterImg = Math.max(1, gapAfterImg * scale);
+      gapAfterTxt = Math.max(3, gapAfterTxt * scale);
+      costs.forEach(({ txt }) => txt.setFontSize(fontSize));
+      totalW = -gapAfterTxt;
+      costs.forEach(({ txt }) => { totalW += costImgSize + gapAfterImg + txt.width + gapAfterTxt; });
+    }
     const costY = y + h * 0.78;
     let cxRun = cx - totalW / 2;
     for (const { img, txt } of costs) {

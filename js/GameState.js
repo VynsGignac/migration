@@ -1040,14 +1040,21 @@ const GameState = {
         const t = this.tiles.get(this.key(p.col, p.row));
         return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
       }, 0);
-      if (altarCount === 0) continue;
+      // PAS de "continue" si altarCount === 0 (contrairement à avant) : le Temple fournit
+      // toujours templeBaseGain (voir GameConfig.devotion, demande utilisateur explicite : "le
+      // temple lui même fournit aussi 0.25 % par seconde"), même sans Autel à portée -- seul le
+      // second terme (par Autel) dépend d'altarCount. Un même Autel peut compter dans PLUSIEURS
+      // Temples à la fois (demande utilisateur explicite) : chaque Temple fait ce calcul
+      // indépendamment sur toute la carte, rien n'empêche déjà un Autel d'apparaître dans
+      // plusieurs zones -- comportement déjà correct, inchangé ici.
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
-      devotionGain += def.devotionPerAltar * altarCount * efficiency * speedMultiplier * dtSeconds;
+      const baseRate = GameConfig.devotion.templeBaseGain + def.devotionPerAltar * altarCount;
+      devotionGain += baseRate * efficiency * speedMultiplier * dtSeconds;
     }
 
     // Dévotion : baisse naturelle constante (decayRate) + un peu plus par bâtiment amélioré actif
