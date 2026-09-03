@@ -580,6 +580,9 @@ class GameScene extends Phaser.Scene {
         lines.push('Codex versé directement au stock central (pas de livraison par la route).');
       } else {
         lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
+        if (!GameState.hasLinkTargetInRange(col, row, def)) {
+          lines.push('⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.');
+        }
         lines.push(this.laborStatusLine(col, row, def));
       }
     } else if (def.kind === 'processor') {
@@ -594,6 +597,9 @@ class GameScene extends Phaser.Scene {
         lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
       }
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
+      if (!GameState.hasLinkTargetInRange(col, row, def)) {
+        lines.push('⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.');
+      }
       lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'shrine') {
       // Temple (voir buildings.temple/altar, demande utilisateur explicite) : Dévotion versée
@@ -1989,11 +1995,14 @@ class GameScene extends Phaser.Scene {
     // Une seule rangée de catégories ici (contrairement à la grille 2x2 de la colonne PC) : en
     // paysage mobile, la largeur d'écran suffit largement pour 4 onglets côte à côte.
     const menuHeight = mobileCategoryRowHeight + gap + rows * (btnHeight + gap) + gap;
-    // Ancré au ras du bas (petite marge de 3px, réduite depuis 6px -- demande utilisateur
-    // explicite : "le menu sois le plus bas possible") plutôt que laisser 24px de plus au-dessus
-    // du bouton "Construire" : c'est justement cette marge qui faisait "flotter" le pavé plus haut
-    // que nécessaire, façon fenêtre au milieu de l'écran plutôt que bandeau du bas.
-    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - this.buildMenuToggle.height - 3);
+    // Ancré tout en bas de l'écran (demande utilisateur explicite : "le menu de construction doit
+    // aussi etre tout en bas de l'ecran") -- ne réserve PLUS la hauteur de buildMenuToggle
+    // au-dessus du pavé (c'était la dernière marge qui empêchait le pavé de toucher le bas) : le
+    // bouton Fermer/Construire, ancré séparément en bas à droite (voir plus haut), se retrouve donc
+    // par-dessus la grille -- accepté explicitement par l'utilisateur car il tombe sur la case
+    // vide sous la colonne Route (Route seule en rangée 0, jamais de bâtiment en dessous, voir
+    // placeButton plus bas).
+    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - 3);
 
     this.buildMenuBg.setPosition(0, menuTop - gap).setSize(w, menuHeight + gap * 2).setVisible(this.buildMenuOpen);
 

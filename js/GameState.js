@@ -489,6 +489,17 @@ const GameState = {
     return !!this.findBestPathToBuildingType(col, row, ['warehouse'], this.warehouseZoneRadius(), () => 1);
   },
 
+  // Même principe que hasWarehouseInRange ci-dessus, mais pour un extracteur/processeur en
+  // fonctionnement normal (def.linkTargets/linkRange, voir _spawnShipments) : signale dans l'UI
+  // (voir GameScene.buildingInfoText) qu'une case dont l'outputBuffer est plafonné n'a en fait
+  // AUCUNE route la reliant à une cible valide -- symptôme vécu pour de vrai (Fonderie non reliée
+  // à un Entrepôt : produit dans le vide, "En sortie" plafonne à outputCap, la ressource
+  // n'apparaît jamais dans le bandeau du haut, sans aucun message expliquant pourquoi).
+  hasLinkTargetInRange(col, row, def) {
+    if (!def.linkTargets || def.linkTargets.length === 0) return true;
+    return !!this.findBestPathToBuildingType(col, row, def.linkTargets, def.linkRange, () => 1);
+  },
+
   // Distance en pas par la route (BFS le long des ROUTES uniquement, voir findBestPathToBuildingType)
   // entre deux cases précises. Contrairement à findBestPathToBuildingType (qui cherche le
   // MEILLEUR score d'un TYPE), ici on mesure la distance vers une case précise, pour départager deux candidats à
