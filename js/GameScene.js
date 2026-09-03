@@ -473,30 +473,49 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  // Bulle nom complet d'une ressource du bandeau (voir resourceHitZones/resourceTooltipText,
-  // demande utilisateur explicite : "un mousseover sur les ressources... un clic sur telephone").
-  // zone sert à positionner la bulle juste sous l'icône/le nombre survolé ou tapé, jamais hors
-  // écran (clampée à droite comme à gauche).
-  showResourceTooltip(res, zone) {
-    const t = this.resourceTooltipText;
-    t.setText(GameConfig.resourceLabels[res].long).setVisible(true);
-    const bounds = zone.getBounds();
-    // À droite de la zone par défaut, centrée verticalement dessus (PAS en dessous : les
-    // ressources sont sur une grille compacte -- PC 2 colonnes, mobile 1 rangée -- une bulle sous
-    // la zone chevauchait systématiquement la ligne suivante, illisible). Bascule à gauche si ça
-    // déborderait à droite (dernière colonne PC/ressources tout à droite du bandeau mobile).
+  // Bulle générique pour n'importe quel élément du HUD (demande utilisateur explicite : "un
+  // mousseover sur les ressources... un clic sur telephone", puis élargi à "tout les éléments de
+  // l'UI") -- gameObject sert à positionner la bulle juste à côté de l'élément survolé/tapé,
+  // jamais hors écran (clampée à droite comme à gauche, en haut comme en bas).
+  showHudTooltip(key, text, gameObject) {
+    const t = this.hudTooltipText;
+    t.setText(text).setVisible(true);
+    const bounds = gameObject.getBounds();
+    // À droite de l'élément par défaut, centrée verticalement dessus (PAS en dessous : la plupart
+    // des éléments -- grille de ressources, grille de boutons de construction -- sont sur des
+    // grilles compactes où une bulle en dessous chevaucherait systématiquement la ligne suivante,
+    // illisible). Bascule à gauche si ça déborderait à droite (dernière colonne/élément tout à
+    // droite de l'écran).
     let tx = bounds.x + bounds.width + 6;
     if (tx + t.width + 4 > this.scale.width) tx = bounds.x - t.width - 6;
     tx = Math.max(4, tx);
     let ty = bounds.y + bounds.height / 2 - t.height / 2;
     ty = Math.max(4, Math.min(ty, this.scale.height - t.height - 4));
     t.setPosition(tx, ty);
-    this.resourceTooltipVisibleFor = res;
+    this.hudTooltipKey = key;
   }
 
-  hideResourceTooltip() {
-    this.resourceTooltipText.setVisible(false);
-    this.resourceTooltipVisibleFor = null;
+  hideHudTooltip() {
+    this.hudTooltipText.setVisible(false);
+    this.hudTooltipKey = null;
+  }
+
+  // Câble le survol/tap d'un élément interactif (déjà .setInteractive(), voir chaque appelant) sur
+  // le système de bulle générique ci-dessus -- centralise ici la même logique déjà éprouvée pour
+  // les ressources du bandeau plutôt que de la dupliquer à chaque nouvel élément. getText est un
+  // callback (pas une chaîne figée) pour les bulles dont le texte change selon l'état (ex. Pause/
+  // Reprendre). tapToggle:false (voir pauseButton/menuButton/buildButtons) pour les éléments qui
+  // ont déjà une action au tap : un tap-bulle en plus interférerait avec cette action-là.
+  attachHoverTooltip(gameObject, key, getText, { tapToggle = true } = {}) {
+    gameObject.on('pointerover', () => { if (!this.mobileLayout) this.showHudTooltip(key, getText(), gameObject); });
+    gameObject.on('pointerout', () => { if (!this.mobileLayout) this.hideHudTooltip(); });
+    if (!tapToggle) return;
+    gameObject.on('pointerdown', () => {
+      if (!this.mobileLayout) return;
+      this.hudTooltipJustToggled = true;
+      if (this.hudTooltipKey === key) this.hideHudTooltip();
+      else this.showHudTooltip(key, getText(), gameObject);
+    });
   }
 
   // Repositionne/redimensionne une zone de survol (voir resourceHitZones) -- .setSize() seul ne
@@ -686,6 +705,15 @@ class GameScene extends Phaser.Scene {
     for (const k of ['needed', 'housing']) {
       this.uiElements.push(this.laborStatIconImages[k], this.laborStatValueTexts[k]);
     }
+    // Bulle au survol/tap (voir attachHoverTooltip, "tout les éléments de l'UI" -- demande
+    // utilisateur explicite) : même principe que resourceHitZones plus bas, une zone par icône.
+    this.laborHitZones = {
+      needed: this.add.zone(0, 0, 10, 10).setOrigin(0, 0).setDepth(1005).setInteractive(),
+      housing: this.add.zone(0, 0, 10, 10).setOrigin(0, 0).setDepth(1005).setInteractive(),
+    };
+    this.uiElements.push(this.laborHitZones.needed, this.laborHitZones.housing);
+    this.attachHoverTooltip(this.laborHitZones.needed, 'labor:needed', () => 'Main-d\'œuvre nécessaire');
+    this.attachHoverTooltip(this.laborHitZones.housing, 'labor:housing', () => 'Logements libres');
 
     // Bandeau ressources mobile : une seule ligne icône+valeur par ressource (le texte complet
     // PC, sur 3 lignes, prend trop de hauteur sur un écran de téléphone en paysage). Les icônes
@@ -763,39 +791,32 @@ class GameScene extends Phaser.Scene {
     for (const res of this.mainRateResources) this.resourceRates[res] = 0;
     this.rateRefreshAccum = 999; // force un premier calcul dès la 1ère frame
 
-    // Survol des ressources du bandeau (demande utilisateur explicite : "un mousseover... un clic
-    // sur telephone") : une zone invisible par ressource (voir resourceHitZones, repositionnée à
-    // chaque layoutHud comme le reste du bandeau), au-dessus de tout le reste (depth 1005) pour
-    // capter le pointeur même si elle chevauche visuellement l'icône/le texte en dessous. Un seul
-    // texte-bulle partagé (resourceTooltipText, positionné dynamiquement) plutôt qu'un par
-    // ressource : une seule bulle affichée à la fois de toute façon.
-    this.resourceTooltipText = this.add.text(0, 0, '', {
+    // Survol (demande utilisateur explicite : "un mousseover sur les ressources... un clic sur
+    // telephone", puis élargi à "tout les éléments de l'UI") : infrastructure GÉNÉRIQUE (voir
+    // showHudTooltip/hideHudTooltip/attachHoverTooltip plus bas), pas spécifique aux ressources --
+    // un seul texte-bulle partagé (hudTooltipText, positionné dynamiquement selon l'élément
+    // survolé/tapé) plutôt qu'un par élément, une seule bulle affichée à la fois de toute façon.
+    this.hudTooltipText = this.add.text(0, 0, '', {
       font: 'bold 13px sans-serif', color: '#ffffff', backgroundColor: '#10151aee', padding: { x: 8, y: 5 },
     }).setDepth(1100).setVisible(false);
-    this.uiElements.push(this.resourceTooltipText);
-    this.resourceTooltipVisibleFor = null;
-    // Mis à true par la zone tapée elle-même (voir plus bas) juste avant que onPointerDown (l'
-    // écouteur global, voir create()) ne s'exécute pour CE MÊME tap -- sans quoi il refermerait
-    // instantanément la bulle qu'on vient d'ouvrir (les écouteurs pointerdown des objets
-    // interactifs individuels s'exécutent avant l'écouteur global du scope de la scène, voir
+    this.uiElements.push(this.hudTooltipText);
+    this.hudTooltipKey = null;
+    // Mis à true par l'élément tapé lui-même (voir attachHoverTooltip) juste avant que
+    // onPointerDown (l'écouteur global, voir create()) ne s'exécute pour CE MÊME tap -- sans quoi
+    // il refermerait instantanément la bulle qu'on vient d'ouvrir (les écouteurs pointerdown des
+    // objets interactifs individuels s'exécutent avant l'écouteur global du scope de la scène, voir
     // onPointerDown : même mécanisme déjà utilisé par techTreeNodeClickedThisPointer).
-    this.resourceTooltipJustToggled = false;
+    this.hudTooltipJustToggled = false;
 
+    // Ressources du bandeau : une zone invisible par ressource (repositionnée à chaque layoutHud
+    // comme le reste du bandeau), au-dessus de tout le reste (depth 1005) pour capter le pointeur
+    // même si elle chevauche visuellement l'icône/le texte en dessous.
     this.resourceHitZones = {};
     for (const res of this.resourceOrder) {
       const zone = this.add.zone(0, 0, 10, 10).setOrigin(0, 0).setDepth(1005).setInteractive();
       this.resourceHitZones[res] = zone;
       this.uiElements.push(zone);
-      // Survol (souris, PC) : montre/cache au passage. Tap (téléphone, pas de vrai survol) : bascule
-      // au clic, voir this.mobileLayout -- mis à jour à chaque layoutHud, donc toujours à jour ici.
-      zone.on('pointerover', () => { if (!this.mobileLayout) this.showResourceTooltip(res, zone); });
-      zone.on('pointerout', () => { if (!this.mobileLayout) this.hideResourceTooltip(); });
-      zone.on('pointerdown', () => {
-        if (!this.mobileLayout) return;
-        this.resourceTooltipJustToggled = true;
-        if (this.resourceTooltipVisibleFor === res) this.hideResourceTooltip();
-        else this.showResourceTooltip(res, zone);
-      });
+      this.attachHoverTooltip(zone, `res:${res}`, () => GameConfig.resourceLabels[res].long);
     }
 
     // Panneau d'info : contenu variable (aide de construction / infos du bâtiment sélectionné /
@@ -819,12 +840,17 @@ class GameScene extends Phaser.Scene {
     }).setDepth(1002).setInteractive({ useHandCursor: true });
     this.pauseButton.on('pointerup', () => this.togglePause());
     this.uiElements.push(this.pauseButton);
+    // Survol seulement, pas de bascule au tap (voir attachHoverTooltip) : contrairement aux
+    // ressources/indicateurs, ce bouton a déjà une action au tap (mettre en pause) -- ajouter un
+    // tap-bulle en plus l'aurait fait interférer avec ce tap-là (bug potentiel évité, pas vécu).
+    this.attachHoverTooltip(this.pauseButton, 'btn:pause', () => (this.paused ? 'Reprendre' : 'Pause'), { tapToggle: false });
 
     this.menuButton = this.add.text(0, 0, '☰', {
       font: 'bold 18px sans-serif', color: '#ffffff', backgroundColor: '#2e5339', padding: { x: 10, y: 8 },
     }).setDepth(1002).setInteractive({ useHandCursor: true });
     this.menuButton.on('pointerup', () => this.toggleSaveMenu());
     this.uiElements.push(this.menuButton);
+    this.attachHoverTooltip(this.menuButton, 'btn:menu', () => 'Menu (sauvegardes, options)', { tapToggle: false });
 
     // Chrono : temps de jeu écoulé (this.elapsed, déjà en pause avec le reste de la simulation --
     // voir update(), incrémenté seulement dans le bloc "if (!this.paused)") -- juste besoin de
@@ -940,6 +966,11 @@ class GameScene extends Phaser.Scene {
       btn.on('pointerup', () => this.setBuildMode(this.buildMode === id ? null : id));
       this.buildButtons[id] = btn;
       this.uiElements.push(btn);
+      // Nom du bâtiment au survol (voir attachHoverTooltip, "tout les éléments de l'UI" -- demande
+      // utilisateur explicite). Survol seulement, PAS de bascule au tap : ce bouton a déjà une
+      // action au tap (sélectionner le mode construction), un tap-bulle en plus l'aurait fait
+      // interférer avec cette sélection.
+      this.attachHoverTooltip(btn, `build:${id}`, () => GameConfig.buildings[id].name, { tapToggle: false });
 
       // Même icône que sur la carte (voir buildingIconKeys/redrawTileArt, demande utilisateur
       // explicite) quand une image dédiée existe ; repli sur le dessin vectoriel (drawBuildingIcon)
@@ -1891,7 +1922,7 @@ class GameScene extends Phaser.Scene {
         if (this.resourceRateTexts[res]) {
           this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + pcIconSize / 2 - 6).setFontSize(11).setVisible(true);
         }
-        // Zone de survol/tap (voir showResourceTooltip/resourceHitZones/positionResourceZone) :
+        // Zone de survol/tap (voir attachHoverTooltip/resourceHitZones/positionResourceZone) :
         // toute la largeur de la colonne (icône + nombre + gain/perte), pas juste l'icône -- plus
         // facile à viser.
         this.positionResourceZone(
@@ -1913,6 +1944,7 @@ class GameScene extends Phaser.Scene {
         for (const k of ['needed', 'housing']) {
           this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
           this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY + laborIconSize / 2 - 14).setFontSize(28).setVisible(true);
+          this.positionResourceZone(this.laborHitZones[k], lx, laborY, laborIconSize + laborIconGap + laborNumberSlot, laborIconSize);
           lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
         }
       }
@@ -2056,7 +2088,7 @@ class GameScene extends Phaser.Scene {
       if (this.resourceRateTexts[res]) {
         this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap + mobileNumberSlot, by + barIconSize / 2 - 6).setFontSize(11).setVisible(true);
       }
-      // Zone de tap (voir showResourceTooltip/resourceHitZones/positionResourceZone) : toute la
+      // Zone de tap (voir attachHoverTooltip/resourceHitZones/positionResourceZone) : toute la
       // largeur de la colonne, pas juste l'icône -- plus facile à viser au doigt.
       this.positionResourceZone(this.resourceHitZones[res], bx, by, mobileColWidth, barIconSize);
     });
@@ -2076,6 +2108,7 @@ class GameScene extends Phaser.Scene {
       for (const k of ['needed', 'housing']) {
         this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
         this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY + laborIconSize / 2 - 13).setFontSize(26).setVisible(true);
+        this.positionResourceZone(this.laborHitZones[k], lx, laborY, laborIconSize + laborIconGap + laborNumberSlot, laborIconSize);
         lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
       }
     }
@@ -3339,12 +3372,12 @@ class GameScene extends Phaser.Scene {
   }
 
   onPointerDown(pointer) {
-    // Ferme la bulle de ressource (voir showResourceTooltip/resourceHitZones) sur tout tap qui
-    // n'est pas celui qui vient de l'ouvrir/la fermer elle-même (resourceTooltipJustToggled, mis à
-    // true par la zone AVANT que cet écouteur global ne s'exécute pour ce même tap -- voir le
-    // commentaire sur ce flag dans buildHud).
-    if (this.resourceTooltipJustToggled) this.resourceTooltipJustToggled = false;
-    else if (this.resourceTooltipVisibleFor) this.hideResourceTooltip();
+    // Ferme la bulle du HUD (voir showHudTooltip/attachHoverTooltip) sur tout tap qui n'est pas
+    // celui qui vient de l'ouvrir/la fermer elle-même (hudTooltipJustToggled, mis à true par
+    // l'élément AVANT que cet écouteur global ne s'exécute pour ce même tap -- voir le commentaire
+    // sur ce flag dans buildHud).
+    if (this.hudTooltipJustToggled) this.hudTooltipJustToggled = false;
+    else if (this.hudTooltipKey) this.hideHudTooltip();
 
     if (this.techTreeOpen) {
       // Un glisser dans la zone des nœuds fait naviguer le diagramme (voir onPointerMove) ; un
