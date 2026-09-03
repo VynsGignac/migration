@@ -35,6 +35,11 @@ class GameScene extends Phaser.Scene {
     // explicite, remplacent le texte brut -- voir populationStatsText plus bas).
     this.load.image('missingWorkerIcon', GameAssets.missingWorkerIcon);
     this.load.image('emptyHousingIcon', GameAssets.emptyHousingIcon);
+    // Icones de ressource (demande utilisateur explicite, remplacent le dessin vectoriel de secours
+    // -- voir resourceBarIconTextureKeys/drawResourceBarIcon plus bas).
+    this.load.image('weaponsIcon', GameAssets.weaponsIcon);
+    this.load.image('devotionIcon', GameAssets.devotionIcon);
+    this.load.image('statuesIcon', GameAssets.statuesIcon);
     this.load.image('woodIcon', GameAssets.woodIcon);
     this.load.image('planksIcon', GameAssets.planksIcon);
     this.load.image('stoneIcon', GameAssets.stoneIcon);
@@ -463,38 +468,6 @@ class GameScene extends Phaser.Scene {
         g.fillPath();
         g.strokePath();
         break;
-      case 'weapons':
-        // Épée simplifiée : lame + garde + pommeau.
-        g.fillStyle(color, 1);
-        g.fillRect(x + size * 0.44, y + size * 0.06, size * 0.12, size * 0.62);
-        g.fillRect(x + size * 0.20, y + size * 0.60, size * 0.60, size * 0.12);
-        g.fillTriangle(
-          x + size * 0.50, y + size * 0.94,
-          x + size * 0.40, y + size * 0.72,
-          x + size * 0.60, y + size * 0.72
-        );
-        break;
-      case 'statues':
-        // Buste stylisé : socle + torse + tête ronde.
-        g.fillStyle(color, 1);
-        g.fillRect(x + size * 0.24, y + size * 0.72, size * 0.52, size * 0.22);
-        g.fillTriangle(
-          cx, y + size * 0.30,
-          x + size * 0.22, y + size * 0.72,
-          x + size * 0.78, y + size * 0.72
-        );
-        g.fillCircle(cx, y + size * 0.22, size * 0.16);
-        break;
-      case 'devotion':
-        // Petite flamme dorée.
-        g.fillStyle(color, 1);
-        g.fillTriangle(
-          cx, y + size * 0.06,
-          x + size * 0.24, y + size * 0.62,
-          x + size * 0.76, y + size * 0.62
-        );
-        g.fillCircle(cx, y + size * 0.72, size * 0.22);
-        break;
       default:
         break;
     }
@@ -705,12 +678,11 @@ class GameScene extends Phaser.Scene {
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
     // dessinée ci-dessus (drawResourceBarIcon). "ore" absent ici (voir resourceOrder ci-dessus) :
     // oreIcon reste chargée/utilisée ailleurs (voir iconKeyByResource dans redrawShipments, pour
-    // le jeton en transit sur les routes), juste plus dans ce bandeau. weapons/statues/devotion :
-    // pas encore de vraie icône (voir js/assets.js) -- passent par le dessin vectoriel de secours
-    // (drawResourceBarIcon), comme "codex".
+    // le jeton en transit sur les routes), juste plus dans ce bandeau. "codex" reste sans icône
+    // dédiée (dessin vectoriel de secours, voir drawResourceBarIcon).
     this.resourceBarIconTextureKeys = {
       planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon',
-      ironIngot: 'ironIngotIcon',
+      ironIngot: 'ironIngotIcon', weapons: 'weaponsIcon', statues: 'statuesIcon', devotion: 'devotionIcon',
     };
     this.resourceBarIconImages = {};
     for (const res in this.resourceBarIconTextureKeys) {
@@ -3029,6 +3001,7 @@ class GameScene extends Phaser.Scene {
     const iconKeyByResource = {
       wood: 'woodIcon', planks: 'planksIcon', stone: 'stoneIcon', stoneBlocks: 'stoneBlocksIcon',
       wheat: 'wheatIcon', bread: 'breadIcon', ore: 'oreIcon', ironIngot: 'ironIngotIcon',
+      weapons: 'weaponsIcon', statues: 'statuesIcon',
     };
 
     for (const s of GameState.shipments) {
