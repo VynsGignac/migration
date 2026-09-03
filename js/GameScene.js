@@ -1784,16 +1784,22 @@ class GameScene extends Phaser.Scene {
     // (~8 lignes de texte) pour éviter ce chevauchement même avec un texte d'info long. Reste
     // indépendant du nombre de boutons de l'onglet actif (pas de "saut" en changeant d'onglet,
     // demande utilisateur explicite plus ancienne).
-    // 20/6 = pcIconSize/pcRowGap plus bas (grille de ressources) ; 2 = pcCols -- dupliqués ici en
-    // dur pour rester calculables AVANT le bloc de rendu PC (qui décide s'il s'applique), à garder
-    // synchronisés si ces constantes changent.
-    const desktopIconGridHeight = Math.ceil(this.resourceOrder.length / 2) * (20 + 6);
+    // 40/6 = pcIconSize/pcRowGap plus bas (grille de ressources, x2 demande utilisateur explicite,
+    // 1 seule colonne désormais -- voir le commentaire là-bas) -- dupliqués ici en dur pour rester
+    // calculables AVANT le bloc de rendu PC (qui décide s'il s'applique), à garder synchronisés si
+    // ces constantes changent.
+    const desktopIconGridHeight = this.resourceOrder.length * (40 + 6);
     // 16 -> 48 (x3, demande utilisateur explicite) : dupliqué ici en dur pour la même raison que
     // pcIconSize/pcRowGap ci-dessus (garder en phase avec la valeur réellement utilisée plus bas
     // dans le bloc de rendu PC) -- 6 = marge au-dessus de cette rangée, 12 = marge en dessous avant
     // infoPanelText, inchangées.
     const desktopLaborIconSize = 48;
-    const desktopInfoPanelReserve = 160;
+    // 160 -> 200 (testé pour de vrai avec le cas le plus long -- chantier Armurier hors de portée
+    // d'Entrepôt -- toujours tronqué par le bouton Démolir à 160 depuis que la police du panneau
+    // d'info n'a plus autant de place relative après les agrandissements successifs du bandeau de
+    // ressources au-dessus, voir pcIconSize/desktopLaborIconSize) : les boutons de construction
+    // rétrécissent dynamiquement (voir plus bas) plutôt que de risquer ce chevauchement.
+    const desktopInfoPanelReserve = 200;
     const catBlockY = 10 + desktopIconGridHeight + 6 + desktopLaborIconSize + 12 + desktopInfoPanelReserve;
     // Hauteur de bouton DYNAMIQUE plutôt qu'un seuil qui bascule tout le panneau en mode mobile
     // (demande utilisateur explicite : "le PC a la meme UI que le telephone... c'etait mieux avant
@@ -1867,7 +1873,13 @@ class GameScene extends Phaser.Scene {
       // 2 colonnes (pas 3) : laisse assez de place à droite du nombre pour le gain/perte par
       // minute des 3 ressources principales (voir resourceRateTexts) sans le faire déborder sur
       // la colonne suivante.
-      const pcIconSize = 20, pcNumberSlotWidth = 34, pcRateSlotWidth = 28, pcIconGap = 4, pcColGap = 8, pcRowGap = 6, pcCols = 2;
+      // 20 -> 40 icône, 15 -> 30 texte (x2, demande utilisateur explicite). 2 -> 1 colonne : la
+      // colonne PC ne fait que 220px de large (voir desktopSidebarWidth), une 2e colonne à cette
+      // taille aurait débordé dessus/sur la carte -- 1 seule colonne reste confortablement dans
+      // cette largeur, quitte à être 2x plus haute (le mécanisme de boutons de construction qui
+      // rétrécissent dynamiquement, voir plus bas, absorbe déjà cette perte de hauteur sans rien
+      // casser, contrairement à un débordement horizontal qui aurait été un vrai bug visuel).
+      const pcIconSize = 40, pcNumberSlotWidth = 56, pcRateSlotWidth = 28, pcIconGap = 6, pcColGap = 8, pcRowGap = 6, pcCols = 1;
       this.resourceOrder.forEach((res, i) => {
         const col = i % pcCols, row = Math.floor(i / pcCols);
         const bx = 10 + col * (pcIconSize + pcIconGap + pcNumberSlotWidth + pcRateSlotWidth + pcColGap);
@@ -1877,10 +1889,9 @@ class GameScene extends Phaser.Scene {
         } else {
           this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, pcIconSize);
         }
-        // 13 -> 15 (demande utilisateur explicite : bandeau de ressources un peu plus grand).
-        this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + 2).setFontSize(15).setVisible(true);
+        this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + pcIconSize / 2 - 15).setFontSize(30).setVisible(true);
         if (this.resourceRateTexts[res]) {
-          this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + 4).setFontSize(11).setVisible(true);
+          this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + pcIconSize / 2 - 6).setFontSize(11).setVisible(true);
         }
         // Zone de survol/tap (voir showResourceTooltip/resourceHitZones/positionResourceZone) :
         // toute la largeur de la colonne (icône + nombre + gain/perte), pas juste l'icône -- plus
@@ -1992,7 +2003,22 @@ class GameScene extends Phaser.Scene {
     // valeur gagne/perd un chiffre. Un peu plus large pour planches/pierre taillée/pain (voir
     // rateSlotWidth) : gain/perte par minute juste après le nombre (voir resourceRateTexts), pas
     // de ligne séparée -- ore/codex restent au format compact d'origine.
-    const barIconSize = 18, numberSlotWidth = 34, rateSlotWidth = 24, groupGap = 6, iconGap = 3;
+    // 18 -> 36 icône, 16 -> 32 texte (x2, demande utilisateur explicite). Grille 4 colonnes x 2
+    // rangées (pas 1 seule rangée de 8 comme avant) : à cette taille, 8 emplacements sur une seule
+    // ligne débordaient franchement de l'écran sur un téléphone en paysage (dernières ressources
+    // invisibles, chevauchant même les boutons pause/menu en haut à droite -- bug vécu pour de
+    // vrai) -- une largeur de colonne FIXE (mobileColWidth, d'après la largeur d'écran réelle)
+    // garantit qu'elles tiennent toujours, quelle que soit la largeur du téléphone.
+    const barIconSize = 36, iconGap = 5;
+    const mobileResCols = 4;
+    const mobileResRows = Math.ceil(this.resourceOrder.length / mobileResCols);
+    // 170 : réserve la place du chrono/bouton pause/bouton menu en haut à droite (voir plus haut,
+    // this.menuButton/pauseButton/chronoText -- positionnés indépendamment, toujours ancrés à
+    // droite) -- sans cette réserve, la grille pleine largeur venait chevaucher ce groupe sur un
+    // téléphone étroit (bug vécu pour de vrai : dernière colonne illisible, cachée sous le chrono).
+    const mobileRightReserve = 170;
+    const mobileColWidth = (w - 16 - mobileRightReserve) / mobileResCols;
+    const mobileRowHeight = barIconSize + 6;
     const barY = 8;
     // 16 -> 48 (x3, demande utilisateur explicite) : sorti en constante partagée avec la rangée
     // travailleur/logement plus bas (au lieu d'une valeur locale à cet endroit) pour que
@@ -2001,36 +2027,32 @@ class GameScene extends Phaser.Scene {
     // aurait débordé sur la carte en dessous (bug vécu pour de vrai avec l'agrandissement x3).
     const mobileLaborIconSize = 48;
     const statsRowHeight = mobileLaborIconSize + 4;
-    const topBarHeight = barIconSize + statsRowHeight + 18;
+    const topBarHeight = mobileResRows * mobileRowHeight + statsRowHeight + 18;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
     // monde sans réduire la hauteur de caméra elle-même, il faut donc le soustraire à part.
     this.hudTopInset = topBarHeight;
 
     this.resourceBarIconsGraphics.clear().setVisible(true);
-    let bx = 8;
-    for (const res of this.resourceOrder) {
+    this.resourceOrder.forEach((res, i) => {
+      const col = i % mobileResCols, row = Math.floor(i / mobileResCols);
+      const bx = 8 + col * mobileColWidth;
+      const by = barY + row * mobileRowHeight;
       if (this.resourceBarIconTextureKeys[res]) {
-        this.resourceBarIconImages[res].setPosition(bx, barY).setDisplaySize(barIconSize, barIconSize).setVisible(true);
+        this.resourceBarIconImages[res].setPosition(bx, by).setDisplaySize(barIconSize, barIconSize).setVisible(true);
       } else {
-        this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, barY, barIconSize);
+        this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, barIconSize);
       }
-      // setFontSize explicite (demande utilisateur explicite : bandeau un peu plus grand) --
-      // absent avant, le texte gardait alors sa taille de création (voir buildHud) ou une taille
-      // laissée par un précédent passage en mise en page PC (setFontSize différent, voir plus haut).
-      this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, barY + 1).setFontSize(16).setVisible(true);
-      const extra = this.resourceRateTexts[res] ? rateSlotWidth : 0;
+      this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 - 16).setFontSize(32).setVisible(true);
       if (this.resourceRateTexts[res]) {
-        this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap + numberSlotWidth, barY + 3).setFontSize(11).setVisible(true);
+        // Sous le nombre plutôt qu'à sa suite (voir demande utilisateur : colonne large mais pas
+        // infinie, un nombre à 3 chiffres + le indicateur +/- côte à côte serait vite à l'étroit).
+        this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 + 10).setFontSize(11).setVisible(true);
       }
       // Zone de tap (voir showResourceTooltip/resourceHitZones/positionResourceZone) : toute la
-      // largeur de l'emplacement (icône + nombre + gain/perte), pas juste l'icône -- plus facile à
-      // viser au doigt.
-      this.positionResourceZone(
-        this.resourceHitZones[res], bx, barY, barIconSize + iconGap + numberSlotWidth + extra, barIconSize
-      );
-      bx += barIconSize + iconGap + numberSlotWidth + extra + groupGap;
-    }
+      // largeur de la colonne, pas juste l'icône -- plus facile à viser au doigt.
+      this.positionResourceZone(this.resourceHitZones[res], bx, by, mobileColWidth, barIconSize);
+    });
     // Deuxième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
     // neededWorkers/availableHousing), pas des ressources du stock central. Icône + nombre (voir
     // laborStatIconImages/laborStatValueTexts) plutôt qu'un texte brut, même principe que la
@@ -2040,7 +2062,9 @@ class GameScene extends Phaser.Scene {
       // statsRowHeight, qui en dépend pour réserver la bonne hauteur de bandeau). Police agrandie
       // en proportion (15 -> 26), même raison que la colonne PC ci-dessus.
       const laborIconSize = mobileLaborIconSize, laborNumberSlot = 38, laborIconGap = 8, laborGroupGap = 24;
-      const laborY = barY + barIconSize + 4;
+      // barY + mobileResRows * mobileRowHeight (plus barIconSize seul comme avant) : suit
+      // désormais le bas de la grille 4x2 de ressources ci-dessus, pas d'une seule rangée.
+      const laborY = barY + mobileResRows * mobileRowHeight + 4;
       let lx = 8;
       for (const k of ['needed', 'housing']) {
         this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
