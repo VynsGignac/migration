@@ -532,7 +532,7 @@ class GameScene extends Phaser.Scene {
   // ces vues bloquent toute interaction avec la carte en dessous, comme isPointerOverHud le fait
   // déjà pour les éléments du HUD classique.
   isModalOpen() {
-    return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen;
+    return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen;
   }
 
   // Vrai si le pointeur est actuellement au-dessus d'un élément du HUD (bandeau/colonne, pavé de
@@ -884,6 +884,7 @@ class GameScene extends Phaser.Scene {
     this.buildSaveMenu();
     this.buildTechTree();
     this.buildGameOver();
+    this.buildResourceRouting();
 
     // Bouton unique qui ouvre/ferme le pavé de construction en mode mobile, et sert aussi de
     // bouton d'annulation quand un mode de construction est actif (pas besoin de rouvrir le pavé).
@@ -1044,6 +1045,7 @@ class GameScene extends Phaser.Scene {
       this.layoutSaveMenu();
       this.layoutTechTree();
       this.layoutGameOver();
+      this.layoutResourceRouting();
       this.clampZoomAndCamera();
     };
     this.scale.on('resize', this._onResize);
@@ -1333,6 +1335,202 @@ class GameScene extends Phaser.Scene {
     );
 
     this.positionTechTreeNodes();
+  }
+
+  // Panneau modal "Répartition des ressources" (demande utilisateur explicite : clic sur un
+  // Entrepôt -- même coquille que le panneau Arbre technologique ci-dessus (fond plein écran +
+  // panneau centré + titre + fermer), contenu différent : 3 onglets fixes (bois brut/pierre
+  // brute/lingots de fer, voir GameConfig.resourceRouting), chacun listant les bâtiments
+  // consommateurs avec un curseur par bâtiment. Réglage GLOBAL (comme l'arbre technologique), pas
+  // propre à CET Entrepôt précis -- cliquer n'importe quel Entrepôt ouvre le même panneau (voir
+  // handleTap).
+  buildResourceRouting() {
+    this.resourceRoutingOpen = false;
+    this.resourceRoutingTab = 'wood';
+    // Ligne en cours de glisser (voir onPointerMove/updateSliderDrag), pas juste un booléen : porte
+    // directement la ligne concernée (resource/buildingType/track), pas besoin de la retrouver.
+    this.activeSliderDrag = null;
+
+    this.resourceRoutingOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.75)
+      .setOrigin(0, 0).setDepth(1010).setVisible(false).setInteractive();
+    this.resourceRoutingOverlay.on('pointerup', () => this.toggleResourceRouting(false));
+    this.uiElements.push(this.resourceRoutingOverlay);
+
+    this.resourceRoutingPanel = this.add.rectangle(0, 0, 10, 10, 0x14202b, 0.97)
+      .setOrigin(0, 0).setDepth(1011).setStrokeStyle(2, 0xffd23f).setVisible(false).setInteractive();
+    this.uiElements.push(this.resourceRoutingPanel);
+
+    this.resourceRoutingTitle = this.add.text(0, 0, 'Répartition des ressources', {
+      font: 'bold 16px sans-serif', color: '#ffd23f',
+    }).setDepth(1012).setVisible(false);
+    this.uiElements.push(this.resourceRoutingTitle);
+
+    this.resourceRoutingClose = this.add.text(0, 0, '✕', {
+      font: 'bold 15px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 9, y: 6 },
+    }).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.resourceRoutingClose.on('pointerup', () => this.toggleResourceRouting(false));
+    this.uiElements.push(this.resourceRoutingClose);
+
+    // 3 onglets fixes (voir GameConfig.resourceRouting) : un par ressource à plusieurs débouchés
+    // possibles. L'ordre ici (bois/pierre/fer) est celui demandé par l'utilisateur.
+    this.resourceRoutingTabLabels = { wood: 'Bois brut', stone: 'Pierre brute', ironIngot: 'Lingots de fer' };
+    this.resourceRoutingTabButtons = {};
+    for (const res of Object.keys(this.resourceRoutingTabLabels)) {
+      const btn = this.add.text(0, 0, this.resourceRoutingTabLabels[res], {
+        font: 'bold 12px sans-serif', color: '#ffffff', backgroundColor: '#1b3322', padding: { x: 10, y: 6 },
+      }).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+      btn.on('pointerup', () => {
+        this.resourceRoutingTab = res;
+        this.layoutResourceRouting();
+      });
+      this.resourceRoutingTabButtons[res] = btn;
+      this.uiElements.push(btn);
+    }
+
+    // Pool de lignes réutilisées entre onglets (voir refreshResourceRoutingRows), pas une par
+    // ressource/bâtiment : au plus 4 débouchés envisagés par ressource (2 aujourd'hui, voir
+    // GameConfig.resourceRouting) -- les lignes en trop pour un onglet donné sont juste masquées,
+    // même principe que buildButtons/resourceHitZones (pré-créés, repositionnés/cachés).
+    const maxRows = 4;
+    this.resourceRoutingRows = [];
+    for (let i = 0; i < maxRows; i++) {
+      const label = this.add.text(0, 0, '', { font: '13px sans-serif', color: '#ffffff' })
+        .setDepth(1013).setVisible(false);
+      // useHandCursor sur la PISTE entière (pas juste la poignée) : plus facile à attraper, même
+      // principe que resourceHitZones (zone de survol pleine largeur plutôt que la seule icône).
+      const track = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 1)
+        .setOrigin(0, 0.5).setStrokeStyle(1, 0x3a4a55).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+      const fill = this.add.rectangle(0, 0, 10, 10, 0xffd23f, 1)
+        .setOrigin(0, 0.5).setDepth(1014).setVisible(false);
+      const handle = this.add.rectangle(0, 0, 14, 20, 0xffffff, 1)
+        .setOrigin(0.5, 0.5).setStrokeStyle(1, 0x10151a).setDepth(1015).setVisible(false);
+      const percentText = this.add.text(0, 0, '', { font: 'bold 13px sans-serif', color: '#ffd23f' })
+        .setOrigin(0, 0.5).setDepth(1013).setVisible(false);
+      this.uiElements.push(label, track, fill, handle, percentText);
+      const row = { label, track, fill, handle, percentText, resource: null, buildingType: null };
+      // pointerdown sur la piste : démarre le glisser ET applique tout de suite la position tapée
+      // (pas besoin de d'abord bouger pour que ça reflète le clic, comme un vrai curseur).
+      track.on('pointerdown', (pointer) => {
+        this.activeSliderDrag = row;
+        this.updateSliderDrag(pointer);
+      });
+      this.resourceRoutingRows.push(row);
+    }
+  }
+
+  // Suit le pointeur pendant le glisser d'un curseur de répartition (voir onPointerMove/
+  // buildResourceRouting) : convertit sa position X en % le long de la piste (bornée [0,100]),
+  // l'applique via GameState.setResourceRouting (qui redistribue automatiquement le reste, demande
+  // utilisateur explicite) puis rafraîchit l'affichage de TOUTES les lignes de l'onglet -- pas
+  // seulement celle glissée, puisque les autres bougent aussi.
+  updateSliderDrag(pointer) {
+    const row = this.activeSliderDrag;
+    if (!row || !row.resource) return;
+    const bounds = row.track.getBounds();
+    const percent = Math.max(0, Math.min(100, ((pointer.x - bounds.x) / bounds.width) * 100));
+    GameState.setResourceRouting(row.resource, row.buildingType, percent);
+    this.refreshResourceRoutingRows();
+  }
+
+  // Redessine le contenu (labels/pistes/poignées/%) de l'onglet actuellement affiché -- appelée au
+  // changement d'onglet (layoutResourceRouting) ET après chaque glisser de curseur (updateSliderDrag),
+  // puisque bouger UN curseur en bouge d'autres (redistribution, voir GameState.setResourceRouting).
+  refreshResourceRoutingRows() {
+    const res = this.resourceRoutingTab;
+    const cfg = GameConfig.resourceRouting[res];
+    const routing = GameState.resourceRouting[res];
+    const consumers = cfg.consumers;
+    const panel = this.resourceRoutingPanel;
+    const rowY0 = panel.y + 100;
+    const rowGap = 46;
+    const labelX = panel.x + 20;
+    const labelWidth = 140;
+    const percentWidth = 46;
+    const trackX = labelX + labelWidth;
+    const trackWidth = Math.max(60, panel.width - labelWidth - percentWidth - 40);
+    const trackHeight = 10;
+
+    this.resourceRoutingRows.forEach((row, i) => {
+      if (i >= consumers.length) {
+        row.label.setVisible(false); row.track.setVisible(false); row.fill.setVisible(false);
+        row.handle.setVisible(false); row.percentText.setVisible(false);
+        return;
+      }
+      const buildingType = consumers[i];
+      const percent = routing[buildingType] || 0;
+      const y = rowY0 + i * rowGap;
+      row.resource = res;
+      row.buildingType = buildingType;
+      row.label.setText(GameConfig.buildings[buildingType].name).setPosition(labelX, y - 9).setVisible(true);
+      this.positionResourceZone(row.track, trackX, y, trackWidth, trackHeight);
+      row.track.setVisible(true);
+      row.fill.setPosition(trackX, y).setSize(Math.max(1, trackWidth * percent / 100), trackHeight).setVisible(true);
+      row.handle.setPosition(trackX + trackWidth * percent / 100, y).setVisible(true);
+      row.percentText.setText(`${Math.round(percent)} %`).setPosition(trackX + trackWidth + 12, y).setVisible(true);
+    });
+  }
+
+  layoutResourceRouting() {
+    if (!this.resourceRoutingPanel) return; // pas encore construit (premier layoutHud avant create)
+    const w = this.scale.width, h = this.scale.height;
+    this.resourceRoutingOverlay.setSize(w, h);
+
+    const panelWidth = Math.min(w - 32, 640);
+    const panelHeight = Math.min(h - 24, 360);
+    const px = (w - panelWidth) / 2;
+    const py = (h - panelHeight) / 2;
+    this.resourceRoutingPanel.setPosition(px, py).setSize(panelWidth, panelHeight);
+    this.resourceRoutingTitle.setPosition(px + 16, py + 12).setFontSize(this.mobileLayout ? 13 : 16);
+    this.resourceRoutingClose.setPosition(px + panelWidth - this.resourceRoutingClose.width - 10, py + 8);
+
+    let tabX = px + 16;
+    const tabY = py + 46;
+    for (const res of Object.keys(this.resourceRoutingTabLabels)) {
+      const btn = this.resourceRoutingTabButtons[res];
+      const active = res === this.resourceRoutingTab;
+      btn.setPosition(tabX, tabY).setVisible(true)
+        .setBackgroundColor(active ? '#ffd23f' : '#1b3322')
+        .setColor(active ? '#10151a' : '#ffffff');
+      tabX += btn.width + 8;
+    }
+
+    if (this.resourceRoutingOpen) this.refreshResourceRoutingRows();
+  }
+
+  // Bascule ouverture/fermeture, même principe que toggleTechTree (pause automatique tant que le
+  // panneau est ouvert, levée seulement si c'est CETTE ouverture qui l'a posée).
+  toggleResourceRouting(forceState) {
+    this.resourceRoutingOpen = forceState !== undefined ? forceState : !this.resourceRoutingOpen;
+    const visible = this.resourceRoutingOpen;
+    this.resourceRoutingOverlay.setVisible(visible);
+    this.resourceRoutingPanel.setVisible(visible);
+    this.resourceRoutingTitle.setVisible(visible);
+    this.resourceRoutingClose.setVisible(visible);
+    for (const res in this.resourceRoutingTabButtons) this.resourceRoutingTabButtons[res].setVisible(visible);
+    if (!visible) {
+      this.activeSliderDrag = null;
+      for (const row of this.resourceRoutingRows) {
+        row.label.setVisible(false); row.track.setVisible(false); row.fill.setVisible(false);
+        row.handle.setVisible(false); row.percentText.setVisible(false);
+      }
+    }
+
+    if (visible) {
+      this.pausedByResourceRouting = !this.paused;
+      if (!this.paused) this.togglePause();
+      this.resourceRoutingTab = 'wood';
+      this.layoutResourceRouting();
+      this.refreshResourceRoutingRows();
+    } else if (this.pausedByResourceRouting) {
+      this.pausedByResourceRouting = false;
+      if (this.paused) this.togglePause();
+    }
+  }
+
+  // Point d'entrée depuis handleTap() : un Entrepôt ouvre ce panneau au lieu du panneau d'info
+  // habituel (demande utilisateur explicite : "comme pour l'université").
+  openResourceRouting() {
+    this.toggleResourceRouting(true);
   }
 
   // Écran de défaite (voir triggerGameOver/GameState.hasAnyWarehouse) : plein écran, mais SANS le
@@ -3437,6 +3635,10 @@ class GameScene extends Phaser.Scene {
       this.techTreeNodeClickedThisPointer = false;
       return;
     }
+    // Rien à faire ici pour le panneau Répartition des ressources (voir openResourceRouting) : ses
+    // curseurs gèrent leur propre 'pointerdown' (voir buildResourceRouting), pas besoin d'un
+    // équivalent de techTreePanDragging -- isModalOpen() juste en dessous suffit déjà à bloquer le
+    // glisser de la caméra pendant que ce panneau est ouvert.
     if (this.isModalOpen()) return;
     this.isDragging = true;
     this.dragMoved = 0;
@@ -3469,6 +3671,13 @@ class GameScene extends Phaser.Scene {
         this.techTreePanLastY = pointer.y;
         this.positionTechTreeNodes();
       }
+      return;
+    }
+    // Curseur de répartition en cours de glisser (voir buildResourceRouting/updateSliderDrag) :
+    // suit le pointeur même hors de la piste elle-même (glisser rapide), comme le panning de
+    // l'arbre technologique ci-dessus.
+    if (this.resourceRoutingOpen) {
+      if (this.activeSliderDrag && pointer.isDown) this.updateSliderDrag(pointer);
       return;
     }
     if (this.isModalOpen()) return;
@@ -3512,6 +3721,10 @@ class GameScene extends Phaser.Scene {
         this.refreshTechTree();
         this.updateTechTreeBubble();
       }
+      return;
+    }
+    if (this.resourceRoutingOpen) {
+      this.activeSliderDrag = null;
       return;
     }
     if (this.isModalOpen()) return;
@@ -3641,6 +3854,18 @@ class GameScene extends Phaser.Scene {
       this.selectedBuildingKey = GameState.key(wrappedCol, row);
       this.redrawActionZone();
       this.openTechTree(wrappedCol, row);
+      return;
+    }
+
+    // Un Entrepôt ouvre le panneau "Répartition des ressources" au lieu du panneau d'info habituel
+    // (demande utilisateur explicite : "comme pour l'université") -- réglage GLOBAL (voir
+    // buildResourceRouting), pas propre à CET Entrepôt : n'importe lequel ouvre le même panneau,
+    // pas besoin de vérifier une route adjacente comme l'Université (un Entrepôt n'a pas besoin
+    // d'être relié à lui-même).
+    if (tappedTile.type === 'warehouse' && !tappedTile.underConstruction) {
+      this.selectedBuildingKey = GameState.key(wrappedCol, row);
+      this.redrawActionZone();
+      this.openResourceRouting();
       return;
     }
 
@@ -3805,6 +4030,7 @@ class GameScene extends Phaser.Scene {
       this.layoutHud();
       this.layoutSaveMenu();
       this.layoutTechTree();
+      this.layoutResourceRouting();
     }
     this.clampZoomAndCamera();
 

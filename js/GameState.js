@@ -5,6 +5,16 @@
 // Ne dessine rien : GameScene lit cet état pour l'afficher.
 // ============================================================
 
+// Répartition par défaut des ressources à plusieurs débouchés (voir GameConfig.resourceRouting) :
+// fonction top-niveau (pas une méthode GameState) car utilisée dans la définition même de l'objet
+// littéral GameState ci-dessous (resourceRouting:), AVANT que `this` n'y soit utilisable, ainsi que
+// par reset()/deserialize() -- une seule source de vérité pour ces 3 usages.
+function defaultResourceRouting() {
+  return Object.fromEntries(
+    Object.entries(GameConfig.resourceRouting).map(([res, cfg]) => [res, { ...cfg.defaults }])
+  );
+}
+
 const GameState = {
   cols: GameConfig.world.cols,
   rows: GameConfig.world.rows,
@@ -22,6 +32,11 @@ const GameState = {
   // Résultat du dernier calcul de allocateLabor (Map "col,row" -> { col, row, workers }),
   // recalculé à chaque tick de production. Lu par l'UI via getAssignedWorkers.
   laborAssignment: null,
+  // Répartition voulue par le joueur pour les ressources à plusieurs débouchés (voir
+  // GameConfig.resourceRouting/setResourceRouting/GameScene.openResourceRouting, demande
+  // utilisateur explicite) : "resource" -> "type de bâtiment" -> % (les % d'une même ressource
+  // somment toujours à 100, voir setResourceRouting).
+  resourceRouting: defaultResourceRouting(),
   // Tirs de tour en cours d'affichage : { fromCol, fromRow, toX, toRow, ttl }, purement visuel
   // (les dégâts sont déjà appliqués au moment du tir) — voir GameScene.redrawShots.
   shots: [],
@@ -179,6 +194,30 @@ const GameState = {
     tile.devotionUpgraded = true;
     this.dirty = true;
     return true;
+  },
+
+  // Change la part de "resource" envoyée vers "buildingType" (demande utilisateur explicite : menu
+  // Entrepôt, voir GameConfig.resourceRouting/GameScene.openResourceRouting) et redistribue le
+  // reste proportionnellement entre les AUTRES débouchés de cette même ressource, pour que la somme
+  // reste toujours 100 -- avec exactement 2 débouchés (le seul cas actuel), l'autre reçoit donc
+  // simplement 100 - percent, mais cette formule reste correcte pour plus de 2 (répartition égale
+  // si tous les autres étaient déjà à 0, sinon au prorata de leurs poids actuels).
+  setResourceRouting(resource, buildingType, percent) {
+    const routing = this.resourceRouting[resource];
+    if (!routing || !(buildingType in routing)) return;
+    percent = Math.max(0, Math.min(100, percent));
+    const others = Object.keys(routing).filter((k) => k !== buildingType);
+    routing[buildingType] = percent;
+    if (others.length === 0) { this.dirty = true; return; }
+    const remainder = 100 - percent;
+    const othersSum = others.reduce((s, k) => s + routing[k], 0);
+    if (othersSum <= 0) {
+      const share = remainder / others.length;
+      for (const k of others) routing[k] = share;
+    } else {
+      for (const k of others) routing[k] = remainder * (routing[k] / othersSum);
+    }
+    this.dirty = true;
   },
 
   // Transforme un Donjon déjà posé en Château (voir GameConfig.buildings.castle et techTree.
@@ -1417,8 +1456,31 @@ const GameState = {
       // Au sein d'UN type, la cible choisie est celle qui a le plus de place libre (scoreFn), pas
       // juste la plus proche : répartit les livraisons entre plusieurs cibles compatibles au lieu
       // de toujours saturer la même (voir findBestPathToBuildingType).
+      // Ordre normalement fixe (def.linkTargets), sauf si ce outputResource a une répartition
+      // choisie par le joueur (voir GameConfig.resourceRouting/setResourceRouting/GameScene.
+      // openResourceRouting, demande utilisateur explicite) : tirage pondéré par les % configurés
+      // pour décider quel type essayer EN PREMIER pour CE chargement précis -- pas un partage exact
+      // par chargement (impossible avec des lots discrets), une PROPORTION statistique sur
+      // beaucoup d'envois. Le repli sur les autres types juste en dessous reste inchangé : si le
+      // type tiré au sort n'est pas joignable, on retente les autres comme avant -- couvre déjà
+      // "aucun bâtiment du type visé à portée, tout part vers l'unique type disponible" sans code
+      // spécial, demande utilisateur explicite.
+      let orderedTypes = def.linkTargets;
+      const routing = this.resourceRouting[def.outputResource];
+      if (routing && def.linkTargets.length > 1) {
+        const total = def.linkTargets.reduce((s, t) => s + (routing[t] || 0), 0);
+        if (total > 0) {
+          let r = Math.random() * total;
+          let chosen = def.linkTargets[0];
+          for (const t of def.linkTargets) {
+            r -= (routing[t] || 0);
+            if (r <= 0) { chosen = t; break; }
+          }
+          orderedTypes = [chosen, ...def.linkTargets.filter((t) => t !== chosen)];
+        }
+      }
       let found = null;
-      for (const targetType of def.linkTargets) {
+      for (const targetType of orderedTypes) {
         found = this.findBestPathToBuildingType(col, row, [targetType], def.linkRange, (t) => {
           if (t.type === 'warehouse') return Infinity;
           const tdef = GameConfig.buildings[t.type];
@@ -1516,10 +1578,34 @@ const GameState = {
       if (this.shipments.some(s => s.fromKey === key && s.resource === 'ironIngot')) continue;
 
       const [col, row] = key.split(',').map(Number);
-      const found = this.findBestPathToBuildingType(col, row, ['armurier', 'sculpteur'], this.warehouseZoneRadius(), (t) => {
-        const tdef = GameConfig.buildings[t.type];
-        return tdef.inputCap + this.capBonus() - this._inputBufferOf(t, tdef, 'ironIngot');
-      });
+      // Tirage pondéré par GameConfig.resourceRouting.ironIngot (voir _spawnShipments, même
+      // mécanisme et mêmes commentaires -- demande utilisateur explicite) : essaie chaque type
+      // SÉPARÉMENT dans l'ordre tiré au sort, plutôt qu'une seule recherche combinée sur les deux
+      // types comme avant (findBestPathToBuildingType([...]) choisissait alors toujours le
+      // meilleur score entre les deux, sans jamais tenir compte d'une répartition voulue).
+      const ironTargetTypes = ['armurier', 'sculpteur'];
+      let orderedIronTypes = ironTargetTypes;
+      const ironRouting = this.resourceRouting.ironIngot;
+      if (ironRouting) {
+        const total = ironTargetTypes.reduce((s, t) => s + (ironRouting[t] || 0), 0);
+        if (total > 0) {
+          let r = Math.random() * total;
+          let chosen = ironTargetTypes[0];
+          for (const t of ironTargetTypes) {
+            r -= (ironRouting[t] || 0);
+            if (r <= 0) { chosen = t; break; }
+          }
+          orderedIronTypes = [chosen, ...ironTargetTypes.filter((t) => t !== chosen)];
+        }
+      }
+      let found = null;
+      for (const targetType of orderedIronTypes) {
+        found = this.findBestPathToBuildingType(col, row, [targetType], this.warehouseZoneRadius(), (t) => {
+          const tdef = GameConfig.buildings[t.type];
+          return tdef.inputCap + this.capBonus() - this._inputBufferOf(t, tdef, 'ironIngot');
+        });
+        if (found) break;
+      }
       if (!found) continue;
 
       const destKey = this.key(found.targetCol, found.targetRow);
@@ -1755,6 +1841,7 @@ const GameState = {
     this.shipments = [];
     this.nextShipmentId = 1;
     this.laborAssignment = null;
+    this.resourceRouting = defaultResourceRouting();
     this.shots = [];
     this.unlockedTech = new Map();
     this.revealedTiles = new Set();
@@ -1779,6 +1866,7 @@ const GameState = {
       resourceTiles: Array.from(this.resourceTiles.entries()).map(([k, t]) => [k, { ...t }]),
       shipments: this.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) })),
       nextShipmentId: this.nextShipmentId,
+      resourceRouting: this.resourceRouting,
       unlockedTech: Array.from(this.unlockedTech.entries()),
       maxPopulation: this.maxPopulation,
       maxBuildings: this.maxBuildings,
@@ -1799,6 +1887,9 @@ const GameState = {
     // Compatible avec l'ancien format (liste d'ids, sans niveau — voir l'ancien unlockedTech: Set) :
     // une entrée qui n'est pas déjà une paire [id, niveau] est traitée comme le niveau 1.
     this.unlockedTech = new Map((data.unlockedTech || []).map(e => Array.isArray(e) ? e : [e, 1]));
+    // || defaultResourceRouting() : compatible avec les sauvegardes d'avant cette fonctionnalité
+    // (demande utilisateur explicite), même principe que maxPopulation/maxBuildings ci-dessus.
+    this.resourceRouting = data.resourceRouting || defaultResourceRouting();
     this.laborAssignment = null;
     this.dirty = true;
     this.buildingsDirty = true;

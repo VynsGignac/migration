@@ -118,6 +118,18 @@ const GameConfig = {
     // qu'un petit coussin pour les toutes premières recherches.
     codex: { long: 'Codex', short: 'Codex', color: 0x6f5fa3 },
   },
+  // Répartition manuelle des ressources à plusieurs débouchés possibles (demande utilisateur
+  // explicite : menu ouvert en tapant un Entrepôt -- un onglet par ressource, un curseur par
+  // bâtiment consommateur, voir GameState.resourceRouting/setResourceRouting/GameScene.
+  // openResourceRouting). "consumers" = les types de bâtiments listés dans cet onglet, dans
+  // l'ordre d'affichage ; "defaults" = répartition de départ (bois/pierre : tout vers la chaîne
+  // historique -- Scierie/Tailleur -- rien vers Armurier/Sculpteur tant que le joueur n'a pas
+  // réparti lui-même ; fer : 50/50, aucune chaîne "historique" entre Armurier et Sculpteur).
+  resourceRouting: {
+    wood: { consumers: ['sawmill', 'armurier'], defaults: { sawmill: 100, armurier: 0 } },
+    stone: { consumers: ['stonecutter', 'sculpteur'], defaults: { stonecutter: 100, sculpteur: 0 } },
+    ironIngot: { consumers: ['armurier', 'sculpteur'], defaults: { armurier: 50, sculpteur: 50 } },
+  },
   // Dévotion (demande utilisateur explicite) : PAS un stock qui s'accumule comme les autres
   // ressources -- un pourcentage (0-100, voir GameState.resources.devotion) qui redescend tout
   // seul avec le temps (decayRate, %/s) et sert à "améliorer" un bâtiment (coût upgradeCost, %,
