@@ -31,6 +31,10 @@ class GameScene extends Phaser.Scene {
     // Icone dediee pour le bouton (fond retire, demande utilisateur explicite -- roadTile garde son
     // fond noir plein, nécessaire tel quel pour la case de la carte, voir redrawTileArt).
     this.load.image('roadIcon', GameAssets.roadIcon);
+    // Icones dediees pour "main-d'oeuvre necessaire"/"logements libres" (demande utilisateur
+    // explicite, remplacent le texte brut -- voir populationStatsText plus bas).
+    this.load.image('missingWorkerIcon', GameAssets.missingWorkerIcon);
+    this.load.image('emptyHousingIcon', GameAssets.emptyHousingIcon);
     this.load.image('woodIcon', GameAssets.woodIcon);
     this.load.image('planksIcon', GameAssets.planksIcon);
     this.load.image('stoneIcon', GameAssets.stoneIcon);
@@ -658,11 +662,21 @@ class GameScene extends Phaser.Scene {
     // Main-d'œuvre nécessaire pour amener toute la production à 100 % (voir GameState.
     // neededWorkers) et logements encore libres (GameState.availableHousing) : contrairement aux
     // ressources ci-dessus (stock central), ce sont des indicateurs d'état de la population,
-    // positionnés juste sous le bandeau/texte de ressources (voir layoutHud).
-    this.populationStatsText = this.add.text(0, 0, '', {
-      font: 'bold 12px sans-serif', color: '#c9e8ff', backgroundColor: '#000000aa', padding: { x: 8, y: 4 },
-    }).setDepth(1000);
-    this.uiElements.push(this.populationStatsText);
+    // positionnés juste sous le bandeau/texte de ressources (voir layoutHud). Icône + nombre
+    // (demande utilisateur explicite, images fournies) plutôt qu'un texte brut ("Main-d'œuvre
+    // nécessaire : X") -- même principe que le reste du bandeau (resourceBarIconImages/
+    // resourceValueTexts), avec juste 2 entrées fixes au lieu d'une par ressource.
+    this.laborStatIconImages = {
+      needed: this.add.image(0, 0, 'missingWorkerIcon').setOrigin(0, 0).setDepth(1000).setVisible(false),
+      housing: this.add.image(0, 0, 'emptyHousingIcon').setOrigin(0, 0).setDepth(1000).setVisible(false),
+    };
+    this.laborStatValueTexts = {
+      needed: this.add.text(0, 0, '0', { font: 'bold 14px sans-serif', color: '#c9e8ff' }).setDepth(1000).setVisible(false),
+      housing: this.add.text(0, 0, '0', { font: 'bold 14px sans-serif', color: '#c9e8ff' }).setDepth(1000).setVisible(false),
+    };
+    for (const k of ['needed', 'housing']) {
+      this.uiElements.push(this.laborStatIconImages[k], this.laborStatValueTexts[k]);
+    }
 
     // Bandeau ressources mobile : une seule ligne icône+valeur par ressource (le texte complet
     // PC, sur 3 lignes, prend trop de hauteur sur un écran de téléphone en paysage). Les icônes
@@ -1823,7 +1837,19 @@ class GameScene extends Phaser.Scene {
       });
       const iconGridHeight = Math.ceil(this.resourceOrder.length / pcCols) * (pcIconSize + pcRowGap);
 
-      this.populationStatsText.setPosition(10, 10 + iconGridHeight + 6).setFontSize(12).setVisible(true);
+      // Icône + nombre pour chacun des 2 indicateurs, côte à côte (voir laborStatIconImages/
+      // laborStatValueTexts, remplace l'ancien texte brut) -- même ligne que l'ancien
+      // populationStatsText, largeur de colonne PC (220px) largement suffisante pour les deux.
+      {
+        const laborIconSize = 16, laborNumberSlot = 22, laborIconGap = 4, laborGroupGap = 14;
+        const laborY = 10 + iconGridHeight + 6;
+        let lx = 10;
+        for (const k of ['needed', 'housing']) {
+          this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
+          this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY - 1).setFontSize(14).setVisible(true);
+          lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
+        }
+      }
 
       // catBlockY calculé plus haut (voir le commentaire là-bas). Le panneau d'info dispose
       // toujours de tout l'espace entre les ressources et cette ligne pour respirer.
@@ -1934,8 +1960,19 @@ class GameScene extends Phaser.Scene {
       bx += barIconSize + iconGap + numberSlotWidth + extra + groupGap;
     }
     // Deuxième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
-    // neededWorkers/availableHousing), pas des ressources du stock central.
-    this.populationStatsText.setPosition(8, barY + barIconSize + 4).setFontSize(12).setVisible(true);
+    // neededWorkers/availableHousing), pas des ressources du stock central. Icône + nombre (voir
+    // laborStatIconImages/laborStatValueTexts) plutôt qu'un texte brut, même principe que la
+    // ligne du dessus.
+    {
+      const laborIconSize = 16, laborNumberSlot = 26, laborIconGap = 4, laborGroupGap = 16;
+      const laborY = barY + barIconSize + 4;
+      let lx = 8;
+      for (const k of ['needed', 'housing']) {
+        this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
+        this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY - 1).setFontSize(15).setVisible(true);
+        lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
+      }
+    }
 
     // Tailles réduites (voir demande utilisateur : le pavé prenait la moitié de l'écran sur
     // téléphone) : un bouton de 42-56px de haut avec 3 colonnes sur 2 rangées, plus l'onglet de
@@ -3687,9 +3724,8 @@ class GameScene extends Phaser.Scene {
       else if (rate < 0) t.setText(`${rate}`).setColor('#e07a7a');
       else t.setText('±0').setColor('#9aa5ad');
     }
-    this.populationStatsText.setText(
-      `Main-d'œuvre nécessaire : ${GameState.neededWorkers()}   Logements libres : ${GameState.availableHousing()}`
-    );
+    this.laborStatValueTexts.needed.setText(String(GameState.neededWorkers()));
+    this.laborStatValueTexts.housing.setText(String(GameState.availableHousing()));
 
     // Chrono (voir demande utilisateur) : this.elapsed n'avance déjà que hors pause (voir plus
     // haut, dans le bloc "if (!this.paused)") -- rien à faire de spécial ici pour la pause,
