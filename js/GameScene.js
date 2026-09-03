@@ -1687,7 +1687,12 @@ class GameScene extends Phaser.Scene {
     // 240 -> 300 (demande utilisateur explicite : "boutons plus grand, pour utiliser toute la
     // largeur") -- plus de place par colonne pour des boutons carrés vraiment grands, pas juste
     // confortables.
-    const desktopSidebarWidth = 300;
+    // 300 -> 220 (demande utilisateur explicite : "réduit la largeur des colonnes et du menu en
+    // général", sans toucher à la hauteur des boutons ni déformer les icônes -- desktopBtnHeight
+    // reste calculé uniquement à partir de desktopBuildRows/l'espace vertical disponible, voir
+    // plus bas, donc inchangé par ce paramètre) -- desktopColWidthBudget/desktopBtnWidth en
+    // découlent directement plus bas.
+    const desktopSidebarWidth = 220;
     // 4 -> 2 (demande utilisateur explicite : "colle les boutons entre eux, tu peux laisser que
     // quelque pixel d'ecart").
     const desktopGap = 2;
@@ -1847,9 +1852,14 @@ class GameScene extends Phaser.Scene {
       // extracteur+transformateur, voir buildHud -- un simple remplissage ligne par ligne suffit
       // donc à aligner chaque paire sur sa propre rangée). PAS le même principe que la grille
       // mobile (colonnes de paires empilées, voir plus bas) : ici la largeur, pas la hauteur, est
-      // la contrainte à économiser. Route exclue (voir desktopHasRoad/desktopNonRoadIds) : sa
-      // propre rangée, toujours colonne 0 (en bas à gauche, demande utilisateur explicite), après
-      // TOUT le reste de la grille.
+      // la contrainte à économiser. Route exclue (voir desktopHasRoad/desktopNonRoadIds) : position
+      // FIXE (demande utilisateur explicite : "si on considere 10 cases dans chaque menu, je veux
+      // que le bouton route soit toujours dans la case en bas à droite") -- dernière colonne/
+      // dernière rangée de la grille de référence (desktopBuildRows, calée sur Production, la plus
+      // fournie -- voir plus haut), PAS calculée à partir du nombre de bâtiments de l'onglet actif :
+      // la route reste ainsi au même endroit à l'écran quel que soit l'onglet (avant : toujours
+      // juste après le dernier bâtiment de l'onglet, donc bas-GAUCHE et à une hauteur variable
+      // selon l'onglet -- changé ici sur demande explicite).
       const listTop = catBlockY + catBlockHeight + desktopGap;
       const desktopPlaceBtn = (id, col, row) => {
         const bx = desktopBtnMargin + col * (desktopColWidthBudget + desktopGap);
@@ -1861,7 +1871,7 @@ class GameScene extends Phaser.Scene {
         desktopPlaceBtn(id, i % desktopBuildCols, Math.floor(i / desktopBuildCols));
       });
       if (desktopHasRoad) {
-        desktopPlaceBtn('road', 0, Math.ceil(desktopNonRoadIds.length / desktopBuildCols));
+        desktopPlaceBtn('road', desktopBuildCols - 1, desktopBuildRows - 1);
       }
 
       this.toastText.setPosition(
