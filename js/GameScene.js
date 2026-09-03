@@ -1784,11 +1784,11 @@ class GameScene extends Phaser.Scene {
     // (~8 lignes de texte) pour éviter ce chevauchement même avec un texte d'info long. Reste
     // indépendant du nombre de boutons de l'onglet actif (pas de "saut" en changeant d'onglet,
     // demande utilisateur explicite plus ancienne).
-    // 40/6 = pcIconSize/pcRowGap plus bas (grille de ressources, x2 demande utilisateur explicite,
-    // 1 seule colonne désormais -- voir le commentaire là-bas) -- dupliqués ici en dur pour rester
-    // calculables AVANT le bloc de rendu PC (qui décide s'il s'applique), à garder synchronisés si
-    // ces constantes changent.
-    const desktopIconGridHeight = this.resourceOrder.length * (40 + 6);
+    // 40/6 = pcIconSize/pcRowGap, 2 = pcCols plus bas (grille de ressources -- icônes x2 gardées,
+    // texte réduit pour retenir 2 colonnes, demande utilisateur explicite) -- dupliqués ici en dur
+    // pour rester calculables AVANT le bloc de rendu PC (qui décide s'il s'applique), à garder
+    // synchronisés si ces constantes changent.
+    const desktopIconGridHeight = Math.ceil(this.resourceOrder.length / 2) * (40 + 6);
     // 16 -> 48 (x3, demande utilisateur explicite) : dupliqué ici en dur pour la même raison que
     // pcIconSize/pcRowGap ci-dessus (garder en phase avec la valeur réellement utilisée plus bas
     // dans le bloc de rendu PC) -- 6 = marge au-dessus de cette rangée, 12 = marge en dessous avant
@@ -1873,13 +1873,11 @@ class GameScene extends Phaser.Scene {
       // 2 colonnes (pas 3) : laisse assez de place à droite du nombre pour le gain/perte par
       // minute des 3 ressources principales (voir resourceRateTexts) sans le faire déborder sur
       // la colonne suivante.
-      // 20 -> 40 icône, 15 -> 30 texte (x2, demande utilisateur explicite). 2 -> 1 colonne : la
-      // colonne PC ne fait que 220px de large (voir desktopSidebarWidth), une 2e colonne à cette
-      // taille aurait débordé dessus/sur la carte -- 1 seule colonne reste confortablement dans
-      // cette largeur, quitte à être 2x plus haute (le mécanisme de boutons de construction qui
-      // rétrécissent dynamiquement, voir plus bas, absorbe déjà cette perte de hauteur sans rien
-      // casser, contrairement à un débordement horizontal qui aurait été un vrai bug visuel).
-      const pcIconSize = 40, pcNumberSlotWidth = 56, pcRateSlotWidth = 28, pcIconGap = 6, pcColGap = 8, pcRowGap = 6, pcCols = 1;
+      // Icônes gardées x2 (40px), texte réduit (30 -> 13) pour retenir 2 colonnes dans les 220px de
+      // la colonne PC (demande utilisateur explicite : "reduit la taille du texte pour que les
+      // éléments tiennent sur 2 colonnes") -- emplacements du nombre/du gain-perte resserrés en
+      // proportion (56 -> 24, 28 -> 20).
+      const pcIconSize = 40, pcNumberSlotWidth = 24, pcRateSlotWidth = 20, pcIconGap = 4, pcColGap = 6, pcRowGap = 6, pcCols = 2;
       this.resourceOrder.forEach((res, i) => {
         const col = i % pcCols, row = Math.floor(i / pcCols);
         const bx = 10 + col * (pcIconSize + pcIconGap + pcNumberSlotWidth + pcRateSlotWidth + pcColGap);
@@ -1889,7 +1887,7 @@ class GameScene extends Phaser.Scene {
         } else {
           this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, pcIconSize);
         }
-        this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + pcIconSize / 2 - 15).setFontSize(30).setVisible(true);
+        this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + pcIconSize / 2 - 8).setFontSize(13).setVisible(true);
         if (this.resourceRateTexts[res]) {
           this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + pcIconSize / 2 - 6).setFontSize(11).setVisible(true);
         }
@@ -2009,15 +2007,26 @@ class GameScene extends Phaser.Scene {
     // invisibles, chevauchant même les boutons pause/menu en haut à droite -- bug vécu pour de
     // vrai) -- une largeur de colonne FIXE (mobileColWidth, d'après la largeur d'écran réelle)
     // garantit qu'elles tiennent toujours, quelle que soit la largeur du téléphone.
-    const barIconSize = 36, iconGap = 5;
-    const mobileResCols = 4;
-    const mobileResRows = Math.ceil(this.resourceOrder.length / mobileResCols);
+    // Icône gardée x2 (36px), texte réduit (32 -> 13) pour retenir 1 seule rangée de 8 ressources
+    // (demande utilisateur explicite : "reduit la taille du texte pour que les éléments tiennent...
+    // sur 1 ligne sur telephone") -- emplacements du nombre/du gain-perte resserrés en conséquence
+    // (mobileNumberSlot/mobileRateSlot).
+    const barIconSize = 36, iconGap = 3;
+    const mobileNumberSlot = 24, mobileRateSlot = 16;
     // 170 : réserve la place du chrono/bouton pause/bouton menu en haut à droite (voir plus haut,
     // this.menuButton/pauseButton/chronoText -- positionnés indépendamment, toujours ancrés à
     // droite) -- sans cette réserve, la grille pleine largeur venait chevaucher ce groupe sur un
     // téléphone étroit (bug vécu pour de vrai : dernière colonne illisible, cachée sous le chrono).
     const mobileRightReserve = 170;
-    const mobileColWidth = (w - 16 - mobileRightReserve) / mobileResCols;
+    const mobileAvailableWidth = w - 16 - mobileRightReserve;
+    // 8 colonnes (1 seule rangée, demande utilisateur explicite) SI ça tient réellement dans la
+    // largeur disponible à cette taille d'icône/texte, sinon repli automatique sur la grille 4x2
+    // précédente -- ne déborde donc jamais sur un téléphone plus étroit que prévu (même filet de
+    // sécurité que le mécanisme de boutons de construction qui rétrécissent plutôt que déborder).
+    const mobileMinColWidth = barIconSize + iconGap + mobileNumberSlot + mobileRateSlot;
+    const mobileResCols = (mobileAvailableWidth / 8 >= mobileMinColWidth) ? 8 : 4;
+    const mobileResRows = Math.ceil(this.resourceOrder.length / mobileResCols);
+    const mobileColWidth = mobileAvailableWidth / mobileResCols;
     const mobileRowHeight = barIconSize + 6;
     const barY = 8;
     // 16 -> 48 (x3, demande utilisateur explicite) : sorti en constante partagée avec la rangée
@@ -2043,11 +2052,9 @@ class GameScene extends Phaser.Scene {
       } else {
         this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, barIconSize);
       }
-      this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 - 16).setFontSize(32).setVisible(true);
+      this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 - 8).setFontSize(13).setVisible(true);
       if (this.resourceRateTexts[res]) {
-        // Sous le nombre plutôt qu'à sa suite (voir demande utilisateur : colonne large mais pas
-        // infinie, un nombre à 3 chiffres + le indicateur +/- côte à côte serait vite à l'étroit).
-        this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 + 10).setFontSize(11).setVisible(true);
+        this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap + mobileNumberSlot, by + barIconSize / 2 - 6).setFontSize(11).setVisible(true);
       }
       // Zone de tap (voir showResourceTooltip/resourceHitZones/positionResourceZone) : toute la
       // largeur de la colonne, pas juste l'icône -- plus facile à viser au doigt.
