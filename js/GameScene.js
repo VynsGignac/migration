@@ -28,6 +28,9 @@ class GameScene extends Phaser.Scene {
     this.load.image('mountainTile', GameAssets.mountainTile);
     this.load.image('corpseTile', GameAssets.corpseTile);
     this.load.image('roadTile', GameAssets.roadTile);
+    // Icone dediee pour le bouton (fond retire, demande utilisateur explicite -- roadTile garde son
+    // fond noir plein, nécessaire tel quel pour la case de la carte, voir redrawTileArt).
+    this.load.image('roadIcon', GameAssets.roadIcon);
     this.load.image('woodIcon', GameAssets.woodIcon);
     this.load.image('planksIcon', GameAssets.planksIcon);
     this.load.image('stoneIcon', GameAssets.stoneIcon);
@@ -139,12 +142,13 @@ class GameScene extends Phaser.Scene {
       foundry: 'foundryIcon',
       watchtower: 'watchtowerIcon',
       farm: 'farmIcon',
-      // roadTile (demande utilisateur explicite : "utilise l'image de la route comme icone de
-      // route") -- même texture que sur la carte (voir buildingTileArtKeys), pas une icône dédiée
-      // séparée : redrawTileArt/redrawBuildings vérifient buildingTileArtKeys AVANT
-      // buildingIconKeys, donc ce doublon ne change rien à l'affichage de la route sur la carte,
-      // seulement au bouton du menu de construction (voir positionBuildButtonContents).
-      road: 'roadTile',
+      // roadIcon (demande utilisateur explicite : "utilise l'image de la route comme icone de
+      // route", fond retiré ensuite -- même image que roadTile mais recadrée serrée sur fond
+      // transparent, voir js/assets.js) : redrawTileArt/redrawBuildings vérifient
+      // buildingTileArtKeys AVANT buildingIconKeys, donc cette entrée ne change rien à l'affichage
+      // de la route sur la carte (qui garde roadTile tel quel), seulement au bouton du menu de
+      // construction (voir positionBuildButtonContents/positionBuildButtonContentsSquare).
+      road: 'roadIcon',
     };
 
     // Entrepôt de départ, offert, pour que le joueur ait un réseau à étendre tout de suite. Entouré
@@ -703,8 +707,11 @@ class GameScene extends Phaser.Scene {
     }
     this.resourceValueTexts = {};
     for (const res of this.resourceOrder) {
+      // 14 -> 16 (demande utilisateur explicite : "le texte du bandeau de ressource sois un peu
+      // plus grand") -- valeur de secours seulement (voir setFontSize explicite plus bas en PC/
+      // mobile, layoutHud), ce départ ne compte que le temps avant le tout premier layoutHud().
       const t = this.add.text(0, 0, '0', {
-        font: 'bold 14px sans-serif', color: '#ffd23f',
+        font: 'bold 16px sans-serif', color: '#ffd23f',
       }).setDepth(1000).setVisible(false);
       this.resourceValueTexts[res] = t;
       this.uiElements.push(t);
@@ -1808,7 +1815,8 @@ class GameScene extends Phaser.Scene {
         } else {
           this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, pcIconSize);
         }
-        this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + 2).setFontSize(13).setVisible(true);
+        // 13 -> 15 (demande utilisateur explicite : bandeau de ressources un peu plus grand).
+        this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + 2).setFontSize(15).setVisible(true);
         if (this.resourceRateTexts[res]) {
           this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + 4).setFontSize(11).setVisible(true);
         }
@@ -1915,7 +1923,10 @@ class GameScene extends Phaser.Scene {
       } else {
         this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, barY, barIconSize);
       }
-      this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, barY + 1).setVisible(true);
+      // setFontSize explicite (demande utilisateur explicite : bandeau un peu plus grand) --
+      // absent avant, le texte gardait alors sa taille de création (voir buildHud) ou une taille
+      // laissée par un précédent passage en mise en page PC (setFontSize différent, voir plus haut).
+      this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, barY + 1).setFontSize(16).setVisible(true);
       const extra = this.resourceRateTexts[res] ? rateSlotWidth : 0;
       if (this.resourceRateTexts[res]) {
         this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap + numberSlotWidth, barY + 3).setFontSize(11).setVisible(true);
