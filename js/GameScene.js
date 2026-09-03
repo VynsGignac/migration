@@ -1717,8 +1717,13 @@ class GameScene extends Phaser.Scene {
     // dur pour rester calculables AVANT le bloc de rendu PC (qui décide s'il s'applique), à garder
     // synchronisés si ces constantes changent.
     const desktopIconGridHeight = Math.ceil(this.resourceOrder.length / 2) * (20 + 6);
+    // 16 -> 48 (x3, demande utilisateur explicite) : dupliqué ici en dur pour la même raison que
+    // pcIconSize/pcRowGap ci-dessus (garder en phase avec la valeur réellement utilisée plus bas
+    // dans le bloc de rendu PC) -- 6 = marge au-dessus de cette rangée, 12 = marge en dessous avant
+    // infoPanelText, inchangées.
+    const desktopLaborIconSize = 48;
     const desktopInfoPanelReserve = 160;
-    const catBlockY = 10 + desktopIconGridHeight + 34 + desktopInfoPanelReserve;
+    const catBlockY = 10 + desktopIconGridHeight + 6 + desktopLaborIconSize + 12 + desktopInfoPanelReserve;
     // Hauteur de bouton DYNAMIQUE plutôt qu'un seuil qui bascule tout le panneau en mode mobile
     // (demande utilisateur explicite : "le PC a la meme UI que le telephone... c'etait mieux avant
     // avec le menu qui restait a gauche") -- calée sur la place RÉELLEMENT disponible sous les
@@ -1813,12 +1818,15 @@ class GameScene extends Phaser.Scene {
       // laborStatValueTexts, remplace l'ancien texte brut) -- même ligne que l'ancien
       // populationStatsText, largeur de colonne PC (220px) largement suffisante pour les deux.
       {
-        const laborIconSize = 16, laborNumberSlot = 22, laborIconGap = 4, laborGroupGap = 14;
+        // desktopLaborIconSize calculé plus haut (voir le commentaire là-bas, x3 demande
+        // utilisateur explicite) -- police/texte agrandis en proportion (14 -> 28) pour rester
+        // lisible à côté d'une icône bien plus grande, plutôt que rester minuscule sous elle.
+        const laborIconSize = desktopLaborIconSize, laborNumberSlot = 34, laborIconGap = 8, laborGroupGap = 22;
         const laborY = 10 + iconGridHeight + 6;
         let lx = 10;
         for (const k of ['needed', 'housing']) {
           this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
-          this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY - 1).setFontSize(14).setVisible(true);
+          this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY + laborIconSize / 2 - 14).setFontSize(28).setVisible(true);
           lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
         }
       }
@@ -1827,7 +1835,10 @@ class GameScene extends Phaser.Scene {
       // toujours de tout l'espace entre les ressources et cette ligne pour respirer.
       const confirmY = catBlockY - desktopGap - confirmRowHeight;
 
-      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 34).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
+      // 34 -> 6 + desktopLaborIconSize + 12 (même formule que catBlockY plus haut, voir le
+      // commentaire là-bas) : suit désormais la vraie hauteur de la rangée travailleur/logement
+      // au lieu d'un décalage fixe pensé pour l'ancienne icône 16px (débordait dessus sinon).
+      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 6 + desktopLaborIconSize + 12).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
 
       this.confirmButton
         .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
@@ -1906,7 +1917,13 @@ class GameScene extends Phaser.Scene {
     // de ligne séparée -- ore/codex restent au format compact d'origine.
     const barIconSize = 18, numberSlotWidth = 34, rateSlotWidth = 24, groupGap = 6, iconGap = 3;
     const barY = 8;
-    const statsRowHeight = 18;
+    // 16 -> 48 (x3, demande utilisateur explicite) : sorti en constante partagée avec la rangée
+    // travailleur/logement plus bas (au lieu d'une valeur locale à cet endroit) pour que
+    // statsRowHeight -- qui réserve la hauteur du bandeau du haut, voir topBarHeight -- suive la
+    // vraie taille de l'icône plutôt qu'un 18px pensé pour l'ancienne icône, sans quoi la rangée
+    // aurait débordé sur la carte en dessous (bug vécu pour de vrai avec l'agrandissement x3).
+    const mobileLaborIconSize = 48;
+    const statsRowHeight = mobileLaborIconSize + 4;
     const topBarHeight = barIconSize + statsRowHeight + 18;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
@@ -1936,12 +1953,15 @@ class GameScene extends Phaser.Scene {
     // laborStatIconImages/laborStatValueTexts) plutôt qu'un texte brut, même principe que la
     // ligne du dessus.
     {
-      const laborIconSize = 16, laborNumberSlot = 26, laborIconGap = 4, laborGroupGap = 16;
+      // mobileLaborIconSize calculé plus haut (x3, demande utilisateur explicite -- voir aussi
+      // statsRowHeight, qui en dépend pour réserver la bonne hauteur de bandeau). Police agrandie
+      // en proportion (15 -> 26), même raison que la colonne PC ci-dessus.
+      const laborIconSize = mobileLaborIconSize, laborNumberSlot = 38, laborIconGap = 8, laborGroupGap = 24;
       const laborY = barY + barIconSize + 4;
       let lx = 8;
       for (const k of ['needed', 'housing']) {
         this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
-        this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY - 1).setFontSize(15).setVisible(true);
+        this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY + laborIconSize / 2 - 13).setFontSize(26).setVisible(true);
         lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
       }
     }
