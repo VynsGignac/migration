@@ -647,7 +647,12 @@ class GameScene extends Phaser.Scene {
           return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
         }, 0);
       lines.push(`Autels à portée : ${altarCount}`);
-      lines.push(`Dévotion/s à pleine main-d'œuvre : ${(def.devotionPerAltar * altarCount).toFixed(2)}`);
+      // "%/s" (pas juste un nombre) : la Dévotion est un pourcentage (0-100 %, voir GameConfig.
+      // devotion), pas un stock qui s'accumule sans limite comme les autres ressources -- ce Temple
+      // ne fait qu'en ralentir la baisse naturelle (GameConfig.devotion.decayRate), pas "produire"
+      // au sens habituel.
+      lines.push(`Dévotion/s à pleine main-d'œuvre : +${(def.devotionPerAltar * altarCount).toFixed(2)} %`);
+      lines.push(`Baisse naturelle : -${GameConfig.devotion.decayRate}%/s (voir bandeau du haut).`);
       lines.push('Dévotion versée directement au stock central (pas de livraison par la route).');
       lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'house') {
@@ -3861,7 +3866,13 @@ class GameScene extends Phaser.Scene {
     // PC et mobile utilisent désormais tous les deux la grille d'icônes (voir layoutHud) plutôt
     // que resourceText (texte brut, resté pour référence mais toujours invisible).
     const r = GameState.resources;
-    for (const res of this.resourceOrder) this.resourceValueTexts[res].setText(String(Math.floor(r[res])));
+    for (const res of this.resourceOrder) {
+      // "%" pour la Dévotion (demande utilisateur explicite : c'est un pourcentage 0-100, pas un
+      // stock comme les autres ressources -- voir GameConfig.devotion) : évite de la confondre
+      // avec un simple compteur qui grimpe sans limite.
+      const suffix = res === 'devotion' ? '%' : '';
+      this.resourceValueTexts[res].setText(String(Math.floor(r[res])) + suffix);
+    }
     // Gain/perte par minute (voir this.resourceRates, rafraîchi plus haut, une fois par seconde) :
     // juste le nombre signé, coloré selon le signe (l'icône juste à côté identifie la ressource).
     for (const res of this.mainRateResources) {

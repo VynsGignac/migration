@@ -155,8 +155,30 @@ const GameState = {
       tile.hadDeficit = false;
     }
     if (def.kind === 'tower') tile.fireCooldown = 0;
+    // Amélioration par Dévotion (voir GameConfig.devotion/upgradeBuildingWithDevotion, demande
+    // utilisateur explicite) : champ générique sur TOUT bâtiment terminé, pas seulement certains
+    // kind -- lequel peut concrètement être amélioré reste à définir (demande utilisateur
+    // explicite : "on verra après"), ceci pose juste l'état.
+    tile.devotionUpgraded = false;
     this.dirty = true;
     this.buildingsDirty = true;
+  },
+
+  // Consomme GameConfig.devotion.upgradeCost % de Dévotion pour marquer ce bâtiment "amélioré"
+  // (demande utilisateur explicite : "Elle peut etre utilisé pour améliorer un batiment... on
+  // consomme 10 % de devotion"). Pose seulement l'état/le coût -- LEQUEL bâtiment peut être
+  // amélioré et ce que ça change concrètement restent à définir plus tard (demande utilisateur
+  // explicite : "on verra après concretement comment on fait ca"), aucun appelant UI pour
+  // l'instant. Redevient false tout seul si la Dévotion retombe à 0 (voir tickProduction).
+  // Renvoie false sans rien faire si la Dévotion est insuffisante ou si ce bâtiment est déjà
+  // amélioré (pas de double coût).
+  upgradeBuildingWithDevotion(tile) {
+    if (!tile || tile.underConstruction || tile.devotionUpgraded) return false;
+    if (this.resources.devotion < GameConfig.devotion.upgradeCost) return false;
+    this.resources.devotion -= GameConfig.devotion.upgradeCost;
+    tile.devotionUpgraded = true;
+    this.dirty = true;
+    return true;
   },
 
   // Transforme un Donjon déjà posé en Château (voir GameConfig.buildings.castle et techTree.
@@ -998,10 +1020,16 @@ const GameState = {
       tile.outputBuffer += actual;
     }
 
-    // Temple : Dévotion versée directement au stock central (comme le Codex du Recycleur), jamais
+    // Temple : Dévotion gagnée directement au stock central (comme le Codex du Recycleur), jamais
     // transportée sur les routes -- proportionnelle au nombre d'Autels dans son extractRadius
     // (voir buildings.temple/altar, demande utilisateur explicite). Même courbe de main-d'œuvre que
-    // les extracteurs/processeurs ci-dessus.
+    // les extracteurs/processeurs ci-dessus. Accumulée dans devotionGain plutôt qu'appliquée
+    // directement : la Dévotion N'EST PLUS un simple stock qui monte (voir GameConfig.devotion) --
+    // gain ET perte (baisse naturelle/entretien des bâtiments améliorés, juste après) doivent être
+    // combinés puis bornés [0, cap] EN UNE FOIS, sinon une baisse déjà appliquée avant le gain du
+    // tick pourrait passer sous 0 puis remonter sans jamais déclencher le seuil de retour à la
+    // version de base (voir plus bas).
+    let devotionGain = 0;
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
       if (!def || def.kind !== 'shrine' || tile.underConstruction) continue;
@@ -1019,10 +1047,28 @@ const GameState = {
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
-      const devotion = def.devotionPerAltar * altarCount * efficiency * speedMultiplier * dtSeconds;
-      if (devotion <= 0) continue;
+      devotionGain += def.devotionPerAltar * altarCount * efficiency * speedMultiplier * dtSeconds;
+    }
 
-      this.resources.devotion += devotion;
+    // Dévotion : baisse naturelle constante (decayRate) + un peu plus par bâtiment amélioré actif
+    // (upkeepPerBuilding, demande utilisateur explicite : "les batiments améliorer consomme aussi
+    // un peu de devotion") -- s'applique TOUJOURS, même sans Temple à portée. Bornée [0, cap] en
+    // une fois avec le gain ci-dessus (voir le commentaire plus haut). Si le résultat tombe à 0,
+    // TOUS les bâtiments améliorés repassent en version de base d'un coup (demande utilisateur
+    // explicite) -- un seul passage sur les tuiles amélioré (upgradedTiles), pas deux, pour
+    // compter l'entretien ET faire ce retour en arrière sans reparcourir toute la carte deux fois.
+    const upgradedTiles = [];
+    for (const [, tile] of this.tiles) {
+      if (tile.devotionUpgraded) upgradedTiles.push(tile);
+    }
+    const devotionDrain = (GameConfig.devotion.decayRate + upgradedTiles.length * GameConfig.devotion.upkeepPerBuilding) * dtSeconds;
+    if (devotionGain > 0 || devotionDrain > 0) {
+      this.resources.devotion = Math.max(0, Math.min(
+        GameConfig.devotion.cap, this.resources.devotion + devotionGain - devotionDrain
+      ));
+      if (this.resources.devotion <= 0) {
+        for (const tile of upgradedTiles) tile.devotionUpgraded = false;
+      }
       this.dirty = true;
     }
 

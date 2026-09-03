@@ -118,6 +118,20 @@ const GameConfig = {
     // qu'un petit coussin pour les toutes premières recherches.
     codex: { long: 'Codex', short: 'Codex', color: 0x6f5fa3 },
   },
+  // Dévotion (demande utilisateur explicite) : PAS un stock qui s'accumule comme les autres
+  // ressources -- un pourcentage (0-100, voir GameState.resources.devotion) qui redescend tout
+  // seul avec le temps (decayRate, %/s) et sert à "améliorer" un bâtiment (coût upgradeCost, %,
+  // voir GameState.upgradeBuildingWithDevotion -- le déclencheur/l'effet concret restent à
+  // définir, demande utilisateur explicite : "on verra après"). Chaque bâtiment amélioré ajoute
+  // upkeepPerBuilding (%/s) à cette baisse ; si la Dévotion retombe à 0, TOUS les bâtiments
+  // améliorés repassent en version de base (voir tickProduction). Valeurs volontairement
+  // provisoires (demande utilisateur explicite : "on ajustera les valeurs ensuite").
+  devotion: {
+    cap: 100,
+    decayRate: 1,
+    upgradeCost: 10,
+    upkeepPerBuilding: 0.3,
+  },
   // Transport des ressources le long des routes.
   logistics: {
     shipSpeed: 2, // cases par seconde
@@ -414,7 +428,12 @@ const GameConfig = {
     // ajouté aux deux à côté d'extractor/processor/tower.
     temple: {
       name: 'Temple', cost: { planks: 15, stoneBlocks: 10 }, color: 0xd4af6a,
-      kind: 'shrine', extractRadius: 3, devotionPerAltar: 0.1,
+      // extractRadius 3 -> 10 (demande utilisateur explicite : "zone d'action (10 cases)").
+      // devotionPerAltar : maintenant en POINTS DE POURCENTAGE/s par Autel (voir GameConfig.
+      // devotion, la Dévotion n'est plus un stock qui s'accumule sans limite), pas encore
+      // recalibré après ce changement de nature (demande utilisateur explicite : valeurs
+      // provisoires, ajustées ensuite).
+      kind: 'shrine', extractRadius: 10, devotionPerAltar: 0.5,
       ruinLoot: { planks: 8 },
     },
     // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval
