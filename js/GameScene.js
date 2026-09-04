@@ -1443,21 +1443,26 @@ class GameScene extends Phaser.Scene {
     for (let i = 0; i < maxRows; i++) {
       const label = this.add.text(0, 0, '', { font: '13px sans-serif', color: '#ffffff' })
         .setDepth(1013).setVisible(false);
-      // useHandCursor sur la PISTE entière (pas juste la poignée) : plus facile à attraper, même
-      // principe que resourceHitZones (zone de survol pleine largeur plutôt que la seule icône).
+      // Piste purement VISUELLE désormais (10px de haut) -- la zone cliquable réelle est hitZone,
+      // bien plus haute (voir plus bas) : un curseur de 10px de haut est un cible minuscule au
+      // doigt (demande utilisateur explicite : "des soucis de hitbox avec les curseurs, ceux ci
+      // sont dur a manipuler"), même si le rendu doit rester fin.
       const track = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 1)
-        .setOrigin(0, 0.5).setStrokeStyle(1, 0x3a4a55).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+        .setOrigin(0, 0.5).setStrokeStyle(1, 0x3a4a55).setDepth(1013).setVisible(false);
       const fill = this.add.rectangle(0, 0, 10, 10, 0xffd23f, 1)
         .setOrigin(0, 0.5).setDepth(1014).setVisible(false);
       const handle = this.add.rectangle(0, 0, 14, 20, 0xffffff, 1)
         .setOrigin(0.5, 0.5).setStrokeStyle(1, 0x10151a).setDepth(1015).setVisible(false);
       const percentText = this.add.text(0, 0, '', { font: 'bold 13px sans-serif', color: '#ffd23f' })
         .setOrigin(0, 0.5).setDepth(1013).setVisible(false);
-      this.uiElements.push(label, track, fill, handle, percentText);
-      const row = { label, track, fill, handle, percentText, resource: null, buildingType: null };
-      // pointerdown sur la piste : démarre le glisser ET applique tout de suite la position tapée
-      // (pas besoin de d'abord bouger pour que ça reflète le clic, comme un vrai curseur).
-      track.on('pointerdown', (pointer) => {
+      // Zone d'entrée INVISIBLE, bien plus haute que la piste dessinée (voir refreshResourceRoutingRows,
+      // même principe que resourceHitZones : la cible tactile dépasse largement l'élément visuel).
+      const hitZone = this.add.zone(0, 0, 10, 10).setOrigin(0, 0.5).setDepth(1016).setInteractive({ useHandCursor: true });
+      this.uiElements.push(label, track, fill, handle, percentText, hitZone);
+      const row = { label, track, fill, handle, percentText, hitZone, resource: null, buildingType: null };
+      // pointerdown sur la zone d'entrée : démarre le glisser ET applique tout de suite la position
+      // tapée (pas besoin de d'abord bouger pour que ça reflète le clic, comme un vrai curseur).
+      hitZone.on('pointerdown', (pointer) => {
         this.activeSliderDrag = row;
         this.updateSliderDrag(pointer);
       });
@@ -1496,11 +1501,15 @@ class GameScene extends Phaser.Scene {
     const trackX = labelX + labelWidth;
     const trackWidth = Math.max(60, panel.width - labelWidth - percentWidth - 40);
     const trackHeight = 10;
+    // Bien plus haute que la piste dessinée (10px) : la vraie cible tactile (voir hitZone,
+    // buildResourceRouting) doit largement dépasser le trait fin pour rester facile à attraper.
+    const hitZoneHeight = 32;
 
     this.resourceRoutingRows.forEach((row, i) => {
       if (i >= consumers.length) {
         row.label.setVisible(false); row.track.setVisible(false); row.fill.setVisible(false);
         row.handle.setVisible(false); row.percentText.setVisible(false);
+        row.hitZone.disableInteractive();
         return;
       }
       const buildingType = consumers[i];
@@ -1511,6 +1520,8 @@ class GameScene extends Phaser.Scene {
       row.label.setText(GameConfig.buildings[buildingType].name).setPosition(labelX, y - 9).setVisible(true);
       this.positionResourceZone(row.track, trackX, y, trackWidth, trackHeight);
       row.track.setVisible(true);
+      this.positionResourceZone(row.hitZone, trackX, y, trackWidth, hitZoneHeight);
+      row.hitZone.setInteractive();
       row.fill.setPosition(trackX, y).setSize(Math.max(1, trackWidth * percent / 100), trackHeight).setVisible(true);
       row.handle.setPosition(trackX + trackWidth * percent / 100, y).setVisible(true);
       row.percentText.setText(`${Math.round(percent)} %`).setPosition(trackX + trackWidth + 12, y).setVisible(true);
@@ -1563,6 +1574,7 @@ class GameScene extends Phaser.Scene {
       for (const row of this.resourceRoutingRows) {
         row.label.setVisible(false); row.track.setVisible(false); row.fill.setVisible(false);
         row.handle.setVisible(false); row.percentText.setVisible(false);
+        row.hitZone.disableInteractive();
       }
     }
 
@@ -1633,17 +1645,20 @@ class GameScene extends Phaser.Scene {
     for (const catId of Object.keys(GameConfig.laborRouting.categories)) {
       const label = this.add.text(0, 0, '', { font: '13px sans-serif', color: '#ffffff' })
         .setDepth(1013).setVisible(false);
+      // Piste purement VISUELLE (voir buildResourceRouting, même correctif) : la vraie zone
+      // cliquable est hitZone, bien plus haute.
       const track = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 1)
-        .setOrigin(0, 0.5).setStrokeStyle(1, 0x3a4a55).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+        .setOrigin(0, 0.5).setStrokeStyle(1, 0x3a4a55).setDepth(1013).setVisible(false);
       const fill = this.add.rectangle(0, 0, 10, 10, 0xffd23f, 1)
         .setOrigin(0, 0.5).setDepth(1014).setVisible(false);
       const handle = this.add.rectangle(0, 0, 14, 20, 0xffffff, 1)
         .setOrigin(0.5, 0.5).setStrokeStyle(1, 0x10151a).setDepth(1015).setVisible(false);
       const percentText = this.add.text(0, 0, '', { font: 'bold 13px sans-serif', color: '#ffd23f' })
         .setOrigin(0, 0.5).setDepth(1013).setVisible(false);
-      this.uiElements.push(label, track, fill, handle, percentText);
-      const row = { label, track, fill, handle, percentText, category: catId };
-      track.on('pointerdown', (pointer) => {
+      const hitZone = this.add.zone(0, 0, 10, 10).setOrigin(0, 0.5).setDepth(1016).setInteractive({ useHandCursor: true });
+      this.uiElements.push(label, track, fill, handle, percentText, hitZone);
+      const row = { label, track, fill, handle, percentText, hitZone, category: catId };
+      hitZone.on('pointerdown', (pointer) => {
         this.activeLaborSliderDrag = row;
         this.updateLaborSliderDrag(pointer);
       });
@@ -1675,6 +1690,9 @@ class GameScene extends Phaser.Scene {
     const trackX = labelX + labelWidth;
     const trackWidth = Math.max(60, panel.width - labelWidth - percentWidth - 40);
     const trackHeight = 10;
+    // Voir refreshResourceRoutingRows (même correctif) : zone cliquable bien plus haute que le
+    // trait visuel.
+    const hitZoneHeight = 30;
 
     Object.keys(categories).forEach((catId, i) => {
       const row = this.laborRoutingRows[i];
@@ -1683,6 +1701,8 @@ class GameScene extends Phaser.Scene {
       row.label.setText(categories[catId].label).setPosition(labelX, y - 9).setVisible(true);
       this.positionResourceZone(row.track, trackX, y, trackWidth, trackHeight);
       row.track.setVisible(true);
+      this.positionResourceZone(row.hitZone, trackX, y, trackWidth, hitZoneHeight);
+      row.hitZone.setInteractive();
       row.fill.setPosition(trackX, y).setSize(Math.max(1, trackWidth * percent / 100), trackHeight).setVisible(true);
       row.handle.setPosition(trackX + trackWidth * percent / 100, y).setVisible(true);
       row.percentText.setText(`${Math.round(percent)} %`).setPosition(trackX + trackWidth + 12, y).setVisible(true);
@@ -1721,6 +1741,7 @@ class GameScene extends Phaser.Scene {
       for (const row of this.laborRoutingRows) {
         row.label.setVisible(false); row.track.setVisible(false); row.fill.setVisible(false);
         row.handle.setVisible(false); row.percentText.setVisible(false);
+        row.hitZone.disableInteractive();
       }
     }
 

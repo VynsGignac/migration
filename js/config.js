@@ -150,7 +150,10 @@ const GameConfig = {
     categories: {
       materiaux: { label: 'Matériaux de construction', buildings: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter'] },
       alimentation: { label: 'Alimentation', buildings: ['farm', 'bakery'] },
-      civisme: { label: 'Civisme', buildings: ['sculpteur', 'temple'] },
+      // Libellé "Dévotion" (demande utilisateur explicite, renommé depuis "Civisme") : id interne
+      // "civisme" inchangé (pas visible du joueur, seul GameConfig.laborRouting.categories.label
+      // apparaît dans le panneau, voir GameScene.refreshLaborRoutingRows).
+      civisme: { label: 'Dévotion', buildings: ['sculpteur', 'temple'] },
       metallurgie: { label: 'Métallurgie', buildings: ['ironMiner', 'foundry'] },
       militaire: { label: 'Militaire', buildings: ['donjon', 'armurier', 'castle'] },
     },
