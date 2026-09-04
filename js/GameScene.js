@@ -2339,25 +2339,36 @@ class GameScene extends Phaser.Scene {
     // la valeur plutôt que sous l'icône (demande utilisateur explicite : "placer le texte du gain
     // sous la valeur actuelle et non sous l'icone pour gagner de la place"), donc la hauteur totale
     // du bandeau dépend maintenant de ce bloc texte plutôt que de l'icône + une rangée séparée.
-    const sampleRes = this.resourceOrder[0];
+    // Deux cas de figure (voir mainRateResources) : la plupart des ressources ont une valeur ET un
+    // gain/perte (bloc 2 lignes), mais devotion/codex n'ont pas de ligne de gain (bloc 1 ligne
+    // seule) -- utiliser le même offset de centrage pour les deux aurait centré le bloc 2 lignes
+    // correctement tout en laissant le texte à une seule ligne trop bas (calé comme si une 2e
+    // ligne existait en dessous, demande utilisateur explicite : "il y a un probleme pour la
+    // devotion et le codex... elle n'est pas centré") -- deux offsets calculés séparément.
+    // valueOnlyHeight est mesuré sur CE sample (qui A un gain) : sans incidence, la hauteur d'un
+    // texte ne dépend que de sa police (fixe, mobileValueFontSize pour tous), jamais de son
+    // contenu -- pas besoin d'un sample séparé pour devotion/codex.
+    const sampleRes = this.resourceOrder.find((r) => this.resourceRateTexts[r]) || this.resourceOrder[0];
     this.resourceValueTexts[sampleRes].setFontSize(mobileValueFontSize);
-    let textBlockHeight = this.resourceValueTexts[sampleRes].height;
+    const valueOnlyHeight = this.resourceValueTexts[sampleRes].height;
+    let textBlockHeight = valueOnlyHeight;
     if (this.resourceRateTexts[sampleRes]) {
       this.resourceRateTexts[sampleRes].setFontSize(mobileRateFontSize);
       textBlockHeight += mobileRateGap + this.resourceRateTexts[sampleRes].height;
     }
-    // Bloc valeur+gain CENTRÉ verticalement sur l'icône (demande utilisateur explicite : "remonte
-    // un peu le texte des quantités de ressource et gain... pour le centrer en hauteur sur les
-    // icones") -- ancien "barIconSize / 2 - 8" calé au jugé pour une police plus grande, jamais
-    // recalé après les réductions de taille d'icône successives (d'où le texte resté trop bas).
-    // Peut légèrement remonter au-dessus du haut de l'icône (offset négatif) quand le bloc texte
-    // est plus haut que l'icône elle-même (rowContentHeight, plus bas, en tient compte).
+    // Bloc(s) CENTRÉ(S) verticalement sur l'icône (demande utilisateur explicite : "remonte un peu
+    // le texte des quantités de ressource et gain... pour le centrer en hauteur sur les icones") --
+    // ancien "barIconSize / 2 - 8" calé au jugé pour une police plus grande, jamais recalé après
+    // les réductions de taille d'icône successives (d'où le texte resté trop bas). Peut légèrement
+    // remonter au-dessus du haut de l'icône (offset négatif) quand le bloc texte est plus haut que
+    // l'icône elle-même (rowContentHeight, plus bas, en tient compte).
     // Plafonné à -barY : empêche le bloc texte de remonter au-delà du haut du bandeau lui-même
     // quand il est nettement plus haut que l'icône (centrage alors très légèrement imparfait,
     // negligeable, plutôt qu'un texte à moitié hors du bandeau).
     const valueTextTop = Math.max(barIconSize / 2 - textBlockHeight / 2, -barY);
+    const valueOnlyTop = Math.max(barIconSize / 2 - valueOnlyHeight / 2, -barY);
     const textBlockBottom = valueTextTop + textBlockHeight;
-    const rowContentHeight = Math.max(barIconSize, textBlockBottom);
+    const rowContentHeight = Math.max(barIconSize, textBlockBottom, valueOnlyTop + valueOnlyHeight);
     const topBarHeight = barY + rowContentHeight + bottomPad;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
@@ -2374,7 +2385,8 @@ class GameScene extends Phaser.Scene {
         this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, barIconSize);
       }
       const valueText = this.resourceValueTexts[res];
-      valueText.setPosition(bx + barIconSize + iconGap, by + valueTextTop).setFontSize(mobileValueFontSize).setVisible(true);
+      const top = this.resourceRateTexts[res] ? valueTextTop : valueOnlyTop;
+      valueText.setPosition(bx + barIconSize + iconGap, by + top).setFontSize(mobileValueFontSize).setVisible(true);
       let rowBottom = by + barIconSize;
       if (this.resourceRateTexts[res]) {
         // Sous la VALEUR plutôt que sous l'ICÔNE (demande utilisateur explicite ci-dessus) --
