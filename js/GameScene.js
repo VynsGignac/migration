@@ -1195,6 +1195,13 @@ class GameScene extends Phaser.Scene {
       if (!this.paused) this.togglePause();
       this.refreshSaveMenu();
       this.layoutSaveMenu();
+    } else if (this.startMenuPendingReturn) {
+      // Fermé sans qu'un chargement n'ait réussi (voir onStartMenuLoad/loadFromSlot, qui efface
+      // ce drapeau AVANT d'appeler toggleSaveMenu(false) en cas de succès -- on ne repasse donc
+      // JAMAIS par cette branche après un chargement réussi) : retour au menu de démarrage plutôt
+      // que de laisser voir la partie neuve en pause en dessous.
+      this.startMenuPendingReturn = false;
+      this.showStartMenuAgain();
     }
   }
 
@@ -1268,6 +1275,9 @@ class GameScene extends Phaser.Scene {
     this.zoneGraphics.clear();
     this.redrawSelection();
 
+    // Chargement réussi : on reste en jeu, jamais de retour au menu de démarrage (voir
+    // toggleSaveMenu/onStartMenuLoad) même si ce panneau avait été ouvert depuis lui.
+    this.startMenuPendingReturn = false;
     this.toggleSaveMenu(false);
     this.showToast(`Emplacement ${slot} chargé`);
   }
@@ -1831,7 +1841,16 @@ class GameScene extends Phaser.Scene {
   // (premier layoutHud(), appelé avant elle dans certains chemins).
   layoutStartMenu() {
     if (!this.startMenuOverlay) return;
-    const w = this.scale.width, h = this.scale.height;
+    // window.innerWidth/Height (PAS this.scale.width/height, contrairement aux autres panneaux
+    // modaux de ce fichier) : demande utilisateur explicite, "le menu n'est pas centré sur le
+    // telephone, et on voit une ligne d'herbe à droite" -- ce menu s'affiche dès le tout premier
+    // instant du jeu, une fenêtre où this.scale.width/height peut encore être temporairement en
+    // retard sur la taille RÉELLE du canvas sur certains appareils Android (canvas déjà à la
+    // bonne taille, valeur juste pas encore synchronisée -- l'herbe visible derrière le rectangle
+    // le confirme : le monde, lui, est bien dessiné jusqu'au bord). Les autres panneaux n'ouvrent
+    // jamais aussi tôt (l'écart a toujours eu le temps de se corriger avant), ce correctif reste
+    // donc local à ce seul menu plutôt que de toucher this.scale partout.
+    const w = window.innerWidth, h = window.innerHeight;
     this.startMenuOverlay.setSize(w, h);
 
     const titleFontSize = this.mobileLayout ? 26 : 36;
@@ -1848,8 +1867,11 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  // Ferme définitivement le menu de démarrage (voir les boutons Nouvelle partie/Charger) --
-  // aucune des deux autres options (Paramètres/Quitter) ne le referme, voir plus bas.
+  // Ferme le menu de démarrage (voir les boutons Nouvelle partie/Charger) -- "Nouvelle partie" le
+  // ferme définitivement, "Charger" peut le rouvrir via showStartMenuAgain() si annulé sans rien
+  // charger (voir onStartMenuLoad/startMenuPendingReturn, demande utilisateur explicite : "si je
+  // fais charger, mais que je ferme le menu sans rien charger, alors je me retrouve dans une
+  // nouvelle partie en pause" -- au lieu de ça, retour au menu de démarrage).
   hideStartMenu() {
     if (!this.startMenuOpen) return;
     this.startMenuOpen = false;
@@ -1857,6 +1879,18 @@ class GameScene extends Phaser.Scene {
     this.startMenuTitle.setVisible(false);
     this.startMenuVersion.setVisible(false);
     for (const key in this.startMenuButtons) this.startMenuButtons[key].setVisible(false).disableInteractive();
+  }
+
+  // Inverse de hideStartMenu ci-dessus (voir toggleSaveMenu, appelée quand le panneau Sauvegardes
+  // se referme sans qu'un chargement ait réussi alors qu'il avait été ouvert depuis CE menu).
+  showStartMenuAgain() {
+    this.startMenuOpen = true;
+    this.startMenuOverlay.setVisible(true).setInteractive();
+    this.startMenuTitle.setVisible(true);
+    this.startMenuVersion.setVisible(true);
+    for (const key in this.startMenuButtons) {
+      this.startMenuButtons[key].setVisible(true).setInteractive({ useHandCursor: true });
+    }
   }
 
   // "Nouvelle partie" : le monde est déjà généré neuf (voir create(), qui pose l'Entrepôt de
@@ -1872,9 +1906,13 @@ class GameScene extends Phaser.Scene {
 
   // "Charger" : ferme le menu de démarrage et ouvre directement le panneau Sauvegardes existant
   // (voir toggleSaveMenu/loadFromSlot) -- pas de logique de chargement séparée à écrire, celle-ci
-  // gère déjà tout (choix d'emplacement, désérialisation).
+  // gère déjà tout (choix d'emplacement, désérialisation). startMenuPendingReturn : si ce panneau
+  // se referme SANS qu'un chargement ait réussi (voir toggleSaveMenu/loadFromSlot), le menu de
+  // démarrage revient plutôt que de laisser voir la partie neuve en pause en dessous (demande
+  // utilisateur explicite).
   onStartMenuLoad() {
     this.hideStartMenu();
+    this.startMenuPendingReturn = true;
     this.toggleSaveMenu(true);
   }
 
