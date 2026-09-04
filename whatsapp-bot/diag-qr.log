@@ -1,0 +1,12 @@
+﻿Version WA utilisée par Baileys : [ 2, 3000, 1043857760 ] isLatest: true
+--- QR brut (longueur 277 ) ---
+https://wa.me/settings/linked_devices#2@or1mwjRkfmI07hpCIDrHAejqS+2qqceWy005iokwN1IcB76RmrdTm+/DKpCRDHjwXM4Zpx6aoz4EoazlYtaWJn91P7I5SE5WAwc=,dhTH4uqqQs9sFmliMBHRrQTSfPs1yZkbK5yGoeWDAmA=,CbvpU1PeaCtSvUV1ZPJ29o3zSk+GxfUlqz7KSFB2amM=,wORwGFIuPDYYn4OpAVgEtMMpSxsAeellb6WHE7vWCHs=,1
+--- segments (séparateur ",") ---
+[
+  '[0] len=140',
+  '[1] len=44',
+  '[2] len=44',
+  '[3] len=44',
+  '[4] len=1'
+]
+Décodage réussi. Correspond exactement à la chaîne brute : true

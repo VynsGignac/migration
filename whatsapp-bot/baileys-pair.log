@@ -1,0 +1,28 @@
+﻿Code d'appairage : TK71MQAT -- à saisir sur le téléphone (WhatsApp > Appareils connectés > Lier un appareil > "Lier avec le numéro de téléphone à la place").
+Appairage réussi, reconnexion (redémarrage requis par WhatsApp)...
+Envoi à 33622470182@s.whatsapp.net...
+Closing session: SessionEntry {
+  _chains: {
+    'BbDyjValKj1+ABVHLcWUBxtu/BDjlM7oufTRD/IBDXlv': { chainKey: [Object], chainType: 2, messageKeys: [Object] },
+    'BWuoUDfBfTl9lRPIlKXQyoNxRUdH+xPJThe3+m7/+tdI': { chainKey: [Object], chainType: 1, messageKeys: {} }
+  },
+  registrationId: 341502083,
+  currentRatchet: {
+    ephemeralKeyPair: {
+      pubKey: <Buffer 05 6b a8 50 37 c1 7d 39 7d 95 13 c8 94 a5 d0 ca 83 71 45 47 47 fb 13 c9 4e 17 b7 fa 6e ff fa d7 48>,
+      privKey: <Buffer e8 88 a0 ba d7 4e d6 6c 2b cf be 29 0a 8d 1d 43 9a 84 47 02 61 a3 b7 6a 6f 96 b8 36 95 7c 2e 69>
+    },
+    lastRemoteEphemeralKey: <Buffer 05 b0 f2 8d 56 a5 2a 3d 7e 00 15 47 2d c5 94 07 1b 6e fc 10 e3 94 ce e8 b9 f4 d1 0f f2 01 0d 79 6f>,
+    previousCounter: 0,
+    rootKey: <Buffer 11 d6 4a fb 78 48 6d c9 3f 98 b2 25 44 f4 43 37 8f 6f 69 c3 59 5f 1d 5d 83 31 9f d1 31 60 5c 82>
+  },
+  indexInfo: {
+    baseKey: <Buffer 05 5f 3a e1 77 65 28 a5 0a cc 55 48 a7 ba f7 42 0a 85 2f bf 36 1b b5 1e 5d 2f 7f 6f 11 a6 df 1b 4e>,
+    baseKeyType: 2,
+    closed: -1,
+    used: 1788531845491,
+    created: 1788531845491,
+    remoteIdentityKey: <Buffer 05 22 bb d9 34 00 a2 11 af 10 ca e3 43 7a bf 9f d4 43 e6 94 e3 c4 8f 4e 4e e2 98 2e e6 82 98 1b 47>
+  }
+}
+Envoyé (id message : 3EB0A546628905E312F7F3 ).

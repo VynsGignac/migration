@@ -20,3 +20,13 @@ assets/
 # APK compilée — régénérable via build-apk.ps1, ne se prête pas bien à git (gros binaire qui
 # change entièrement à chaque build).
 *.apk
+
+# Bot d'envoi automatique de l'APK sur WhatsApp (voir whatsapp-bot/send-apk.js, Baileys) : session
+# d'authentification (équivalente à une session connectée, jamais à commiter) et QR code
+# temporaire généré au premier lancement.
+whatsapp-bot/.baileys_auth/
+whatsapp-bot/qr.png
+
+# URL du webhook Discord (voir discord-bot/send-apk.js) : équivaut à un mot de passe (quiconque la
+# possède peut poster dans le salon), jamais à commiter.
+discord-bot/webhook-url.txt

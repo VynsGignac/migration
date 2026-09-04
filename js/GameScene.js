@@ -2297,8 +2297,12 @@ class GameScene extends Phaser.Scene {
     // ressources, à nouveau sur une seule rangée.
     // 18 -> 36 icône (x2, demande utilisateur explicite, gardée).
     // x0.8 (demande utilisateur explicite : "reduit la taille des icones du bandeau du haut de
-    // 20%") -- mobile uniquement, la colonne PC (desktopIconSize plus haut) n'est pas concernée.
-    const barIconSize = 36 * 0.8, iconGap = 3;
+    // 20%"), puis x0.7 supplémentaire (demande utilisateur explicite ultérieure : "reduit la
+    // tailles des icones de 30% (que des icones)") -- mobile uniquement, la colonne PC
+    // (desktopIconSize plus haut) n'est pas concernée. rowContentHeight (plus bas) recalcule
+    // l'épaisseur du bandeau à partir de cette taille à chaque fois, donc la réduire ICI suffit à
+    // aussi satisfaire "ajuste l'epaisseur du bandeau en consequence" sans rien changer d'autre.
+    const barIconSize = 36 * 0.8 * 0.7, iconGap = 3;
     const mobileRateGap = 1, mobileRateFontSize = 10;
     const mobileValueFontSize = 13;
     // 170 -> 110 : le chrono ne prend plus de largeur à côté de Pause/Menu (déplacé EN DESSOUS
