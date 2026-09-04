@@ -1262,6 +1262,19 @@ const GameState = {
     return false;
   },
 
+  // Vrai si au moins une Université terminée et reliée à une route existe (voir GameScene.
+  // openUniversityQuickMenu, bouton dédié qui remplace l'ancien clic direct sur une Université --
+  // même condition qu'avant, désormais vérifiée globalement puisque le bouton n'est plus rattaché
+  // à une case précise).
+  hasActiveUniversity() {
+    for (const [key, tile] of this.tiles) {
+      if (tile.type !== 'university' || tile.underConstruction) continue;
+      const [col, row] = key.split(',').map(Number);
+      if (this._hasAdjacentRoad(col, row)) return true;
+    }
+    return false;
+  },
+
   // Arbre technologique (voir GameConfig.techTree) : un nœud n'est débloquable que si son parent
   // l'est déjà (chaîne de prérequis, au niveau 1 suffit). Chaque niveau coûte des ressources (voir
   // researchCostFor) depuis la techno Scolarisation (voir techTree.nodes.rec_scolarisation) --

@@ -547,6 +547,10 @@ class GameScene extends Phaser.Scene {
     if (this.demolishButton.visible && Phaser.Geom.Rectangle.Contains(this.demolishButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.pauseButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.menuButton.getBounds(), pointer.x, pointer.y)) return true;
+    for (const id in this.quickMenuButtons) {
+      const btn = this.quickMenuButtons[id];
+      if (btn.visible && Phaser.Geom.Rectangle.Contains(btn.getBounds(), pointer.x, pointer.y)) return true;
+    }
     for (const id in this.buildButtons) {
       const btn = this.buildButtons[id];
       if (btn.visible && Phaser.Geom.Rectangle.Contains(btn.getBounds(), pointer.x, pointer.y)) return true;
@@ -898,6 +902,34 @@ class GameScene extends Phaser.Scene {
     this.buildTechTree();
     this.buildGameOver();
     this.buildResourceRouting();
+
+    // Boutons dédiés Entrepôt/Université/Maison (demande utilisateur explicite, voir
+    // openWarehouseQuickMenu/openUniversityQuickMenu/openHouseQuickMenu) : lancent les menus
+    // autrefois ouverts en cliquant directement sur ces bâtiments -- PC ET mobile (positionnés
+    // dans layoutHud, coin bas-droit de l'écran dans les deux cas, visibles seulement si aucun
+    // autre menu n'est ouvert). Même style que les boutons de construction (rectangle + icône
+    // image, voir buildIds plus haut) plutôt que du texte : ce sont des raccourcis vers des
+    // bâtiments précis, une icône reste plus parlante qu'un libellé générique.
+    this.quickMenuButtons = {};
+    this.quickMenuButtonIcons = {};
+    const quickMenuDefs = [
+      { id: 'warehouse', icon: 'warehouseIcon', tooltip: 'Répartition des ressources', action: () => this.openWarehouseQuickMenu() },
+      { id: 'university', icon: 'universityIcon', tooltip: 'Arbre technologique', action: () => this.openUniversityQuickMenu() },
+      { id: 'house', icon: 'houseIcon', tooltip: "Main-d'œuvre / logements", action: () => this.openHouseQuickMenu() },
+    ];
+    quickMenuDefs.forEach(({ id, icon, tooltip, action }) => {
+      const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339, 1).setOrigin(0, 0)
+        .setStrokeStyle(2, GameConfig.colors.buildingBorder, 0.85)
+        .setVisible(false) // évite un flash au coin (0,0) avant le premier layoutHud(), voir buildButtons
+        .setDepth(1000).setInteractive({ useHandCursor: true });
+      btn.on('pointerup', action);
+      this.quickMenuButtons[id] = btn;
+      this.uiElements.push(btn);
+      this.attachHoverTooltip(btn, `quickmenu:${id}`, () => tooltip, { tapToggle: false });
+      const iconImg = this.add.image(0, 0, icon).setDepth(1001).setVisible(false);
+      this.quickMenuButtonIcons[id] = iconImg;
+      this.uiElements.push(iconImg);
+    });
 
     // Bouton unique qui ouvre/ferme le pavé de construction en mode mobile, et sert aussi de
     // bouton d'annulation quand un mode de construction est actif (pas besoin de rouvrir le pavé).
@@ -1906,15 +1938,35 @@ class GameScene extends Phaser.Scene {
     this.layoutHud();
   }
 
-  // Point d'entrée depuis handleTap() : une Université ouvre l'arbre technologique au lieu du
-  // panneau d'info habituel, mais seulement si elle est reliée à une route (même exigence que
-  // le Donjon).
-  openTechTree(col, row) {
-    if (!GameState._hasAdjacentRoad(col, row)) {
-      this.showToast('Université non reliée à une route');
+  // Boutons dédiés (voir buildHud/layoutHud, demande utilisateur explicite : "il faut un autre
+  // bouton avec une image d'entrepot, un avec une image d'université et un autre avec une image
+  // de maison... permettent de lancer les menus precedemment obtenus en cliquant sur les
+  // batiments") -- remplacent l'ancien clic direct sur Université/Entrepôt (voir handleTap, qui
+  // se contente maintenant d'une sélection normale + zone d'action pour ces deux types).
+  openUniversityQuickMenu() {
+    // Même exigence qu'avant (route adjacente), vérifiée GLOBALEMENT désormais (au moins une
+    // Université active quelque part) puisque ce bouton n'est plus rattaché à une case précise.
+    if (!GameState.hasActiveUniversity()) {
+      this.showToast('Aucune Université reliée à une route');
       return;
     }
     this.toggleTechTree(true);
+  }
+
+  // Contrairement à l'Université, la Répartition des ressources est un réglage GLOBAL sans
+  // condition de connexion (voir openResourceRouting/buildResourceRouting) -- ouverture directe.
+  openWarehouseQuickMenu() {
+    this.openResourceRouting();
+  }
+
+  // Pas un vrai modal (voir isModalOpen) : juste le même résumé ville entière déjà affiché en
+  // tapant une Maison sur mobile (voir buildingInfoText), pas de bâtiment précis nécessaire.
+  openHouseQuickMenu() {
+    this.selectedBuildingKey = null;
+    this.infoPanelOverrideText =
+      `Main-d'œuvre manquante (ville) : ${GameState.neededWorkers()}\n`
+      + `Logements libres (ville) : ${GameState.availableHousing()}`;
+    this.updateInfoPanel();
   }
 
   // Bascule pause/reprise. En pause : la simulation (production, transport, vague) est gelée et
@@ -1967,6 +2019,30 @@ class GameScene extends Phaser.Scene {
     const zoomMin = this.getEffectiveZoomMin();
     if (cam.zoom < zoomMin) cam.setZoom(zoomMin);
     this.clampCameraVertical();
+  }
+
+  // Positionne les 3 boutons Entrepôt/Université/Maison (voir buildHud/openWarehouseQuickMenu/
+  // openUniversityQuickMenu/openHouseQuickMenu, demande utilisateur explicite) en rangée, alignés
+  // sur le bord droit de rightAnchorX -- appelé une fois par layoutHud() (PC et mobile, chacun
+  // avec son propre ancrage, voir les deux appels). Visibles seulement si aucun autre menu n'est
+  // ouvert ET le pavé de construction mobile lui-même fermé (demande utilisateur explicite : "que
+  // si aucun autre menu n'est ouvert" -- le pavé compte comme tel puisqu'il occupe l'écran et
+  // déplace le bouton Construire, l'ancre utilisée ici côté mobile, voir son appel).
+  layoutQuickMenuButtons(rightAnchorX, bottomAnchorY, btnSize) {
+    const visible = !this.isModalOpen() && !this.buildMode && !this.buildMenuOpen;
+    const gap = 6;
+    const ids = ['warehouse', 'university', 'house'];
+    ids.forEach((id, i) => {
+      const bx = rightAnchorX - (i + 1) * btnSize - i * gap;
+      const by = bottomAnchorY - btnSize;
+      const btn = this.quickMenuButtons[id], icon = this.quickMenuButtonIcons[id];
+      btn.setPosition(bx, by).setSize(btnSize, btnSize).setVisible(visible);
+      icon.setPosition(bx + btnSize / 2, by + btnSize / 2).setDisplaySize(btnSize - 10, btnSize - 10).setVisible(visible);
+      // disableInteractive()/setInteractive() explicites (même raison que laborHitZones et les
+      // autres zones de ce fichier) : setVisible(false) seul laisserait le bouton cliquable à sa
+      // dernière position tant qu'un autre menu reste ouvert par-dessus.
+      if (visible) btn.setInteractive(); else btn.disableInteractive();
+    });
   }
 
   // Bascule entre deux mises en page selon la place réellement disponible :
@@ -2279,6 +2355,11 @@ class GameScene extends Phaser.Scene {
         this.sidebarWidth + (w - this.sidebarWidth) / 2 - this.toastText.width / 2,
         h - 60
       );
+
+      // PC n'a pas de bouton Construire flottant (colonne toujours visible) : coin bas-droit de
+      // l'écran entier utilisé quand même, pour une position cohérente avec le mobile (demande
+      // utilisateur explicite : boutons Entrepôt/Université/Maison sur PC ET mobile).
+      this.layoutQuickMenuButtons(w - 10, h - 10, 44);
       return;
     }
 
@@ -2441,14 +2522,19 @@ class GameScene extends Phaser.Scene {
     // setPadding(left, top, right, bottom) : forme numérique (pas {x,y}, réservée au style du
     // constructeur) -- symétrique ici (x=left=right, y=top=bottom).
     this.buildMenuToggle.setPadding(closingMenu ? 12 : 14, closingMenu ? 10 : 12, closingMenu ? 12 : 14, closingMenu ? 10 : 12);
+    // '🔨 Construire' -> '🔨' (demande utilisateur explicite : "le bouton construction... doit
+    // devenir un symbole de marteau maintenant") -- icône seule à l'état de repos, même principe
+    // que la simplification "juste une croix" déjà faite pour l'état Fermer ci-dessus.
     this.buildMenuToggle.setText(
       this.buildMode ? `✕ Annuler (${GameConfig.buildings[this.buildMode].name})`
-        : (this.buildMenuOpen ? '✕' : '🔨 Construire')
+        : (this.buildMenuOpen ? '✕' : '🔨')
     );
     this.buildMenuToggle.setPosition(
       w - this.buildMenuToggle.width - 8,
       closingMenu ? menuTop - gap - this.buildMenuToggle.height - 4 : h - this.buildMenuToggle.height - 8
     ).setVisible(true);
+
+    this.layoutQuickMenuButtons(this.buildMenuToggle.x - 6, h - 8, 40);
 
     this.confirmButton.setFontSize(compact ? 12 : 13);
     this.confirmButton
@@ -3920,34 +4006,13 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Une Université s'ouvre directement en arbre technologique (au lieu du panneau d'info
-    // habituel), que le jeu soit en pause ou non — ouvrir le menu gère lui-même la pause. PAS
-    // tant qu'elle est encore en chantier (bug corrigé, demande utilisateur explicite) : elle
-    // tombe alors dans la branche générale plus bas, qui affiche l'avancement du chantier comme
-    // n'importe quel autre bâtiment en construction.
-    // Sélectionnée comme n'importe quel autre bâtiment (voir redrawActionZone/zoneRadiusFor) pour
-    // que sa zone d'action reste visible sur la carte même après avoir refermé l'arbre techno --
-    // demande utilisateur : cette zone (même rayon que l'Entrepôt de base) doit être visible pour
-    // les recherches qui affectent les bâtiments à portée (voir techTree.nodes.rec_formateur).
-    const tappedTile = GameState.getTile(wrappedCol, row);
-    if (tappedTile.type === 'university' && !tappedTile.underConstruction) {
-      this.selectedBuildingKey = GameState.key(wrappedCol, row);
-      this.redrawActionZone();
-      this.openTechTree(wrappedCol, row);
-      return;
-    }
-
-    // Un Entrepôt ouvre le panneau "Répartition des ressources" au lieu du panneau d'info habituel
-    // (demande utilisateur explicite : "comme pour l'université") -- réglage GLOBAL (voir
-    // buildResourceRouting), pas propre à CET Entrepôt : n'importe lequel ouvre le même panneau,
-    // pas besoin de vérifier une route adjacente comme l'Université (un Entrepôt n'a pas besoin
-    // d'être relié à lui-même).
-    if (tappedTile.type === 'warehouse' && !tappedTile.underConstruction) {
-      this.selectedBuildingKey = GameState.key(wrappedCol, row);
-      this.redrawActionZone();
-      this.openResourceRouting();
-      return;
-    }
+    // Université/Entrepôt : n'ouvrent plus leur menu dédié directement au clic (demande
+    // utilisateur explicite : "nous n'avons pus accès à la distance d'action des entrepots (les
+    // points rouges)" -- le clic forçait systématiquement l'ouverture du panneau, empêchant de
+    // juste sélectionner le bâtiment pour voir sa zone d'action). Un clic sur ces bâtiments se
+    // comporte donc désormais comme pour n'importe quel autre (branche générale plus bas,
+    // sélection + zone d'action) ; les menus eux-mêmes restent accessibles via les boutons dédiés
+    // (voir openUniversityQuickMenu/openWarehouseQuickMenu/openHouseQuickMenu, buildHud/layoutHud).
 
     if (this.paused) {
       // En pause : consultation uniquement, pas de construction/pillage (ça changerait l'état du
