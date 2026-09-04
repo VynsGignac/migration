@@ -885,6 +885,13 @@ class GameScene extends Phaser.Scene {
     }).setDepth(1002).setOrigin(1, 0);
     this.uiElements.push(this.chronoText);
 
+    // TEMPORAIRE (demande utilisateur explicite, voir layoutHud) : affiche le zoom caméra actuel
+    // en direct pour choisir les bornes min/max à la main -- à retirer une fois ces bornes fixées.
+    this.debugZoomText = this.add.text(0, 0, 'zoom: -', {
+      font: 'bold 13px sans-serif', color: '#ffff00', backgroundColor: '#000000aa', padding: { x: 6, y: 4 },
+    }).setDepth(1002).setOrigin(1, 0);
+    this.uiElements.push(this.debugZoomText);
+
     // Numéro de version (voir js/version.js, demande utilisateur explicite) : tout petit, en bas
     // à gauche de l'ÉCRAN (pas de la colonne PC, pour ne jamais chevaucher la liste de boutons de
     // construction) -- purement informatif, incrémenté automatiquement à chaque publication (voir
@@ -1986,17 +1993,34 @@ class GameScene extends Phaser.Scene {
     this.mobileLayout = w < 640 || h < 500;
 
     // Pause / Menu : toujours en haut à droite, indépendamment de la mise en page PC/mobile. Chrono
-    // : à leur gauche sur PC (comme avant), EN DESSOUS sur téléphone (demande utilisateur explicite
-    // : "met le chrono en dessous des boutons pause et sauvegarde pour gagner de la place") --
-    // libère la largeur qu'il prenait à gauche de Pause/Menu, réutilisée par la grille de
-    // ressources/indicateurs (voir plus bas, mobileRightReserve).
-    this.menuButton.setPosition(w - this.menuButton.width - 10, 10);
-    this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, 10);
+    // à leur gauche, SUR LA MÊME LIGNE dans les deux cas désormais (redemandé explicitement après
+    // l'avoir mis en dessous sur mobile : "tu peux resserer les icones dans la largeur pour
+    // pouvoir remettre l'horloge sur la meme ligne") -- la largeur qu'il reprend est compensée en
+    // resserrant la grille de ressources (voir mobileRightReserve, calculé plus bas à partir de la
+    // largeur réelle de ce bloc plutôt que d'une constante).
+    // Taille réduite sur mobile (police/marges), PAS sur PC (inchangé) : le bandeau mobile est
+    // désormais bien plus fin qu'à la création de ces boutons (icônes réduites, voir plus bas) --
+    // "les boutons pause et sauvegarde n'ont plus la bonne taille et ne tiennent plus dans le
+    // bandeau" sans ce réglage explicite par mode (comme les autres éléments mobile/PC de ce
+    // fichier, la taille posée une fois à la création ne s'adapte pas toute seule).
     if (this.mobileLayout) {
-      this.chronoText.setPosition(w - 10, 10 + this.pauseButton.height + 6);
+      this.pauseButton.setFontSize(13).setPadding(7, 5, 7, 5);
+      this.menuButton.setFontSize(13).setPadding(7, 5, 7, 5);
+      this.chronoText.setFontSize(12).setPadding(6, 4, 6, 4);
     } else {
-      this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, 10);
+      this.pauseButton.setFontSize(18).setPadding(10, 8, 10, 8);
+      this.menuButton.setFontSize(18).setPadding(10, 8, 10, 8);
+      this.chronoText.setFontSize(15).setPadding(8, 6, 8, 6);
     }
+    const topBtnY = this.mobileLayout ? 4 : 10;
+    this.menuButton.setPosition(w - this.menuButton.width - 10, topBtnY);
+    this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, topBtnY);
+    this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, topBtnY);
+
+    // Valeur de zoom actuelle, TEMPORAIRE (demande utilisateur explicite : "ajoute moi aussi de
+    // maniere temporaire la valeur du zoom... je veux ensuite pouvoir borner les valeurs") -- à
+    // retirer une fois les bornes de zoom fixées. Sous le bloc Pause/Menu/Chrono, toujours à droite.
+    this.debugZoomText.setPosition(w - 10, topBtnY + this.pauseButton.height + 4);
     // Toujours en bas à gauche de l'ÉCRAN entier (pas de la colonne PC), indépendamment de la
     // mise en page : la colonne PC prend toute la hauteur à gauche, un ancrage relatif à elle
     // finirait sous la liste de boutons de construction.
@@ -2305,10 +2329,15 @@ class GameScene extends Phaser.Scene {
     const barIconSize = 36 * 0.8 * 0.7, iconGap = 3;
     const mobileRateGap = 1, mobileRateFontSize = 10;
     const mobileValueFontSize = 13;
-    // 170 -> 110 : le chrono ne prend plus de largeur à côté de Pause/Menu (déplacé EN DESSOUS
-    // d'eux, voir plus haut dans cette fonction, demande utilisateur explicite) -- seule la place
-    // de Pause+Menu eux-mêmes reste à réserver ici.
-    const mobileRightReserve = 110;
+    // Calculé à partir de la largeur RÉELLE du bloc Chrono/Pause/Menu (voir plus haut dans cette
+    // fonction) plutôt qu'une constante : le chrono est revenu sur la même ligne qu'eux (demande
+    // utilisateur explicite : "resserer les icones dans la largeur pour pouvoir remettre l'horloge
+    // sur la meme ligne"), et sa largeur varie avec le temps écoulé (0:00 -> 59:59 -> 1:00:00...)
+    // -- une constante fixe serait soit trop juste (chevauchement), soit trop généreuse (icônes
+    // plus resserrées que nécessaire). w - chronoText.x = tout ce qui reste à droite du bord GAUCHE
+    // du chrono (son origine est (1,0), donc x est déjà son bord droit -- il faut soustraire sa
+    // largeur pour atteindre son bord gauche), +8 de marge avant la grille de ressources.
+    const mobileRightReserve = (w - (this.chronoText.x - this.chronoText.width)) + 8;
     const mobileAvailableWidth = w - 16 - mobileRightReserve;
     const mobileResCols = this.resourceOrder.length;
     const mobileColWidth = mobileAvailableWidth / mobileResCols;
@@ -4201,6 +4230,12 @@ class GameScene extends Phaser.Scene {
     const chronoSeconds = Math.floor(this.elapsed);
     const chronoMin = Math.floor(chronoSeconds / 60), chronoSec = chronoSeconds % 60;
     this.chronoText.setText(`${chronoMin}:${String(chronoSec).padStart(2, '0')}`);
+
+    // TEMPORAIRE (voir buildHud/layoutHud) : zoom caméra actuel + bornes effectives, pour choisir
+    // les valeurs à figer ensuite.
+    this.debugZoomText.setText(
+      `zoom: ${this.cameras.main.zoom.toFixed(3)} (min ${this.getEffectiveZoomMin().toFixed(3)} / max ${GameConfig.camera.zoomMax})`
+    );
 
     this.updateInfoPanel();
   }
