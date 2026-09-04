@@ -532,7 +532,7 @@ class GameScene extends Phaser.Scene {
   // ces vues bloquent toute interaction avec la carte en dessous, comme isPointerOverHud le fait
   // déjà pour les éléments du HUD classique.
   isModalOpen() {
-    return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen;
+    return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen || this.laborRoutingOpen;
   }
 
   // Vrai si le pointeur est actuellement au-dessus d'un élément du HUD (bandeau/colonne, pavé de
@@ -902,6 +902,7 @@ class GameScene extends Phaser.Scene {
     this.buildTechTree();
     this.buildGameOver();
     this.buildResourceRouting();
+    this.buildLaborRoutingPanel();
 
     // Boutons dédiés Entrepôt/Université/Maison (demande utilisateur explicite, voir
     // openWarehouseQuickMenu/openUniversityQuickMenu/openHouseQuickMenu) : lancent les menus
@@ -1091,6 +1092,7 @@ class GameScene extends Phaser.Scene {
       this.layoutTechTree();
       this.layoutGameOver();
       this.layoutResourceRouting();
+      this.layoutLaborRoutingPanel();
       this.clampZoomAndCamera();
     };
     this.scale.on('resize', this._onResize);
@@ -1582,6 +1584,164 @@ class GameScene extends Phaser.Scene {
     this.toggleResourceRouting(true);
   }
 
+  // Panneau modal "Répartition de la population" (bouton Maison, voir openHouseQuickMenu, demande
+  // utilisateur explicite : "attribution de la population... le meme systeme que l'attribution
+  // des ressources avec le %") -- même coquille que buildResourceRouting ci-dessus, mais un seul
+  // groupe de curseurs (5 catégories fixes, voir GameConfig.laborRouting, pas d'onglets) précédé
+  // du résumé main-d'œuvre/logements déjà affiché avant ce panneau ("en plus des informations
+  // deja presente", voir laborRoutingInfoText). Réglage GLOBAL, comme resourceRouting.
+  buildLaborRoutingPanel() {
+    this.laborRoutingOpen = false;
+    // Curseur en cours de glisser (voir onPointerMove/updateLaborSliderDrag) -- distinct de
+    // activeSliderDrag (resourceRouting) : les deux panneaux ne peuvent de toute façon jamais être
+    // ouverts en même temps (isModalOpen), mais chacun garde son propre état de glisser plutôt que
+    // de partager une variable entre deux mécanismes différents (setResourceRouting vs
+    // setLaborRouting, signatures différentes).
+    this.activeLaborSliderDrag = null;
+
+    this.laborRoutingOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.75)
+      .setOrigin(0, 0).setDepth(1010).setVisible(false).setInteractive();
+    this.laborRoutingOverlay.on('pointerup', () => this.toggleLaborRoutingPanel(false));
+    this.uiElements.push(this.laborRoutingOverlay);
+
+    this.laborRoutingPanel = this.add.rectangle(0, 0, 10, 10, 0x14202b, 0.97)
+      .setOrigin(0, 0).setDepth(1011).setStrokeStyle(2, 0xffd23f).setVisible(false).setInteractive();
+    this.uiElements.push(this.laborRoutingPanel);
+
+    this.laborRoutingTitle = this.add.text(0, 0, 'Répartition de la population', {
+      font: 'bold 16px sans-serif', color: '#ffd23f',
+    }).setDepth(1012).setVisible(false);
+    this.uiElements.push(this.laborRoutingTitle);
+
+    this.laborRoutingClose = this.add.text(0, 0, '✕', {
+      font: 'bold 15px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 9, y: 6 },
+    }).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.laborRoutingClose.on('pointerup', () => this.toggleLaborRoutingPanel(false));
+    this.uiElements.push(this.laborRoutingClose);
+
+    // Résumé ville entière (voir openHouseQuickMenu -- demande utilisateur explicite : "en plus
+    // des informations deja presente" -- même texte qu'avant ce panneau, désormais affiché EN PLUS
+    // des curseurs plutôt qu'à sa place).
+    this.laborRoutingInfoText = this.add.text(0, 0, '', {
+      font: '13px sans-serif', color: '#ffffff', lineSpacing: 4,
+    }).setDepth(1012).setVisible(false);
+    this.uiElements.push(this.laborRoutingInfoText);
+
+    // Une ligne par catégorie (voir GameConfig.laborRouting.categories, taille fixe -- pas de
+    // pool réutilisé entre onglets ici, il n'y en a qu'un seul contrairement à resourceRouting).
+    this.laborRoutingRows = [];
+    for (const catId of Object.keys(GameConfig.laborRouting.categories)) {
+      const label = this.add.text(0, 0, '', { font: '13px sans-serif', color: '#ffffff' })
+        .setDepth(1013).setVisible(false);
+      const track = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 1)
+        .setOrigin(0, 0.5).setStrokeStyle(1, 0x3a4a55).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+      const fill = this.add.rectangle(0, 0, 10, 10, 0xffd23f, 1)
+        .setOrigin(0, 0.5).setDepth(1014).setVisible(false);
+      const handle = this.add.rectangle(0, 0, 14, 20, 0xffffff, 1)
+        .setOrigin(0.5, 0.5).setStrokeStyle(1, 0x10151a).setDepth(1015).setVisible(false);
+      const percentText = this.add.text(0, 0, '', { font: 'bold 13px sans-serif', color: '#ffd23f' })
+        .setOrigin(0, 0.5).setDepth(1013).setVisible(false);
+      this.uiElements.push(label, track, fill, handle, percentText);
+      const row = { label, track, fill, handle, percentText, category: catId };
+      track.on('pointerdown', (pointer) => {
+        this.activeLaborSliderDrag = row;
+        this.updateLaborSliderDrag(pointer);
+      });
+      this.laborRoutingRows.push(row);
+    }
+  }
+
+  // Même principe qu'updateSliderDrag (resourceRouting) ci-dessus, pour GameState.setLaborRouting.
+  updateLaborSliderDrag(pointer) {
+    const row = this.activeLaborSliderDrag;
+    if (!row) return;
+    const bounds = row.track.getBounds();
+    const percent = Math.max(0, Math.min(100, ((pointer.x - bounds.x) / bounds.width) * 100));
+    GameState.setLaborRouting(row.category, percent);
+    this.refreshLaborRoutingRows();
+  }
+
+  // Même principe que refreshResourceRoutingRows ci-dessus (redessine pistes/poignées/% depuis
+  // GameState.laborRouting), une seule "liste" (pas d'onglet à choisir).
+  refreshLaborRoutingRows() {
+    const categories = GameConfig.laborRouting.categories;
+    const routing = GameState.laborRouting;
+    const panel = this.laborRoutingPanel;
+    const rowY0 = panel.y + 46 + this.laborRoutingInfoText.height + 20;
+    const rowGap = 40;
+    const labelX = panel.x + 20;
+    const labelWidth = 190;
+    const percentWidth = 46;
+    const trackX = labelX + labelWidth;
+    const trackWidth = Math.max(60, panel.width - labelWidth - percentWidth - 40);
+    const trackHeight = 10;
+
+    Object.keys(categories).forEach((catId, i) => {
+      const row = this.laborRoutingRows[i];
+      const percent = routing[catId] || 0;
+      const y = rowY0 + i * rowGap;
+      row.label.setText(categories[catId].label).setPosition(labelX, y - 9).setVisible(true);
+      this.positionResourceZone(row.track, trackX, y, trackWidth, trackHeight);
+      row.track.setVisible(true);
+      row.fill.setPosition(trackX, y).setSize(Math.max(1, trackWidth * percent / 100), trackHeight).setVisible(true);
+      row.handle.setPosition(trackX + trackWidth * percent / 100, y).setVisible(true);
+      row.percentText.setText(`${Math.round(percent)} %`).setPosition(trackX + trackWidth + 12, y).setVisible(true);
+    });
+  }
+
+  layoutLaborRoutingPanel() {
+    if (!this.laborRoutingPanel) return; // pas encore construit (premier appel avant create)
+    const w = this.scale.width, h = this.scale.height;
+    this.laborRoutingOverlay.setSize(w, h);
+
+    const panelWidth = Math.min(w - 32, 640);
+    const panelHeight = Math.min(h - 24, 420);
+    const px = (w - panelWidth) / 2;
+    const py = (h - panelHeight) / 2;
+    this.laborRoutingPanel.setPosition(px, py).setSize(panelWidth, panelHeight);
+    this.laborRoutingTitle.setPosition(px + 16, py + 12).setFontSize(this.mobileLayout ? 13 : 16);
+    this.laborRoutingClose.setPosition(px + panelWidth - this.laborRoutingClose.width - 10, py + 8);
+    this.laborRoutingInfoText.setPosition(px + 16, py + 46).setFontSize(13).setWordWrapWidth(panelWidth - 32);
+
+    if (this.laborRoutingOpen) this.refreshLaborRoutingRows();
+  }
+
+  // Même principe que toggleResourceRouting/toggleTechTree ci-dessus (pause automatique tant que
+  // le panneau est ouvert, levée seulement si c'est CETTE ouverture qui l'a posée).
+  toggleLaborRoutingPanel(forceState) {
+    this.laborRoutingOpen = forceState !== undefined ? forceState : !this.laborRoutingOpen;
+    const visible = this.laborRoutingOpen;
+    this.laborRoutingOverlay.setVisible(visible);
+    this.laborRoutingPanel.setVisible(visible);
+    this.laborRoutingTitle.setVisible(visible);
+    this.laborRoutingClose.setVisible(visible);
+    this.laborRoutingInfoText.setVisible(visible);
+    if (!visible) {
+      this.activeLaborSliderDrag = null;
+      for (const row of this.laborRoutingRows) {
+        row.label.setVisible(false); row.track.setVisible(false); row.fill.setVisible(false);
+        row.handle.setVisible(false); row.percentText.setVisible(false);
+      }
+    }
+
+    if (visible) {
+      // Calculé à l'ouverture (pas rafraîchi en continu) : le jeu se met en pause juste après
+      // (voir plus bas), ces valeurs ne changent donc plus tant que le panneau reste ouvert --
+      // même principe que resourceRouting/l'arbre technologique.
+      this.laborRoutingInfoText.setText(
+        `Main-d'œuvre manquante (ville) : ${GameState.neededWorkers()}\n`
+        + `Logements libres (ville) : ${GameState.availableHousing()}`
+      );
+      this.pausedByLaborRouting = !this.paused;
+      if (!this.paused) this.togglePause();
+      this.layoutLaborRoutingPanel();
+      this.refreshLaborRoutingRows();
+    } else if (this.pausedByLaborRouting) {
+      this.pausedByLaborRouting = false;
+      if (this.paused) this.togglePause();
+    }
+  }
+
   // Écran de défaite (voir triggerGameOver/GameState.hasAnyWarehouse) : plein écran, mais SANS le
   // clic-sur-le-fond-pour-fermer des autres panneaux modaux (saveMenuOverlay/techTreeOverlay) --
   // la partie est terminée, pas juste en pause, seul le bouton "Recommencer" doit avoir un effet.
@@ -1959,14 +2119,14 @@ class GameScene extends Phaser.Scene {
     this.openResourceRouting();
   }
 
-  // Pas un vrai modal (voir isModalOpen) : juste le même résumé ville entière déjà affiché en
-  // tapant une Maison sur mobile (voir buildingInfoText), pas de bâtiment précis nécessaire.
+  // Ouvre le panneau "Répartition de la population" (voir buildLaborRoutingPanel/
+  // toggleLaborRoutingPanel), qui affiche le résumé ville entière (main-d'œuvre manquante/
+  // logements libres, déjà affiché en tapant une Maison sur mobile, voir buildingInfoText) EN
+  // PLUS des curseurs par catégorie (demande utilisateur explicite : "en plus des informations
+  // deja presente je voudrais une attribution de la population").
   openHouseQuickMenu() {
     this.selectedBuildingKey = null;
-    this.infoPanelOverrideText =
-      `Main-d'œuvre manquante (ville) : ${GameState.neededWorkers()}\n`
-      + `Logements libres (ville) : ${GameState.availableHousing()}`;
-    this.updateInfoPanel();
+    this.toggleLaborRoutingPanel(true);
   }
 
   // Bascule pause/reprise. En pause : la simulation (production, transport, vague) est gelée et
@@ -3848,6 +4008,12 @@ class GameScene extends Phaser.Scene {
       if (this.activeSliderDrag && pointer.isDown) this.updateSliderDrag(pointer);
       return;
     }
+    // Même principe que resourceRoutingOpen ci-dessus, pour le panneau "Répartition de la
+    // population" (voir buildLaborRoutingPanel/updateLaborSliderDrag).
+    if (this.laborRoutingOpen) {
+      if (this.activeLaborSliderDrag && pointer.isDown) this.updateLaborSliderDrag(pointer);
+      return;
+    }
     if (this.isModalOpen()) return;
     // Seul le mode Route fait suivre l'aperçu au pointeur (aperçu avant de peindre en glissant).
     // Pour les autres bâtiments, le fantôme reste sur la case sélectionnée par tap (voir
@@ -4186,6 +4352,7 @@ class GameScene extends Phaser.Scene {
       this.layoutSaveMenu();
       this.layoutTechTree();
       this.layoutResourceRouting();
+      this.layoutLaborRoutingPanel();
     }
     this.clampZoomAndCamera();
 

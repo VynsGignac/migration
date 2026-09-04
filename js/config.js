@@ -135,6 +135,26 @@ const GameConfig = {
     stone: { consumers: ['stonecutter', 'sculpteur'], defaults: { stonecutter: 100, sculpteur: 0 } },
     ironIngot: { consumers: ['armurier', 'sculpteur'], defaults: { armurier: 50, sculpteur: 50 } },
   },
+  // Répartition manuelle de la population par CATÉGORIE de bâtiments (demande utilisateur
+  // explicite : menu ouvert en tapant le bouton Maison -- même principe que resourceRouting
+  // ci-dessus, mais un seul groupe de curseurs, pas d'onglets par ressource) : chaque catégorie
+  // regroupe les bâtiments qui recrutent de la main-d'œuvre (voir GameState.allocateLabor, kind
+  // extractor/processor/tower/shrine, Recycleur exclu -- TOUS couverts ici, aucune catégorie
+  // "reste"). Les % fixent la part de la population TOTALE de la ville ciblée pour chaque
+  // catégorie (pas juste un ordre de priorité) ; à l'intérieur d'une catégorie, le bâtiment le
+  // moins staffé à portée d'une Maison est toujours privilégié en premier, comme avant l'ajout de
+  // ce réglage. castle inclus dans militaire (même kind 'tower' qu'un Donjon, voir
+  // buildings.castle -- un Château amélioré recrute exactement pareil).
+  laborRouting: {
+    defaultPercent: 20, // 5 catégories, réparties également par défaut (aucune n'est "la" chaîne historique)
+    categories: {
+      materiaux: { label: 'Matériaux de construction', buildings: ['lumberjackCamp', 'sawmill', 'minerCamp', 'stonecutter'] },
+      alimentation: { label: 'Alimentation', buildings: ['farm', 'bakery'] },
+      civisme: { label: 'Civisme', buildings: ['sculpteur', 'temple'] },
+      metallurgie: { label: 'Métallurgie', buildings: ['ironMiner', 'foundry'] },
+      militaire: { label: 'Militaire', buildings: ['donjon', 'armurier', 'castle'] },
+    },
+  },
   // Dévotion (demande utilisateur explicite) : PAS un stock qui s'accumule comme les autres
   // ressources -- un pourcentage (0-100, voir GameState.resources.devotion) qui redescend tout
   // seul avec le temps (decayRate, %/s) et sert à "améliorer" un bâtiment (coût upgradeCost, %,

@@ -15,6 +15,23 @@ function defaultResourceRouting() {
   );
 }
 
+// Même principe que defaultResourceRouting ci-dessus, pour GameConfig.laborRouting (voir
+// GameState.setLaborRouting/allocateLabor, GameScene.buildLaborRoutingPanel) : une seule source de
+// vérité pour l'objet littéral GameState, reset() et deserialize().
+function defaultLaborRouting() {
+  return Object.fromEntries(
+    Object.keys(GameConfig.laborRouting.categories).map((id) => [id, GameConfig.laborRouting.defaultPercent])
+  );
+}
+
+// buildingType -> categoryId (voir GameConfig.laborRouting.categories) : calculé une seule fois au
+// chargement plutôt qu'à chaque tick de production (allocateLabor) ou chaque rafraîchissement de
+// panneau (GameScene) -- une poignée d'entrées, jamais invalidé (la config ne change pas en jeu).
+const laborBuildingCategory = Object.fromEntries(
+  Object.entries(GameConfig.laborRouting.categories)
+    .flatMap(([catId, cat]) => cat.buildings.map((bt) => [bt, catId]))
+);
+
 const GameState = {
   cols: GameConfig.world.cols,
   rows: GameConfig.world.rows,
@@ -37,6 +54,11 @@ const GameState = {
   // utilisateur explicite) : "resource" -> "type de bâtiment" -> % (les % d'une même ressource
   // somment toujours à 100, voir setResourceRouting).
   resourceRouting: defaultResourceRouting(),
+  // Même principe que resourceRouting ci-dessus, mais pour la main-d'œuvre par CATÉGORIE de
+  // bâtiments (voir GameConfig.laborRouting/setLaborRouting/allocateLabor, GameScene.
+  // buildLaborRoutingPanel, demande utilisateur explicite) : "catégorie" -> % de la population
+  // totale de la ville ciblée pour elle (somme toujours 100, voir setLaborRouting).
+  laborRouting: defaultLaborRouting(),
   // Tirs de tour en cours d'affichage : { fromCol, fromRow, toX, toRow, ttl }, purement visuel
   // (les dégâts sont déjà appliqués au moment du tir) — voir GameScene.redrawShots.
   shots: [],
@@ -218,6 +240,44 @@ const GameState = {
       for (const k of others) routing[k] = remainder * (routing[k] / othersSum);
     }
     this.dirty = true;
+  },
+
+  // Même principe que setResourceRouting ci-dessus, pour laborRouting (voir GameConfig.
+  // laborRouting/allocateLabor, GameScene.buildLaborRoutingPanel, demande utilisateur explicite) :
+  // change la part de population ciblée pour "category" et redistribue le reste proportionnellement
+  // entre les AUTRES catégories, pour que la somme reste toujours 100.
+  setLaborRouting(category, percent) {
+    if (!(category in this.laborRouting)) return;
+    percent = Math.max(0, Math.min(100, percent));
+    const others = Object.keys(this.laborRouting).filter((k) => k !== category);
+    this.laborRouting[category] = percent;
+    if (others.length === 0) { this.dirty = true; return; }
+    const remainder = 100 - percent;
+    const othersSum = others.reduce((s, k) => s + this.laborRouting[k], 0);
+    if (othersSum <= 0) {
+      const share = remainder / others.length;
+      for (const k of others) this.laborRouting[k] = share;
+    } else {
+      for (const k of others) this.laborRouting[k] = remainder * (this.laborRouting[k] / othersSum);
+    }
+    this.dirty = true;
+  },
+
+  // Convertit laborRouting (%) en quotas ENTIERS par catégorie sommant EXACTEMENT à
+  // totalPopulation (méthode du plus grand reste -- un simple Math.round par catégorie pourrait
+  // sommer à totalPopulation ± quelques unités, gaspillant ou dupliquant des habitants). Utilisé
+  // par allocateLabor.
+  _laborQuotas(totalPopulation) {
+    const ids = Object.keys(this.laborRouting);
+    const raw = ids.map((id) => (this.laborRouting[id] / 100) * totalPopulation);
+    const floors = raw.map(Math.floor);
+    const assigned = floors.reduce((s, v) => s + v, 0);
+    const remainder = totalPopulation - assigned;
+    const order = ids.map((id, i) => ({ id, frac: raw[i] - floors[i] })).sort((a, b) => b.frac - a.frac);
+    const quotas = {};
+    ids.forEach((id, i) => { quotas[id] = floors[i]; });
+    for (let i = 0; i < remainder; i++) quotas[order[i % order.length].id] += 1;
+    return quotas;
   },
 
   // Transforme un Donjon déjà posé en Château (voir GameConfig.buildings.castle et techTree.
@@ -643,12 +703,26 @@ const GameState = {
   },
 
   // Répartit les habitants de toutes les Maisons vers les bâtiments de production (extracteurs,
-  // processeurs, tours) à portée : un habitant = un poste dans un seul bâtiment (jamais compté deux fois).
-  // Pour chaque Maison, ses habitants sont affectés un par un aux bâtiments à laborRadius cases,
-  // en choisissant à chaque fois le bâtiment avec le MOINS de travailleurs déjà affectés (pour
-  // répartir la couverture), et en cas d'égalité le plus proche PAR LA ROUTE. Recalculé à chaque
-  // tick de production (léger : quelques dizaines de bâtiments/maisons en pratique).
-  // Renvoie une Map "col,row" -> nombre de travailleurs affectés à ce bâtiment.
+  // processeurs, tours, temples) à portée : un habitant = un poste dans un seul bâtiment (jamais
+  // compté deux fois). Recalculé à chaque tick de production (léger : quelques dizaines de
+  // bâtiments/maisons en pratique).
+  //
+  // Deux étapes (demande utilisateur explicite : "attribution de la population... le meme
+  // systeme que l'attribution des ressources avec le %... une repartition par categorie", voir
+  // GameConfig.laborRouting/setLaborRouting) :
+  //  1. laborRouting (%) convertit la population TOTALE de la ville en quotas entiers par
+  //     catégorie (_laborQuotas) -- ex. 30 % à Alimentation avec 100 habitants = 30 postes visés
+  //     pour Ferme+Boulangerie au total, tous bâtiments/maisons confondus.
+  //  2. Chaque catégorie est ensuite comblée par le MÊME algorithme glouton qu'avant ce réglage
+  //     (le bâtiment le moins staffé À PORTÉE D'UNE MAISON d'abord, égalité tranchée par la
+  //     distance par la route) -- mais en choisissant, à CHAQUE poste pourvu, la meilleure paire
+  //     (maison, bâtiment) sur TOUTE la ville plutôt que maison par maison indépendamment, pour
+  //     que "le moins staffé" ait un sens à l'échelle de la catégorie entière.
+  // Si une catégorie ne peut pas consommer tout son quota (pas assez de bâtiments/portée), la
+  // population inutilisée reste disponible pour les catégories suivantes (ordre de
+  // GameConfig.laborRouting.categories) plutôt que d'être perdue -- aucune répartition figée ne
+  // doit laisser des habitants inactifs alors qu'un poste existe ailleurs.
+  // Renvoie une Map "col,row" -> { col, row, workers } (un bâtiment producteur par entrée).
   allocateLabor() {
     const houses = [];
     const producers = new Map();
@@ -657,7 +731,7 @@ const GameState = {
       if (!def || tile.underConstruction) continue;
       if (def.kind === 'house') {
         const [col, row] = key.split(',').map(Number);
-        houses.push({ col, row, population: tile.population });
+        houses.push({ col, row, population: tile.population, remaining: tile.population });
       } else if (
         (def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower' || def.kind === 'shrine')
         && tile.type !== 'recycler'
@@ -675,31 +749,78 @@ const GameState = {
           (def.kind === 'processor' && this.isTechUnlocked('ind_apprentissage')) ||
           (def.kind === 'tower' && this.isTechUnlocked('def_service'))
             ? 1 : 0;
-        producers.set(key, { col, row, workers: freeWorker });
+        // category toujours défini : laborRouting.categories couvre TOUS les kinds éligibles
+        // ci-dessus (voir le commentaire sur GameConfig.laborRouting).
+        producers.set(key, { col, row, workers: freeWorker, category: laborBuildingCategory[tile.type] });
       }
     }
 
     const radius = GameConfig.population.laborRadius;
     const roadRange = GameConfig.population.laborRoadSearchRange;
+    // Candidats + distance par maison, calculés UNE fois (indépendants de la catégorie) et
+    // réutilisés à chaque catégorie ci-dessous plutôt que refaits 5 fois par maison.
+    const houseCandidates = new Map();
     for (const house of houses) {
       const candidates = HexUtils.hexesInRange(house.col, house.row, radius, this.cols, this.rows)
-        .map(p => producers.get(this.key(p.col, p.row)))
+        .map((p) => producers.get(this.key(p.col, p.row)))
         .filter(Boolean);
-      if (candidates.length === 0) continue;
+      houseCandidates.set(house, candidates.map((cand) => ({
+        cand, dist: this._roadDistance(house.col, house.row, cand.col, cand.row, roadRange),
+      })));
+    }
 
-      const distanceCache = new Map();
-      for (const cand of candidates) {
-        const dist = this._roadDistance(house.col, house.row, cand.col, cand.row, roadRange);
-        distanceCache.set(cand, dist);
-      }
+    const totalPopulation = houses.reduce((s, h) => s + h.population, 0);
+    const quotas = this._laborQuotas(totalPopulation);
 
-      for (let worker = 0; worker < house.population; worker++) {
-        candidates.sort((a, b) => {
-          if (a.workers !== b.workers) return a.workers - b.workers;
-          return distanceCache.get(a) - distanceCache.get(b);
-        });
-        candidates[0].workers += 1;
+    for (const catId of Object.keys(GameConfig.laborRouting.categories)) {
+      let toAssign = quotas[catId];
+      while (toAssign > 0) {
+        let best = null; // { house, entry }
+        for (const house of houses) {
+          if (house.remaining <= 0) continue;
+          for (const entry of houseCandidates.get(house)) {
+            if (entry.cand.category !== catId) continue;
+            if (
+              !best
+              || entry.cand.workers < best.entry.cand.workers
+              || (entry.cand.workers === best.entry.cand.workers && entry.dist < best.entry.dist)
+            ) {
+              best = { house, entry };
+            }
+          }
+        }
+        if (!best) break; // plus aucune maison/bâtiment disponible pour cette catégorie
+        best.entry.cand.workers += 1;
+        best.house.remaining -= 1;
+        toAssign -= 1;
       }
+    }
+
+    // Reliquat (demande utilisateur explicite : "comme pour les ressources, si la repartition en
+    // % d'une maison a ete faite et qu'il reste des habitants non attribué, ils sont repartis dans
+    // les batiments restant equitablement, peu importe le %") : une catégorie sans AUCUN bâtiment
+    // à portée d'aucune maison (ou plus assez de maisons avec de la population restante au moment
+    // de son tour) laisse sa part de quota inutilisée -- plutôt que de la perdre, ce reliquat comble
+    // les postes restants n'importe où (toutes catégories confondues), avec EXACTEMENT le même
+    // algorithme qu'avant ce réglage (le moins staffé d'abord, sans notion de %) : un habitant ne
+    // doit jamais rester inactif tant qu'un poste existe ailleurs en ville.
+    while (true) {
+      let best = null;
+      for (const house of houses) {
+        if (house.remaining <= 0) continue;
+        for (const entry of houseCandidates.get(house)) {
+          if (
+            !best
+            || entry.cand.workers < best.entry.cand.workers
+            || (entry.cand.workers === best.entry.cand.workers && entry.dist < best.entry.dist)
+          ) {
+            best = { house, entry };
+          }
+        }
+      }
+      if (!best) break; // plus aucune maison avec population restante, ou aucun candidat nulle part
+      best.entry.cand.workers += 1;
+      best.house.remaining -= 1;
     }
 
     return producers;
@@ -1882,6 +2003,7 @@ const GameState = {
     this.nextShipmentId = 1;
     this.laborAssignment = null;
     this.resourceRouting = defaultResourceRouting();
+    this.laborRouting = defaultLaborRouting();
     this.shots = [];
     this.unlockedTech = new Map();
     this.revealedTiles = new Set();
@@ -1907,6 +2029,7 @@ const GameState = {
       shipments: this.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) })),
       nextShipmentId: this.nextShipmentId,
       resourceRouting: this.resourceRouting,
+      laborRouting: this.laborRouting,
       unlockedTech: Array.from(this.unlockedTech.entries()),
       maxPopulation: this.maxPopulation,
       maxBuildings: this.maxBuildings,
@@ -1930,6 +2053,9 @@ const GameState = {
     // || defaultResourceRouting() : compatible avec les sauvegardes d'avant cette fonctionnalité
     // (demande utilisateur explicite), même principe que maxPopulation/maxBuildings ci-dessus.
     this.resourceRouting = data.resourceRouting || defaultResourceRouting();
+    // || defaultLaborRouting() : même raison (compatible avec les sauvegardes d'avant cette
+    // fonctionnalité).
+    this.laborRouting = data.laborRouting || defaultLaborRouting();
     this.laborAssignment = null;
     this.dirty = true;
     this.buildingsDirty = true;
