@@ -2301,7 +2301,9 @@ class GameScene extends Phaser.Scene {
     // largeur qu'il prenait à côté du nombre, en plus du retrait des 2 indicateurs ci-dessus :
     // les 8 ressources retiennent donc à nouveau sur une seule ligne sans avoir besoin de
     // rétrécir le texte plus qu'actuellement.
-    const barIconSize = 36, iconGap = 3;
+    // x0.8 (demande utilisateur explicite : "reduit la taille des icones du bandeau du haut de
+    // 20%") -- mobile uniquement, la colonne PC (desktopIconSize plus haut) n'est pas concernée.
+    const barIconSize = 36 * 0.8, iconGap = 3;
     const mobileNumberSlot = 24;
     const mobileRateGap = 1, mobileRateFontSize = 10;
     // 170 -> 110 : le chrono ne prend plus de largeur à côté de Pause/Menu (déplacé EN DESSOUS
@@ -2397,22 +2399,23 @@ class GameScene extends Phaser.Scene {
       .setFixedSize(demolishBtnWidth, upgradeBtnHeight)
       .setPosition(demolishX, h - upgradeBtnHeight - 8);
 
-    // Disposition en colonnes de 2 (demande utilisateur explicite, voir GameConfig.
-    // buildingCategories.production/GameScene.buildHud : bûcheron+scierie, mineur de
-    // pierre+tailleur, ferme+boulangerie, mineur de fer+fonderie, une colonne par paire, dans cet
-    // ordre) PLUTÔT que l'ancienne grille 3 colonnes remplie ligne par ligne -- Route toujours
-    // seule dans sa PROPRE colonne, la DERNIÈRE (demande utilisateur explicite : "que la route
-    // soit toujours au-dessus du bouton en bas à droite") : cette dernière colonne finit contre le
-    // bord droit de l'écran, juste au-dessus de buildMenuToggle (lui-même ancré à w - 8, voir plus
-    // haut), sans dépendre du nombre de boutons du reste de l'onglet actif.
+    // Une seule rangée de bâtiments (demande utilisateur explicite : "en gardant les icones de la
+    // meme taille, on peut mettre tout les boutons sur une seule ligne", remplace l'ancienne
+    // grille par paires sur 2 rangées) : chaque bâtiment occupe sa propre colonne. Route toujours
+    // seule dans sa PROPRE colonne, la DERNIÈRE (demande utilisateur explicite conservée : "que la
+    // route soit toujours au-dessus du bouton en bas à droite") : cette dernière colonne finit
+    // contre le bord droit de l'écran, juste au-dessus de buildMenuToggle.
+    // Taille de référence commune à TOUS les onglets (demande utilisateur explicite : "je voudrais
+    // que tout les boutons aient la meme taille, considere que l'onglet production sert toujours
+    // de reference") : Production est toujours l'onglet le plus fourni (voir GameConfig.
+    // buildingCategories), donc son nombre de colonnes (+ Route) fixe la largeur de bouton pour
+    // TOUS les onglets -- un onglet avec moins de bâtiments occupe simplement moins de colonnes à
+    // gauche, sans élargir ses boutons.
     const hasRoad = buttonIds.includes('road');
     const nonRoadIds = hasRoad ? buttonIds.filter((id) => id !== 'road') : buttonIds;
-    const contentCols = Math.max(1, Math.ceil(nonRoadIds.length / 2));
-    const cols = contentCols + (hasRoad ? 1 : 0);
-    const btnWidth = (w - gap * (cols + 1)) / cols;
-    const rows = nonRoadIds.length > 0 ? Math.ceil(nonRoadIds.length / contentCols) : 1;
-    // Une seule rangée de catégories ici (contrairement à la grille 2x2 de la colonne PC) : en
-    // paysage mobile, la largeur d'écran suffit largement pour 4 onglets côte à côte.
+    const referenceCols = GameConfig.buildingCategories.production.ids.length + 1; // +1 pour Route
+    const btnWidth = (w - gap * (referenceCols + 1)) / referenceCols;
+    const rows = 1;
     const menuHeight = mobileCategoryRowHeight + gap + rows * (btnHeight + gap) + gap;
     // Ancré tout en bas de l'écran (demande utilisateur explicite : "le menu de construction doit
     // aussi etre tout en bas de l'ecran") -- ne réserve PLUS la hauteur de buildMenuToggle
@@ -2437,8 +2440,8 @@ class GameScene extends Phaser.Scene {
     });
 
     const gridTop = menuTop + gap + mobileCategoryRowHeight + gap;
-    const placeButton = (id, col, row) => {
-      const bx = gap + col * (btnWidth + gap), by = gridTop + row * (btnHeight + gap);
+    const placeButton = (id, col) => {
+      const bx = gap + col * (btnWidth + gap), by = gridTop;
       this.buildButtons[id].setPosition(bx, by).setSize(btnWidth, btnHeight).setVisible(this.buildMenuOpen);
       this.positionBuildButtonContents(id, bx, by, btnWidth, btnHeight);
       if (!this.buildMenuOpen) {
@@ -2446,13 +2449,11 @@ class GameScene extends Phaser.Scene {
         for (const { img, txt } of this.buildButtonCostIcons[id]) { img.setVisible(false); txt.setVisible(false); }
       }
     };
-    nonRoadIds.forEach((id, i) => {
-      const col = Math.floor(i / 2), row = i % 2;
-      placeButton(id, col, row);
-    });
-    // Seule dans sa colonne (voir le commentaire ci-dessus) : toujours rangée 0, jamais empilée
-    // sous un autre bouton.
-    if (hasRoad) placeButton('road', cols - 1, 0);
+    nonRoadIds.forEach((id, i) => placeButton(id, i));
+    // Toujours ancrée à la DERNIÈRE colonne de référence (pas juste après le dernier bâtiment de
+    // l'onglet actif) : reste alignée avec la colonne Route de l'onglet Production même sur un
+    // onglet plus court (voir le commentaire ci-dessus sur referenceCols).
+    if (hasRoad) placeButton('road', referenceCols - 1);
 
     // Le panneau d'info flotte juste sous le bandeau du haut ; sa visibilité/contenu réel est
     // géré par updateInfoPanel() (affiché seulement s'il y a quelque chose à montrer).
@@ -2473,7 +2474,12 @@ class GameScene extends Phaser.Scene {
   // qu'alignée à gauche avec la ligne de coût à sa suite comme avant. Le coût reste consultable au
   // choix du bâtiment pour construction (voir updateInfoPanel, aucun survol n'existe au doigt).
   positionBuildButtonContents(id, x, y, w, h) {
-    const iconSize = Math.min(h - 6, w * 0.6, 47);
+    // w * 0.6 -> w - 6 (demande utilisateur explicite : "je voudrais que tout les boutons aient
+    // la meme taille" -- la mise en page sur une seule ligne, voir layoutHud, réduit désormais w
+    // pour les onglets moins fournis SANS que l'icône ne doive rétrécir en retour ; w - 6 ne
+    // plafonne l'icône que si le bouton devient vraiment trop étroit pour elle, sinon la limite
+    // reste h - 6 / 47 comme avant).
+    const iconSize = Math.min(h - 6, w - 6, 47);
     const icon = this.buildButtonIcons[id];
     icon.setPosition(x + w / 2, y + h / 2).setVisible(true);
     // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution
