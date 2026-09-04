@@ -41,8 +41,9 @@ const GameConfig = {
     // Colonne de départ de l'Entrepôt initial. À la moitié du tour (100/200) -- ce ratio doit être
     // conservé si cols change encore. La horde démarre maintenant déjà PASSÉE cette colonne (voir
     // monsters.tailAheadOfWarehouseCols/Monsters.init, demande utilisateur explicite) : elle doit
-    // faire presque un tour complet pour l'atteindre, soit ≈9min25 avec la vitesse initiale
-    // actuelle (voir monsters.lapOneSeconds : 8 colonnes/30s).
+    // faire presque un tour complet pour l'atteindre, soit ≈18min50 avec la vitesse initiale
+    // actuelle (voir monsters.lapOneSeconds : 4 colonnes/30s, divisée par 2 depuis, demande
+    // utilisateur explicite).
     startCol: 100,
   },
   camera: {
@@ -706,14 +707,14 @@ const GameConfig = {
   monsters: {
     // Vitesse PROGRESSIVE (voir demande utilisateur) : le 1er tour complet du cylindre dure
     // lapOneSeconds, à un rythme constant de world.cols / lapOneSeconds colonnes/s (voir
-    // Monsters.update : speedCols = cols/lapOneSeconds au 1er tour). Calé sur la vitesse INITIALE
-    // demandée explicitement par l'utilisateur -- 8 colonnes en 30s, soit 4/15 colonne/s -- d'où
-    // lapOneSeconds = world.cols / (8/30) = 200 / (4/15) = 750s (12min30) pour world.cols = 200.
-    // À réajuster si world.cols change encore, pour garder cette même vitesse initiale.
+    // Monsters.update : speedCols = cols/lapOneSeconds au 1er tour). x2 (demande utilisateur
+    // explicite : "divise par 2 la vitesse de la horde") depuis la valeur initiale de 750s (8
+    // colonnes/30s) -- 1500s (25min) pour world.cols = 200, soit 4 colonnes/30s. À réajuster
+    // proportionnellement si world.cols change encore, pour garder cette même vitesse.
     // Chaque tour suivant est lapSpeedMultiplier fois plus rapide que le précédent (voir
     // Monsters.update) : racine de 2 par défaut, pour que le 3e tour (2 multiplications depuis le
     // 1er) soit exactement 2x plus rapide, donc 2x plus court.
-    lapOneSeconds: 750, // 12min30 (vitesse initiale : 8 colonnes/30s, demande utilisateur explicite)
+    lapOneSeconds: 1500, // 25min (vitesse initiale moitié moindre qu'avant, demande utilisateur explicite)
     lapSpeedMultiplier: Math.SQRT2,
     // Position de départ de la horde (voir Monsters.init) -- demande utilisateur explicite :
     // positionner la horde pour que la FIN de la formation (le dernier gobelin, depth = depthCount-1)
@@ -721,8 +722,8 @@ const GameConfig = {
     // lieu du front à la colonne 0 comme avant. Le front (plus avancé que la fin, voir depthCount/
     // depthSpacingFactor) démarre alors lui-même déjà passé l'Entrepôt -- il doit donc faire
     // presque un tour complet du cylindre pour l'atteindre : ≈150,7 colonnes à la vitesse initiale
-    // (1/3 colonne/s, voir lapOneSeconds) donnent ≈452s (7min32) avant le 1er contact, contre 5 min
-    // avec l'ancien départ à la colonne 0 -- valeur demandée par l'utilisateur ("7 min 30").
+    // (voir lapOneSeconds) donnent ≈1130s (18min50) avant le 1er contact désormais (vitesse divisée
+    // par 2, demande utilisateur explicite -- ≈565s/9min25 avant ce changement).
     tailAheadOfWarehouseCols: 20,
     // Profondeur du bloc : depthCount monstres par rangée, qui avancent ensemble en formation
     // compacte plutôt qu'une simple ligne -- 45 = blockSize(15) x 3 blocs en colonnes. Dimension

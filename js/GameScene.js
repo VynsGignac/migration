@@ -2781,17 +2781,19 @@ class GameScene extends Phaser.Scene {
     this.layoutHud();
   }
 
-  // Démolit le bâtiment/route actuellement sélectionné (voir demolishButton) : réutilise
-  // GameState.destroyTile telle quelle, exactement le même chemin que la horde de monstres --
-  // même ruine (rejouable via un tap, voir handleTap/harvestRuin, "pour l'instant sans effet")
-  // avec le même butin partiel (ruinLoot), même vérification de défaite si c'était le dernier
+  // Démolit le bâtiment/route actuellement sélectionné (voir demolishButton) : GameState.
+  // demolishBuildingByPlayer, PAS destroyTile (celle-ci reste réservée au passage de la horde) --
+  // demande utilisateur explicite : "je ne veux plus de ruine quand l'utilisateur supprime lui
+  // meme un batiment (recyclage automatique de ce qu'aurait rapporté une ruine)" -- même butin
+  // partiel (ruinLoot) qu'avant, mais recyclé immédiatement au lieu de laisser une ruine à piller,
+  // et la case redevient vide plutôt que ruine. Même vérification de défaite si c'était le dernier
   // Entrepôt (voir update(), sur buildingsDirty).
   demolishSelectedBuilding() {
     if (this.paused || !this.selectedBuildingKey) return;
     const [col, row] = this.selectedBuildingKey.split(',').map(Number);
     const tile = GameState.tiles.get(this.selectedBuildingKey);
     const name = tile ? (GameConfig.buildings[tile.type]?.name || 'Bâtiment') : 'Bâtiment';
-    GameState.destroyTile(col, row);
+    GameState.demolishBuildingByPlayer(col, row);
     this.selectedBuildingKey = null;
     this.redrawActionZone();
     this.showToast(`${name} démoli`);

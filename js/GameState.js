@@ -1787,23 +1787,50 @@ const GameState = {
     return completedBuildings;
   },
 
+  // Butin qu'une case rapporterait en ruine (voir destroyTile/demolishBuildingByPlayer) : extrait
+  // en commun aux deux, seule la DESTINATION du butin diffère (ruine pillable plus tard, ou
+  // recyclage immédiat -- voir demolishBuildingByPlayer).
+  _ruinLootFor(tile) {
+    const def = GameConfig.buildings[tile.type];
+    // Un chantier n'a encore rien "payé" au sens propre (voir placeBuilding : rien n'est dépensé
+    // à la pose, seulement au fur et à mesure des livraisons) -- le butin complet d'un bâtiment
+    // fini serait donc un moyen gratuit de fabriquer des ressources en posant puis démolissant
+    // aussitôt. Le butin d'un chantier est exactement ce qui a déjà été livré, ni plus ni moins ;
+    // un bâtiment terminé garde son ruinLoot habituel, inchangé.
+    return tile.underConstruction ? { ...tile.constructionDelivered } : (def ? def.ruinLoot : {});
+  },
+
   // Détruit une case (passage d'un monstre) et la transforme en ruine pillable.
   // Renvoie true si c'était un Entrepôt (pour le message d'alerte).
+  // Route épargnée (demande utilisateur explicite : "les routes ne sont pas detruite par la
+  // horde") : seul appelant restant de cette méthode, voir Monsters.js -- une route détruite
+  // coupait le réseau logistique sur son passage, bien plus pénalisant qu'un simple bâtiment isolé.
   destroyTile(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
-    if (!tile || tile.type === 'ruin') return false;
-    const def = GameConfig.buildings[tile.type];
-    // Un chantier n'a encore rien "payé" au sens propre (voir placeBuilding : rien n'est dépensé
-    // à la pose, seulement au fur et à mesure des livraisons) -- le ruinLoot complet d'un
-    // bâtiment fini serait donc un moyen gratuit de fabriquer des ressources en posant puis
-    // démolissant aussitôt. Le butin d'un chantier est exactement ce qui a déjà été livré, ni
-    // plus ni moins ; un bâtiment terminé garde son ruinLoot habituel, inchangé.
-    const ruinLoot = tile.underConstruction
-      ? { ...tile.constructionDelivered }
-      : (def ? def.ruinLoot : {});
+    if (!tile || tile.type === 'ruin' || tile.type === 'road') return false;
+    const ruinLoot = this._ruinLootFor(tile);
     const warehouseLost = tile.type === 'warehouse';
     this.tiles.set(key, { type: 'ruin', ruinLoot });
+    this.dirty = true;
+    this.buildingsDirty = true;
+    return warehouseLost;
+  },
+
+  // Démolition VOLONTAIRE par le joueur (voir GameScene.demolishSelectedBuilding, bouton
+  // "Démolir") : contrairement à destroyTile (passage de la horde), pas de ruine laissée derrière
+  // -- demande utilisateur explicite : "je ne veux plus de ruine quand l'utilisateur supprime
+  // lui meme un batiment (recyclage automatique de ce qu'aurait rapporté une ruine)". Même butin
+  // que destroyTile (_ruinLootFor), mais ajouté directement aux ressources (comme harvestRuin) au
+  // lieu d'attendre un pillage manuel, et la case redevient vide plutôt que ruine.
+  demolishBuildingByPlayer(col, row) {
+    const key = this.key(col, row);
+    const tile = this.tiles.get(key);
+    if (!tile || tile.type === 'ruin') return false;
+    const loot = this._ruinLootFor(tile);
+    for (const res in loot) this.resources[res] = (this.resources[res] || 0) + loot[res];
+    const warehouseLost = tile.type === 'warehouse';
+    this.tiles.delete(key);
     this.dirty = true;
     this.buildingsDirty = true;
     return warehouseLost;
