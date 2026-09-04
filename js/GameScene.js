@@ -1488,7 +1488,11 @@ class GameScene extends Phaser.Scene {
     for (const res of Object.keys(this.resourceRoutingTabLabels)) {
       const btn = this.resourceRoutingTabButtons[res];
       const active = res === this.resourceRoutingTab;
-      btn.setPosition(tabX, tabY).setVisible(true)
+      // setVisible(this.resourceRoutingOpen), PAS true (bug vécu pour de vrai) : layoutResourceRouting
+      // est aussi appelée à chaque redimensionnement (voir _onResize), y compris AVANT toute
+      // ouverture du panneau -- ça forçait les onglets à apparaître dès le lancement du jeu, par-
+      // dessus la carte, alors que le panneau lui-même restait bien cache.
+      btn.setPosition(tabX, tabY).setVisible(this.resourceRoutingOpen)
         .setBackgroundColor(active ? '#ffd23f' : '#1b3322')
         .setColor(active ? '#10151a' : '#ffffff');
       tabX += btn.width + 8;
@@ -1961,10 +1965,25 @@ class GameScene extends Phaser.Scene {
   layoutHud() {
     const w = this.scale.width, h = this.scale.height;
 
-    // Pause / Menu / Chrono : toujours en haut à droite, indépendamment de la mise en page PC/mobile.
+    // Calculé ICI (déplacé depuis plus bas dans cette fonction, voir le commentaire à son ancien
+    // emplacement) : le bloc Pause/Menu/Chrono juste en dessous en a besoin pour positionner le
+    // chrono différemment sur téléphone (demande utilisateur explicite : "gagner de la place").
+    // 500 reste un vrai garde-fou, pas un seuil courant -- en dessous, même le pavé mobile serait
+    // de toute façon extrêmement à l'étroit.
+    this.mobileLayout = w < 640 || h < 500;
+
+    // Pause / Menu : toujours en haut à droite, indépendamment de la mise en page PC/mobile. Chrono
+    // : à leur gauche sur PC (comme avant), EN DESSOUS sur téléphone (demande utilisateur explicite
+    // : "met le chrono en dessous des boutons pause et sauvegarde pour gagner de la place") --
+    // libère la largeur qu'il prenait à gauche de Pause/Menu, réutilisée par la grille de
+    // ressources/indicateurs (voir plus bas, mobileRightReserve).
     this.menuButton.setPosition(w - this.menuButton.width - 10, 10);
     this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, 10);
-    this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, 10);
+    if (this.mobileLayout) {
+      this.chronoText.setPosition(w - 10, 10 + this.pauseButton.height + 6);
+    } else {
+      this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, 10);
+    }
     // Toujours en bas à gauche de l'ÉCRAN entier (pas de la colonne PC), indépendamment de la
     // mise en page : la colonne PC prend toute la hauteur à gauche, un ancrage relatif à elle
     // finirait sous la liste de boutons de construction.
@@ -2088,11 +2107,11 @@ class GameScene extends Phaser.Scene {
     const layoutShowUpgrade = !!(layoutSelectedTile && layoutSelectedTile.type === 'donjon' && !layoutSelectedTile.underConstruction && GameState.isTechUnlocked('def_forgerie'));
     const layoutShowDemolish = !!layoutSelectedTile;
 
-    // Hauteur non prise en compte au-delà d'un plancher extrême (demande utilisateur explicite :
-    // le panneau PC doit rester à gauche même sur un écran bas, voir desktopBtnWidth/Height dynamiques
-    // ci-dessus) -- 500 reste un vrai garde-fou, pas un seuil courant : en dessous, même le pavé
-    // mobile serait de toute façon extrêmement à l'étroit.
-    this.mobileLayout = w < 640 || h < 500;
+    // this.mobileLayout calculé tout en haut de layoutHud() désormais (voir le commentaire là-bas :
+    // 500 reste un vrai garde-fou, pas un seuil courant -- en dessous, même le pavé mobile serait
+    // de toute façon extrêmement à l'étroit) : le bloc Pause/Menu/Chrono, plus haut dans cette
+    // fonction, en a besoin pour positionner le chrono différemment sur téléphone (demande
+    // utilisateur explicite).
 
     if (!this.mobileLayout) {
       this.sidebarWidth = desktopSidebarWidth;
@@ -2239,52 +2258,53 @@ class GameScene extends Phaser.Scene {
     // valeur gagne/perd un chiffre. Un peu plus large pour planches/pierre taillée/pain (voir
     // rateSlotWidth) : gain/perte par minute juste après le nombre (voir resourceRateTexts), pas
     // de ligne séparée -- ore/codex restent au format compact d'origine.
-    // 18 -> 36 icône, 16 -> 32 texte (x2, demande utilisateur explicite). Grille 4 colonnes x 2
-    // rangées (pas 1 seule rangée de 8 comme avant) : à cette taille, 8 emplacements sur une seule
-    // ligne débordaient franchement de l'écran sur un téléphone en paysage (dernières ressources
-    // invisibles, chevauchant même les boutons pause/menu en haut à droite -- bug vécu pour de
-    // vrai) -- une largeur de colonne FIXE (mobileColWidth, d'après la largeur d'écran réelle)
-    // garantit qu'elles tiennent toujours, quelle que soit la largeur du téléphone.
-    // Icône gardée x2 (36px), texte réduit (32 -> 13) pour retenir 1 seule rangée de 8 ressources
-    // (demande utilisateur explicite : "reduit la taille du texte pour que les éléments tiennent...
-    // sur 1 ligne sur telephone") -- emplacements du nombre/du gain-perte resserrés en conséquence
-    // (mobileNumberSlot/mobileRateSlot).
+    // 18 -> 36 icône, 16 -> 32 texte (x2, demande utilisateur explicite). Icône gardée x2 (36px),
+    // texte réduit (32 -> 13) pour retenir peu de rangées (demande utilisateur explicite : "reduit
+    // la taille du texte pour que les éléments tiennent...") -- emplacements du nombre/du gain-perte
+    // resserré en conséquence (mobileNumberSlot).
     const barIconSize = 36, iconGap = 3;
-    const mobileNumberSlot = 24, mobileRateSlot = 16;
+    const mobileNumberSlot = 24;
     // 170 : réserve la place du chrono/bouton pause/bouton menu en haut à droite (voir plus haut,
     // this.menuButton/pauseButton/chronoText -- positionnés indépendamment, toujours ancrés à
     // droite) -- sans cette réserve, la grille pleine largeur venait chevaucher ce groupe sur un
     // téléphone étroit (bug vécu pour de vrai : dernière colonne illisible, cachée sous le chrono).
     const mobileRightReserve = 170;
     const mobileAvailableWidth = w - 16 - mobileRightReserve;
-    // 8 colonnes (1 seule rangée, demande utilisateur explicite) SI ça tient réellement dans la
-    // largeur disponible à cette taille d'icône/texte, sinon repli automatique sur la grille 4x2
-    // précédente -- ne déborde donc jamais sur un téléphone plus étroit que prévu (même filet de
-    // sécurité que le mécanisme de boutons de construction qui rétrécissent plutôt que déborder).
-    const mobileMinColWidth = barIconSize + iconGap + mobileNumberSlot + mobileRateSlot;
-    const mobileResCols = (mobileAvailableWidth / 8 >= mobileMinColWidth) ? 8 : 4;
-    const mobileResRows = Math.ceil(this.resourceOrder.length / mobileResCols);
+    // Grille UNIQUE (ressources ET indicateurs main-d'œuvre/logements ensemble, voir plus bas) :
+    // 8 ressources + 2 indicateurs = 10 cases, 5 colonnes -> toujours EXACTEMENT 2 rangées (demande
+    // utilisateur explicite : "les icones de travailleur manquant et place libre doivent etre mis
+    // sur les 2 premieres lignes comme pour les ressources", au lieu d'une 3e rangée séparée comme
+    // avant) -- remplace l'ancien choix adaptatif 8/4 colonnes (repli devenu inutile : 5 colonnes
+    // laisse largement plus de place par case que l'ancien cas à 8, testé sur les mêmes largeurs
+    // d'écran qui avaient motivé ce repli).
+    const mobileCells = [...this.resourceOrder, 'needed', 'housing'];
+    const mobileResCols = 5;
+    const mobileResRows = Math.ceil(mobileCells.length / mobileResCols);
     const mobileColWidth = mobileAvailableWidth / mobileResCols;
     const mobileRowHeight = barIconSize + 6;
     const barY = 8;
-    // 16 -> 48 (x3, demande utilisateur explicite) : sorti en constante partagée avec la rangée
-    // travailleur/logement plus bas (au lieu d'une valeur locale à cet endroit) pour que
-    // statsRowHeight -- qui réserve la hauteur du bandeau du haut, voir topBarHeight -- suive la
-    // vraie taille de l'icône plutôt qu'un 18px pensé pour l'ancienne icône, sans quoi la rangée
-    // aurait débordé sur la carte en dessous (bug vécu pour de vrai avec l'agrandissement x3).
-    const mobileLaborIconSize = 48;
-    const statsRowHeight = mobileLaborIconSize + 4;
-    const topBarHeight = mobileResRows * mobileRowHeight + statsRowHeight + 18;
+    const topBarHeight = mobileResRows * mobileRowHeight + 18;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
     // monde sans réduire la hauteur de caméra elle-même, il faut donc le soustraire à part.
     this.hudTopInset = topBarHeight;
 
     this.resourceBarIconsGraphics.clear().setVisible(true);
-    this.resourceOrder.forEach((res, i) => {
+    mobileCells.forEach((cell, i) => {
       const col = i % mobileResCols, row = Math.floor(i / mobileResCols);
       const bx = 8 + col * mobileColWidth;
       const by = barY + row * mobileRowHeight;
+      const isLabor = cell === 'needed' || cell === 'housing';
+      if (isLabor) {
+        // Même taille/police que les ressources désormais (demande utilisateur explicite : "comme
+        // pour les ressources") -- avant sur sa propre rangée avec une icône bien plus grande (x3,
+        // demande utilisateur antérieure), incompatible avec un partage de rangée homogène.
+        this.laborStatIconImages[cell].setPosition(bx, by).setDisplaySize(barIconSize, barIconSize).setVisible(true);
+        this.laborStatValueTexts[cell].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 - 8).setFontSize(13).setVisible(true);
+        this.positionResourceZone(this.laborHitZones[cell], bx, by, mobileColWidth, barIconSize);
+        return;
+      }
+      const res = cell;
       if (this.resourceBarIconTextureKeys[res]) {
         this.resourceBarIconImages[res].setPosition(bx, by).setDisplaySize(barIconSize, barIconSize).setVisible(true);
       } else {
@@ -2298,26 +2318,6 @@ class GameScene extends Phaser.Scene {
       // largeur de la colonne, pas juste l'icône -- plus facile à viser au doigt.
       this.positionResourceZone(this.resourceHitZones[res], bx, by, mobileColWidth, barIconSize);
     });
-    // Deuxième ligne du bandeau : main-d'œuvre nécessaire / logements libres (voir GameState.
-    // neededWorkers/availableHousing), pas des ressources du stock central. Icône + nombre (voir
-    // laborStatIconImages/laborStatValueTexts) plutôt qu'un texte brut, même principe que la
-    // ligne du dessus.
-    {
-      // mobileLaborIconSize calculé plus haut (x3, demande utilisateur explicite -- voir aussi
-      // statsRowHeight, qui en dépend pour réserver la bonne hauteur de bandeau). Police agrandie
-      // en proportion (15 -> 26), même raison que la colonne PC ci-dessus.
-      const laborIconSize = mobileLaborIconSize, laborNumberSlot = 38, laborIconGap = 8, laborGroupGap = 24;
-      // barY + mobileResRows * mobileRowHeight (plus barIconSize seul comme avant) : suit
-      // désormais le bas de la grille 4x2 de ressources ci-dessus, pas d'une seule rangée.
-      const laborY = barY + mobileResRows * mobileRowHeight + 4;
-      let lx = 8;
-      for (const k of ['needed', 'housing']) {
-        this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
-        this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY + laborIconSize / 2 - 13).setFontSize(26).setVisible(true);
-        this.positionResourceZone(this.laborHitZones[k], lx, laborY, laborIconSize + laborIconGap + laborNumberSlot, laborIconSize);
-        lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
-      }
-    }
 
     // Tailles réduites (voir demande utilisateur : le pavé prenait la moitié de l'écran sur
     // téléphone) : un bouton de 42-56px de haut avec 3 colonnes sur 2 rangées, plus l'onglet de
