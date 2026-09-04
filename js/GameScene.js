@@ -2295,17 +2295,12 @@ class GameScene extends Phaser.Scene {
     // d'indicateurs travailleur manquant/logement libre ici (demande utilisateur explicite :
     // consultables désormais en tapant une Maison, voir buildingInfoText) -- seulement les 8
     // ressources, à nouveau sur une seule rangée.
-    // 18 -> 36 icône (x2, demande utilisateur explicite, gardée). Le gain/perte par minute
-    // (resourceRateTexts) passe SOUS l'icône plutôt qu'à côté du nombre (demande utilisateur
-    // explicite : "deplace le chiffre indiquant le gain futur en dessous de l'icone") -- libère la
-    // largeur qu'il prenait à côté du nombre, en plus du retrait des 2 indicateurs ci-dessus :
-    // les 8 ressources retiennent donc à nouveau sur une seule ligne sans avoir besoin de
-    // rétrécir le texte plus qu'actuellement.
+    // 18 -> 36 icône (x2, demande utilisateur explicite, gardée).
     // x0.8 (demande utilisateur explicite : "reduit la taille des icones du bandeau du haut de
     // 20%") -- mobile uniquement, la colonne PC (desktopIconSize plus haut) n'est pas concernée.
     const barIconSize = 36 * 0.8, iconGap = 3;
-    const mobileNumberSlot = 24;
     const mobileRateGap = 1, mobileRateFontSize = 10;
+    const mobileValueFontSize = 13;
     // 170 -> 110 : le chrono ne prend plus de largeur à côté de Pause/Menu (déplacé EN DESSOUS
     // d'eux, voir plus haut dans cette fonction, demande utilisateur explicite) -- seule la place
     // de Pause+Menu eux-mêmes reste à réserver ici.
@@ -2313,8 +2308,25 @@ class GameScene extends Phaser.Scene {
     const mobileAvailableWidth = w - 16 - mobileRightReserve;
     const mobileResCols = this.resourceOrder.length;
     const mobileColWidth = mobileAvailableWidth / mobileResCols;
-    const barY = 8;
-    const topBarHeight = barY + barIconSize + mobileRateGap + mobileRateFontSize + 10;
+    // Marge réduite au-dessus/en dessous des éléments (demande utilisateur explicite : "reduit le
+    // fond noir du bandeau (reduit l'espace au dessus et en dessous des elements)"), SANS changer
+    // la taille des éléments eux-mêmes (icône/police inchangées ci-dessus) -- 8/10 -> 4/4.
+    const barY = 4, bottomPad = 4;
+    // Hauteur réellement occupée par le bloc valeur+gain (pas une constante magique : dépend de la
+    // police, mesurée sur UN texte représentatif avant la boucle) -- le gain passe désormais SOUS
+    // la valeur plutôt que sous l'icône (demande utilisateur explicite : "placer le texte du gain
+    // sous la valeur actuelle et non sous l'icone pour gagner de la place"), donc la hauteur totale
+    // du bandeau dépend maintenant de ce bloc texte plutôt que de l'icône + une rangée séparée.
+    const sampleRes = this.resourceOrder[0];
+    const valueTextTop = barIconSize / 2 - 8; // offset relatif à "by", formule reprise ci-dessous
+    this.resourceValueTexts[sampleRes].setFontSize(mobileValueFontSize);
+    let textBlockBottom = valueTextTop + this.resourceValueTexts[sampleRes].height;
+    if (this.resourceRateTexts[sampleRes]) {
+      this.resourceRateTexts[sampleRes].setFontSize(mobileRateFontSize);
+      textBlockBottom += mobileRateGap + this.resourceRateTexts[sampleRes].height;
+    }
+    const rowContentHeight = Math.max(barIconSize, textBlockBottom);
+    const topBarHeight = barY + rowContentHeight + bottomPad;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
     // monde sans réduire la hauteur de caméra elle-même, il faut donc le soustraire à part.
@@ -2329,22 +2341,26 @@ class GameScene extends Phaser.Scene {
       } else {
         this.drawResourceBarIcon(this.resourceBarIconsGraphics, res, bx, by, barIconSize);
       }
-      this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 - 8).setFontSize(13).setVisible(true);
+      const valueText = this.resourceValueTexts[res];
+      valueText.setPosition(bx + barIconSize + iconGap, by + valueTextTop).setFontSize(mobileValueFontSize).setVisible(true);
+      let rowBottom = by + barIconSize;
       if (this.resourceRateTexts[res]) {
-        // setOrigin(0.5, 0) explicite (pas hérité) : la colonne PC positionne ce même texte à côté
-        // du nombre avec l'origine par défaut (0,0) -- sans ce réglage explicite ICI (et là-bas),
-        // l'origine laissée par le dernier passage dans l'AUTRE mise en page fausserait le calage
-        // au prochain changement de mode (bug potentiel évité, pas vécu).
-        this.resourceRateTexts[res].setOrigin(0.5, 0)
-          .setPosition(bx + barIconSize / 2, by + barIconSize + mobileRateGap)
+        // Sous la VALEUR plutôt que sous l'ICÔNE (demande utilisateur explicite ci-dessus) --
+        // setOrigin(0, 0) explicite (pas hérité, voir positionnement PC qui utilise la même origine
+        // par défaut mais des coordonnées différentes -- sans ce réglage explicite ICI, l'origine
+        // laissée par le dernier passage dans l'AUTRE mise en page fausserait le calage au prochain
+        // changement de mode, bug potentiel évité, pas vécu). Aligné sur le x de la valeur (plus
+        // centré sous l'icône comme avant).
+        const rateText = this.resourceRateTexts[res];
+        rateText.setOrigin(0, 0)
+          .setPosition(valueText.x, valueText.y + valueText.height + mobileRateGap)
           .setFontSize(mobileRateFontSize).setVisible(true);
+        rowBottom = Math.max(rowBottom, rateText.y + rateText.height);
       }
       // Zone de tap (voir attachHoverTooltip/resourceHitZones/positionResourceZone) : toute la
-      // largeur de la colonne ET la hauteur du gain/perte en dessous, pas juste l'icône -- plus
-      // facile à viser au doigt.
-      this.positionResourceZone(
-        this.resourceHitZones[res], bx, by, mobileColWidth, barIconSize + mobileRateGap + mobileRateFontSize
-      );
+      // largeur de la colonne ET la hauteur réelle du contenu (icône OU bloc valeur+gain, le plus
+      // grand des deux), pas juste l'icône -- plus facile à viser au doigt.
+      this.positionResourceZone(this.resourceHitZones[res], bx, by, mobileColWidth, rowBottom - by);
     });
 
     // Tailles réduites (voir demande utilisateur : le pavé prenait la moitié de l'écran sur
