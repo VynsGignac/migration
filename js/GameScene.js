@@ -1177,7 +1177,12 @@ class GameScene extends Phaser.Scene {
   // Ouvre/ferme le panneau de sauvegarde. L'ouvrir met automatiquement le jeu en pause (on ne
   // veut pas pouvoir sauvegarder/charger pendant que la simulation continue de tourner) ; le
   // fermer laisse le jeu en pause, à reprendre explicitement avec le bouton Pause.
-  toggleSaveMenu(forceState) {
+  // opaque : voir onStartMenuLoad -- l'overlay est normalement TRANSLUCIDE (0.6, on aperçoit la
+  // partie en pause derrière, utile en cours de partie normale) mais ça laissait voir la partie
+  // neuve en pause quand ce panneau s'ouvre depuis le menu de démarrage (demande utilisateur
+  // explicite : "le panneau sauvegarder s'ouvre toujours sur une partie... l'étape 3 n'est pas
+  // l'attendu") -- entièrement opaque dans ce cas précis, comme le menu de démarrage lui-même.
+  toggleSaveMenu(forceState, opaque = false) {
     if (this.gameOverOpen) return; // partie terminée : pas de sauvegarde/chargement par-dessus
     this.saveMenuOpen = forceState !== undefined ? forceState : !this.saveMenuOpen;
     const visible = this.saveMenuOpen;
@@ -1192,6 +1197,7 @@ class GameScene extends Phaser.Scene {
     });
 
     if (visible) {
+      this.saveMenuOverlay.setFillStyle(0x000000, opaque ? 1 : 0.6);
       if (!this.paused) this.togglePause();
       this.refreshSaveMenu();
       this.layoutSaveMenu();
@@ -1913,7 +1919,7 @@ class GameScene extends Phaser.Scene {
   onStartMenuLoad() {
     this.hideStartMenu();
     this.startMenuPendingReturn = true;
-    this.toggleSaveMenu(true);
+    this.toggleSaveMenu(true, true); // opaque : voir toggleSaveMenu
   }
 
   // "Paramètres" : rien à régler pour l'instant (demande utilisateur explicite : "pour l'instant
