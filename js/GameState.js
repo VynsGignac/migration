@@ -1327,6 +1327,11 @@ const GameState = {
 
       const target = this._findMonsterInRange(col, row, this.towerRange(def));
       if (target) {
+        // Gèle le décompte de régénération de toute la section de ce monstre (voir Monsters.
+        // markGroupUnderAttack/update, GameConfig.monsters.underAttackFreezeSeconds, demande
+        // utilisateur explicite : "je veux que le compteur de respawn sois freeze tant que la
+        // section est attaqué") -- à CHAQUE tir qui touche, pas seulement en cas de mort.
+        Monsters.markGroupUnderAttack(target);
         target.hp -= this.towerDamage(def);
         if (target.hp <= 0) {
           target.alive = false;

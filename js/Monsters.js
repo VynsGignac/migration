@@ -72,6 +72,11 @@ const Monsters = {
     this.lord = null;
     this.nextId = 1;
     this.totalDistancePx = 0;
+    // groupId -> secondes restantes avant que la section ne soit plus considérée "sous le feu"
+    // (voir markGroupUnderAttack/update, GameConfig.monsters.underAttackFreezeSeconds) : décompte
+    // en temps réel comme respawnTimer, jamais persisté (pas critique de le perdre en rechargeant
+    // une sauvegarde, juste un état de combat transitoire).
+    this.groupUnderAttack = new Map();
     for (let displayRow = 0; displayRow < cfg.rowCount; displayRow++) {
       const worldRow = Math.floor(displayRow * gameState.rows / cfg.rowCount);
       const rowBlock = Math.floor(displayRow / blockSize);
@@ -117,6 +122,20 @@ const Monsters = {
     }
   },
 
+  // Identifiant de "section" (voir GameConfig.monsters.underAttackFreezeSeconds) : le groupe mené
+  // par un Chef/Seigneur, c'est-à-dire son propre id pour un meneur, ou l'id de SON meneur pour un
+  // gobelin (leaderId, voir init()) -- un Chef et tous ses gobelins partagent donc le même groupId.
+  groupIdFor(monster) {
+    return monster.leaderId != null ? monster.leaderId : monster.id;
+  },
+
+  // Appelée depuis GameState (section tir de tour) à CHAQUE tir qui touche un monstre, qu'il en
+  // meure ou non : rafraîchit la fenêtre "sous le feu" de toute sa section (voir groupIdFor),
+  // gelant le décompte de régénération de tous ses membres morts (voir update() ci-dessous).
+  markGroupUnderAttack(monster) {
+    this.groupUnderAttack.set(this.groupIdFor(monster), GameConfig.monsters.underAttackFreezeSeconds);
+  },
+
   // Avance chaque monstre vivant et détruit les cases qu'il vient de traverser (sur SA rangée
   // uniquement, contrairement à l'ancienne vague qui détruisait la colonne entière). Comme tous
   // les monstres d'une même rangée avancent à la même vitesse en gardant leur écart initial,
@@ -138,6 +157,14 @@ const Monsters = {
     const speedPx = speedCols * colWidth;
     const advance = speedPx * dt;
     this.totalDistancePx += advance;
+
+    // Fenêtres "sous le feu" (voir markGroupUnderAttack) : décrémentées une fois par frame ici,
+    // entrées expirées retirées plutôt que laissées grossir indéfiniment dans la Map.
+    for (const [groupId, remaining] of this.groupUnderAttack) {
+      const next = remaining - dt;
+      if (next <= 0) this.groupUnderAttack.delete(groupId);
+      else this.groupUnderAttack.set(groupId, next);
+    }
 
     const messages = [];
 
@@ -163,11 +190,25 @@ const Monsters = {
         // rythme ralenti du reste du jeu. Pour un Chef, respawnTimer est lancé dès sa mort (voir
         // GameState, section tir de tour) ; pour un gobelin, voir juste en dessous. Le Seigneur de
         // la horde n'en reçoit jamais et ne régénère donc jamais.
-        m.respawnTimer -= dt;
-        if (m.respawnTimer <= 0) {
+        const leader = m.leaderId != null ? this.byId.get(m.leaderId) : null;
+        if (leader && !leader.alive) {
+          // Meneur mort une SECONDE fois pendant que ce gobelin comptait déjà son propre délai
+          // (démarré la fois précédente où le meneur était en vie, voir la branche leaderId
+          // ci-dessous) -- bug vécu pour de vrai (demande utilisateur explicite : "les gobelins
+          // respawn alors que leur chef de guerre est mort") : le vieux décompte, devenu obsolète,
+          // est effacé ; il en redemandera un NOUVEAU dès que le meneur sera de nouveau en vie
+          // (même branche leaderId, à une frame future).
           m.respawnTimer = null;
-          m.alive = true;
-          m.hp = cfg.hpByType[m.type];
+        } else if (!this.groupUnderAttack.has(this.groupIdFor(m))) {
+          // Section pas sous le feu (voir markGroupUnderAttack, demande utilisateur explicite :
+          // "je veux que le compteur de respawn sois freeze tant que la section est attaqué") :
+          // décompte normal. Sinon (fenêtre encore active), il reste gelé tel quel cette frame.
+          m.respawnTimer -= dt;
+          if (m.respawnTimer <= 0) {
+            m.respawnTimer = null;
+            m.alive = true;
+            m.hp = cfg.hpByType[m.type];
+          }
         }
       } else if (m.leaderId != null) {
         // Gobelin mort SANS respawnTimer en cours : soit il vient de mourir avec son meneur déjà
@@ -204,5 +245,8 @@ const Monsters = {
     // absents -- ces gobelins ne régénéreront pas, sans erreur).
     this.byId = new Map(this.list.map(m => [m.id, m]));
     this.lord = this.list.find(m => m.type === 'lord') || null;
+    // Pas persisté (voir groupUnderAttack plus haut, état de combat transitoire) : une
+    // sauvegarde rechargée repart avec toutes les sections "hors du feu", sans erreur.
+    this.groupUnderAttack = new Map();
   },
 };

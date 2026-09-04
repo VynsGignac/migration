@@ -811,5 +811,13 @@ const GameConfig = {
     // déjà mort ATTEND (sans décompte) que ce meneur réapparaisse avant que son propre délai ne
     // soit tiré et lancé (voir Monsters.update, demande utilisateur explicite).
     goblinRespawnSecondsRange: [120, 180],
+    // Gèle le décompte de régénération (Chef ET gobelins) tant que la "section" (le groupe mené
+    // par ce Chef, voir Monsters.markGroupUnderAttack/leaderId) reçoit des tirs -- demande
+    // utilisateur explicite : "je veux que le compteur de respawn sois freeze tant que la section
+    // est attaqué". Fenêtre glissante rafraîchie à CHAQUE tir reçu par un membre du groupe (voir
+    // GameState, section tir de tour) plutôt qu'un simple "pendant le tir" instantané : supérieure
+    // à fireInterval du Donjon (2s) pour qu'un tir répété garde la section gelée en continu, sans
+    // laisser le décompte reprendre puis regeler entre deux tirs.
+    underAttackFreezeSeconds: 4,
   },
 };
