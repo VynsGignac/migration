@@ -885,13 +885,6 @@ class GameScene extends Phaser.Scene {
     }).setDepth(1002).setOrigin(1, 0);
     this.uiElements.push(this.chronoText);
 
-    // TEMPORAIRE (demande utilisateur explicite, voir layoutHud) : affiche le zoom caméra actuel
-    // en direct pour choisir les bornes min/max à la main -- à retirer une fois ces bornes fixées.
-    this.debugZoomText = this.add.text(0, 0, 'zoom: -', {
-      font: 'bold 13px sans-serif', color: '#ffff00', backgroundColor: '#000000aa', padding: { x: 6, y: 4 },
-    }).setDepth(1002).setOrigin(1, 0);
-    this.uiElements.push(this.debugZoomText);
-
     // Numéro de version (voir js/version.js, demande utilisateur explicite) : tout petit, en bas
     // à gauche de l'ÉCRAN (pas de la colonne PC, pour ne jamais chevaucher la liste de boutons de
     // construction) -- purement informatif, incrémenté automatiquement à chaque publication (voir
@@ -2017,10 +2010,6 @@ class GameScene extends Phaser.Scene {
     this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, topBtnY);
     this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, topBtnY);
 
-    // Valeur de zoom actuelle, TEMPORAIRE (demande utilisateur explicite : "ajoute moi aussi de
-    // maniere temporaire la valeur du zoom... je veux ensuite pouvoir borner les valeurs") -- à
-    // retirer une fois les bornes de zoom fixées. Sous le bloc Pause/Menu/Chrono, toujours à droite.
-    this.debugZoomText.setPosition(w - 10, topBtnY + this.pauseButton.height + 4);
     // Toujours en bas à gauche de l'ÉCRAN entier (pas de la colonne PC), indépendamment de la
     // mise en page : la colonne PC prend toute la hauteur à gauche, un ancrage relatif à elle
     // finirait sous la liste de boutons de construction.
@@ -4230,12 +4219,6 @@ class GameScene extends Phaser.Scene {
     const chronoSeconds = Math.floor(this.elapsed);
     const chronoMin = Math.floor(chronoSeconds / 60), chronoSec = chronoSeconds % 60;
     this.chronoText.setText(`${chronoMin}:${String(chronoSec).padStart(2, '0')}`);
-
-    // TEMPORAIRE (voir buildHud/layoutHud) : zoom caméra actuel + bornes effectives, pour choisir
-    // les valeurs à figer ensuite.
-    this.debugZoomText.setText(
-      `zoom: ${this.cameras.main.zoom.toFixed(3)} (min ${this.getEffectiveZoomMin().toFixed(3)} / max ${GameConfig.camera.zoomMax})`
-    );
 
     this.updateInfoPanel();
   }

@@ -46,12 +46,16 @@ const GameConfig = {
     startCol: 100,
   },
   camera: {
-    // zoomMin est un garde-fou absolu (jamais une valeur "confortable" à atteindre en pratique) :
-    // le vrai zoom minimum utilisable est calculé dynamiquement (GameScene.getEffectiveZoomMin)
-    // pour toujours montrer exactement les 22 rangées du monde, quelle que soit la hauteur d'écran.
-    zoomMin: 0.05,
-    zoomMax: 2.0,
-    zoomStart: 1,
+    // Bornes choisies par l'utilisateur après calibration via l'affichage temporaire du zoom
+    // courant (voir GameScene.debugZoomText, retiré une fois ces valeurs figées). zoomMin sert
+    // aussi de plancher à GameScene.getEffectiveZoomMin(), qui calcule normalement un minimum
+    // dynamique pour remplir exactement la hauteur d'écran (22 rangées) -- sur un écran où ce
+    // minimum dynamique serait plus bas que 0.25, ce plancher prend le dessus (sans risque de
+    // bande noire : un zoom minimum plus élevé que nécessaire montre juste moins de rangées à la
+    // fois, jamais moins que la hauteur d'écran).
+    zoomMin: 0.25,
+    zoomMax: 1.25,
+    zoomStart: 0.5,
   },
   colors: {
     hexFill: 0x2e5339,
