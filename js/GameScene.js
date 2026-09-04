@@ -2362,12 +2362,33 @@ class GameScene extends Phaser.Scene {
     // Espacement réduit (demande utilisateur explicite), en plus des boutons plus petits.
     const gap = compact ? 3 : 4;
     const mobileCategoryRowHeight = compact ? 18 : 20;
-    this.buildMenuToggle.setFontSize(compact ? 12 : 13);
+    // menuTop calculé ICI (avant le positionnement de buildMenuToggle juste en dessous) plutôt que
+    // plus bas avec le reste de la grille : le bouton "Fermer" a besoin de cette position pour se
+    // placer AU-DESSUS du pavé (voir plus bas), donc menuTop doit exister avant lui.
+    const rows = 1;
+    const menuHeight = mobileCategoryRowHeight + gap + rows * (btnHeight + gap) + gap;
+    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - 3);
+
+    // Icône seule ("✕", sans le mot "Fermer") ET repositionné AU-DESSUS du pavé plutôt qu'ancré en
+    // bas à droite (demande utilisateur explicite : "deplace le bouton fermer au dessus du menu de
+    // construction (il est sous la route la)... supprime le texte et met juste un bouton avec une
+    // croix") -- seulement quand le pavé est OUVERT (mode contraire, "🔨 Construire", reste en bas
+    // à droite comme avant : le pavé est alors fermé, rien ne chevauche à cet endroit). "Annuler"
+    // (mode de construction actif) inchangé de même raison : le pavé se referme automatiquement
+    // dès qu'un mode est choisi (voir setBuildMode), donc pas de chevauchement avec Route non plus.
+    const closingMenu = this.buildMenuOpen && !this.buildMode;
+    this.buildMenuToggle.setFontSize(closingMenu ? (compact ? 16 : 18) : (compact ? 12 : 13));
+    // setPadding(left, top, right, bottom) : forme numérique (pas {x,y}, réservée au style du
+    // constructeur) -- symétrique ici (x=left=right, y=top=bottom).
+    this.buildMenuToggle.setPadding(closingMenu ? 12 : 14, closingMenu ? 10 : 12, closingMenu ? 12 : 14, closingMenu ? 10 : 12);
     this.buildMenuToggle.setText(
       this.buildMode ? `✕ Annuler (${GameConfig.buildings[this.buildMode].name})`
-        : (this.buildMenuOpen ? '✕ Fermer' : '🔨 Construire')
+        : (this.buildMenuOpen ? '✕' : '🔨 Construire')
     );
-    this.buildMenuToggle.setPosition(w - this.buildMenuToggle.width - 8, h - this.buildMenuToggle.height - 8).setVisible(true);
+    this.buildMenuToggle.setPosition(
+      w - this.buildMenuToggle.width - 8,
+      closingMenu ? menuTop - gap - this.buildMenuToggle.height - 4 : h - this.buildMenuToggle.height - 8
+    ).setVisible(true);
 
     this.confirmButton.setFontSize(compact ? 12 : 13);
     this.confirmButton
@@ -2404,7 +2425,8 @@ class GameScene extends Phaser.Scene {
     // grille par paires sur 2 rangées) : chaque bâtiment occupe sa propre colonne. Route toujours
     // seule dans sa PROPRE colonne, la DERNIÈRE (demande utilisateur explicite conservée : "que la
     // route soit toujours au-dessus du bouton en bas à droite") : cette dernière colonne finit
-    // contre le bord droit de l'écran, juste au-dessus de buildMenuToggle.
+    // contre le bord droit de l'écran (buildMenuToggle passe AU-DESSUS du pavé quand il est ouvert,
+    // voir plus haut, donc ne chevauche plus cette colonne).
     // Taille de référence commune à TOUS les onglets (demande utilisateur explicite : "je voudrais
     // que tout les boutons aient la meme taille, considere que l'onglet production sert toujours
     // de reference") : Production est toujours l'onglet le plus fourni (voir GameConfig.
@@ -2415,17 +2437,8 @@ class GameScene extends Phaser.Scene {
     const nonRoadIds = hasRoad ? buttonIds.filter((id) => id !== 'road') : buttonIds;
     const referenceCols = GameConfig.buildingCategories.production.ids.length + 1; // +1 pour Route
     const btnWidth = (w - gap * (referenceCols + 1)) / referenceCols;
-    const rows = 1;
-    const menuHeight = mobileCategoryRowHeight + gap + rows * (btnHeight + gap) + gap;
-    // Ancré tout en bas de l'écran (demande utilisateur explicite : "le menu de construction doit
-    // aussi etre tout en bas de l'ecran") -- ne réserve PLUS la hauteur de buildMenuToggle
-    // au-dessus du pavé (c'était la dernière marge qui empêchait le pavé de toucher le bas) : le
-    // bouton Fermer/Construire, ancré séparément en bas à droite (voir plus haut), se retrouve donc
-    // par-dessus la grille -- accepté explicitement par l'utilisateur car il tombe sur la case
-    // vide sous la colonne Route (Route seule en rangée 0, jamais de bâtiment en dessous, voir
-    // placeButton plus bas).
-    const menuTop = Math.max(topBarHeight + 4, h - menuHeight - 3);
-
+    // rows/menuHeight/menuTop : calculés plus haut, avant buildMenuToggle (voir commentaire
+    // là-bas), réutilisés ici tels quels.
     this.buildMenuBg.setPosition(0, menuTop - gap).setSize(w, menuHeight + gap * 2).setVisible(this.buildMenuOpen);
 
     const catTabWidth = (w - gap * (categoryIds.length + 1)) / categoryIds.length;
