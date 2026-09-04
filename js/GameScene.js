@@ -31,10 +31,6 @@ class GameScene extends Phaser.Scene {
     // Icone dediee pour le bouton (fond retire, demande utilisateur explicite -- roadTile garde son
     // fond noir plein, nécessaire tel quel pour la case de la carte, voir redrawTileArt).
     this.load.image('roadIcon', GameAssets.roadIcon);
-    // Icones dediees pour "main-d'oeuvre necessaire"/"logements libres" (demande utilisateur
-    // explicite, remplacent le texte brut -- voir populationStatsText plus bas).
-    this.load.image('missingWorkerIcon', GameAssets.missingWorkerIcon);
-    this.load.image('emptyHousingIcon', GameAssets.emptyHousingIcon);
     // Icones de ressource (demande utilisateur explicite, remplacent le dessin vectoriel de secours
     // -- voir resourceBarIconTextureKeys/drawResourceBarIcon plus bas).
     this.load.image('weaponsIcon', GameAssets.weaponsIcon);
@@ -662,6 +658,12 @@ class GameScene extends Phaser.Scene {
       lines.push(`Habitants : ${tile.population}/${GameState.housePopulationCap(def)}`);
       lines.push(`Pain en réserve : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
       lines.push(tile.hadDeficit ? 'Manque de pain : la population va baisser.' : 'Bien nourrie.');
+      // Indicateurs de VILLE (pas propres à cette Maison précise), consultables ici plutôt que dans
+      // une icône permanente du bandeau (demande utilisateur explicite : "afficher les informations
+      // sur les ouvriers manquants et les logements vides lorsque l'on clic sur une maison" --
+      // libère le bandeau, voir buildHud/layoutHud).
+      lines.push(`Main-d'œuvre manquante (ville) : ${GameState.neededWorkers()}`);
+      lines.push(`Logements libres (ville) : ${GameState.availableHousing()}`);
     } else if (def.kind === 'tower') {
       const active = GameState._hasAdjacentRoad(col, row);
       lines.push(active ? 'Relié à une route : actif.' : 'Pas de route adjacente : inactif.');
@@ -695,33 +697,12 @@ class GameScene extends Phaser.Scene {
     this.buildMenuBg = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 0.92).setOrigin(0, 0).setDepth(999).setVisible(false);
     this.uiElements.push(this.buildMenuBg);
 
-    // Main-d'œuvre nécessaire pour amener toute la production à 100 % (voir GameState.
-    // neededWorkers) et logements encore libres (GameState.availableHousing) : contrairement aux
-    // ressources ci-dessus (stock central), ce sont des indicateurs d'état de la population,
-    // positionnés juste sous le bandeau/texte de ressources (voir layoutHud). Icône + nombre
-    // (demande utilisateur explicite, images fournies) plutôt qu'un texte brut ("Main-d'œuvre
-    // nécessaire : X") -- même principe que le reste du bandeau (resourceBarIconImages/
-    // resourceValueTexts), avec juste 2 entrées fixes au lieu d'une par ressource.
-    this.laborStatIconImages = {
-      needed: this.add.image(0, 0, 'missingWorkerIcon').setOrigin(0, 0).setDepth(1000).setVisible(false),
-      housing: this.add.image(0, 0, 'emptyHousingIcon').setOrigin(0, 0).setDepth(1000).setVisible(false),
-    };
-    this.laborStatValueTexts = {
-      needed: this.add.text(0, 0, '0', { font: 'bold 14px sans-serif', color: '#c9e8ff' }).setDepth(1000).setVisible(false),
-      housing: this.add.text(0, 0, '0', { font: 'bold 14px sans-serif', color: '#c9e8ff' }).setDepth(1000).setVisible(false),
-    };
-    for (const k of ['needed', 'housing']) {
-      this.uiElements.push(this.laborStatIconImages[k], this.laborStatValueTexts[k]);
-    }
-    // Bulle au survol/tap (voir attachHoverTooltip, "tout les éléments de l'UI" -- demande
-    // utilisateur explicite) : même principe que resourceHitZones plus bas, une zone par icône.
-    this.laborHitZones = {
-      needed: this.add.zone(0, 0, 10, 10).setOrigin(0, 0).setDepth(1005).setInteractive(),
-      housing: this.add.zone(0, 0, 10, 10).setOrigin(0, 0).setDepth(1005).setInteractive(),
-    };
-    this.uiElements.push(this.laborHitZones.needed, this.laborHitZones.housing);
-    this.attachHoverTooltip(this.laborHitZones.needed, 'labor:needed', () => 'Main-d\'œuvre nécessaire');
-    this.attachHoverTooltip(this.laborHitZones.housing, 'labor:housing', () => 'Logements libres');
+    // Main-d'œuvre nécessaire/logements libres (voir GameState.neededWorkers/availableHousing) :
+    // n'ont plus leur propre icône permanente dans le bandeau (demande utilisateur explicite :
+    // "il faut reduire la taille de l'UI, on ne voit plus le jeu" -- ces 2 cases forçaient le
+    // bandeau mobile sur une 2e ligne). Consultables désormais dans le panneau d'info en tapant une
+    // Maison (voir buildingInfoText, kind 'house' -- demande utilisateur explicite : "afficher les
+    // informations ... lorsque l'on clic sur une maison").
 
     // Bandeau ressources mobile : une seule ligne icône+valeur par ressource (le texte complet
     // PC, sur 3 lignes, prend trop de hauteur sur un écran de téléphone en paysage). Les icônes
@@ -979,7 +960,14 @@ class GameScene extends Phaser.Scene {
       // utilisateur explicite). Survol seulement, PAS de bascule au tap : ce bouton a déjà une
       // action au tap (sélectionner le mode construction), un tap-bulle en plus l'aurait fait
       // interférer avec cette sélection.
-      this.attachHoverTooltip(btn, `build:${id}`, () => GameConfig.buildings[id].name, { tapToggle: false });
+      // Nom + coût (demande utilisateur explicite : "retire l'indication du coup en ressource [du
+      // bouton]... il apparaiterait dans l'infobulle") -- formatResources existe déjà (voir
+      // butin/coût d'amélioration Château), réutilisé ici plutôt que reformater à la main.
+      this.attachHoverTooltip(
+        btn, `build:${id}`,
+        () => `${GameConfig.buildings[id].name}\n${this.formatResources(GameConfig.buildings[id].cost, true)}`,
+        { tapToggle: false }
+      );
 
       // Même icône que sur la carte (voir buildingIconKeys/redrawTileArt, demande utilisateur
       // explicite) quand une image dédiée existe ; repli sur le dessin vectoriel (drawBuildingIcon)
@@ -2045,18 +2033,16 @@ class GameScene extends Phaser.Scene {
     // pour rester calculables AVANT le bloc de rendu PC (qui décide s'il s'applique), à garder
     // synchronisés si ces constantes changent.
     const desktopIconGridHeight = Math.ceil(this.resourceOrder.length / 2) * (40 + 6);
-    // 16 -> 48 (x3, demande utilisateur explicite) : dupliqué ici en dur pour la même raison que
-    // pcIconSize/pcRowGap ci-dessus (garder en phase avec la valeur réellement utilisée plus bas
-    // dans le bloc de rendu PC) -- 6 = marge au-dessus de cette rangée, 12 = marge en dessous avant
-    // infoPanelText, inchangées.
-    const desktopLaborIconSize = 48;
     // 160 -> 200 (testé pour de vrai avec le cas le plus long -- chantier Armurier hors de portée
     // d'Entrepôt -- toujours tronqué par le bouton Démolir à 160 depuis que la police du panneau
     // d'info n'a plus autant de place relative après les agrandissements successifs du bandeau de
-    // ressources au-dessus, voir pcIconSize/desktopLaborIconSize) : les boutons de construction
-    // rétrécissent dynamiquement (voir plus bas) plutôt que de risquer ce chevauchement.
+    // ressources au-dessus, voir pcIconSize) : les boutons de construction rétrécissent
+    // dynamiquement (voir plus bas) plutôt que de risquer ce chevauchement.
     const desktopInfoPanelReserve = 200;
-    const catBlockY = 10 + desktopIconGridHeight + 6 + desktopLaborIconSize + 12 + desktopInfoPanelReserve;
+    // Plus de rangée travailleur manquant/logement libre (demande utilisateur explicite,
+    // consultables désormais en tapant une Maison -- voir buildingInfoText) : "+ 16" reprend la
+    // même marge fixe que celle utilisée juste en dessous pour infoPanelText.
+    const catBlockY = 10 + desktopIconGridHeight + 16 + desktopInfoPanelReserve;
     // Hauteur de bouton DYNAMIQUE plutôt qu'un seuil qui bascule tout le panneau en mode mobile
     // (demande utilisateur explicite : "le PC a la meme UI que le telephone... c'etait mieux avant
     // avec le menu qui restait a gauche") -- calée sur la place RÉELLEMENT disponible sous les
@@ -2145,7 +2131,11 @@ class GameScene extends Phaser.Scene {
         }
         this.resourceValueTexts[res].setPosition(bx + pcIconSize + pcIconGap, by + pcIconSize / 2 - 8).setFontSize(13).setVisible(true);
         if (this.resourceRateTexts[res]) {
-          this.resourceRateTexts[res].setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + pcIconSize / 2 - 6).setFontSize(11).setVisible(true);
+          // setOrigin(0, 0) explicite : voir le commentaire équivalent côté mobile (layoutHud),
+          // qui utilise une origine différente (0.5, 0) sur ce même objet partagé.
+          this.resourceRateTexts[res].setOrigin(0, 0)
+            .setPosition(bx + pcIconSize + pcIconGap + pcNumberSlotWidth, by + pcIconSize / 2 - 6)
+            .setFontSize(11).setVisible(true);
         }
         // Zone de survol/tap (voir attachHoverTooltip/resourceHitZones/positionResourceZone) :
         // toute la largeur de la colonne (icône + nombre + gain/perte), pas juste l'icône -- plus
@@ -2156,32 +2146,14 @@ class GameScene extends Phaser.Scene {
       });
       const iconGridHeight = Math.ceil(this.resourceOrder.length / pcCols) * (pcIconSize + pcRowGap);
 
-      // Icône + nombre pour chacun des 2 indicateurs, côte à côte (voir laborStatIconImages/
-      // laborStatValueTexts, remplace l'ancien texte brut) -- même ligne que l'ancien
-      // populationStatsText, largeur de colonne PC (220px) largement suffisante pour les deux.
-      {
-        // desktopLaborIconSize calculé plus haut (voir le commentaire là-bas, x3 demande
-        // utilisateur explicite) -- police/texte agrandis en proportion (14 -> 28) pour rester
-        // lisible à côté d'une icône bien plus grande, plutôt que rester minuscule sous elle.
-        const laborIconSize = desktopLaborIconSize, laborNumberSlot = 34, laborIconGap = 8, laborGroupGap = 22;
-        const laborY = 10 + iconGridHeight + 6;
-        let lx = 10;
-        for (const k of ['needed', 'housing']) {
-          this.laborStatIconImages[k].setPosition(lx, laborY).setDisplaySize(laborIconSize, laborIconSize).setVisible(true);
-          this.laborStatValueTexts[k].setPosition(lx + laborIconSize + laborIconGap, laborY + laborIconSize / 2 - 14).setFontSize(28).setVisible(true);
-          this.positionResourceZone(this.laborHitZones[k], lx, laborY, laborIconSize + laborIconGap + laborNumberSlot, laborIconSize);
-          lx += laborIconSize + laborIconGap + laborNumberSlot + laborGroupGap;
-        }
-      }
-
       // catBlockY calculé plus haut (voir le commentaire là-bas). Le panneau d'info dispose
       // toujours de tout l'espace entre les ressources et cette ligne pour respirer.
       const confirmY = catBlockY - desktopGap - confirmRowHeight;
 
-      // 34 -> 6 + desktopLaborIconSize + 12 (même formule que catBlockY plus haut, voir le
-      // commentaire là-bas) : suit désormais la vraie hauteur de la rangée travailleur/logement
-      // au lieu d'un décalage fixe pensé pour l'ancienne icône 16px (débordait dessus sinon).
-      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 6 + desktopLaborIconSize + 12).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
+      // Plus de rangée travailleur manquant/logement libre au-dessus (demande utilisateur explicite
+      // : consultables désormais en tapant une Maison, voir buildingInfoText) -- l'écart revient à
+      // une simple marge fixe sous la grille de ressources, comme avant l'ajout de cette rangée.
+      this.infoPanelText.setPosition(10, 10 + iconGridHeight + 16).setFontSize(13).setWordWrapWidth(this.sidebarWidth - 20);
 
       this.confirmButton
         .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
@@ -2253,58 +2225,37 @@ class GameScene extends Phaser.Scene {
     // valeurs fixes qui pourraient déborder de l'écran sur les appareils les plus petits.
     this.sidebarWidth = 0; // la carte utilise tout l'écran, rien n'est réservé sur les côtés
 
-    // Bandeau ressources : icônes + valeurs sur une seule ligne (voir drawResourceBarIcon).
-    // Emplacements de largeur fixe par ressource, pour que la mise en page ne bouge pas quand une
-    // valeur gagne/perd un chiffre. Un peu plus large pour planches/pierre taillée/pain (voir
-    // rateSlotWidth) : gain/perte par minute juste après le nombre (voir resourceRateTexts), pas
-    // de ligne séparée -- ore/codex restent au format compact d'origine.
-    // 18 -> 36 icône, 16 -> 32 texte (x2, demande utilisateur explicite). Icône gardée x2 (36px),
-    // texte réduit (32 -> 13) pour retenir peu de rangées (demande utilisateur explicite : "reduit
-    // la taille du texte pour que les éléments tiennent...") -- emplacements du nombre/du gain-perte
-    // resserré en conséquence (mobileNumberSlot).
+    // Bandeau ressources : icônes + valeurs sur une seule ligne (voir drawResourceBarIcon). Plus
+    // d'indicateurs travailleur manquant/logement libre ici (demande utilisateur explicite :
+    // consultables désormais en tapant une Maison, voir buildingInfoText) -- seulement les 8
+    // ressources, à nouveau sur une seule rangée.
+    // 18 -> 36 icône (x2, demande utilisateur explicite, gardée). Le gain/perte par minute
+    // (resourceRateTexts) passe SOUS l'icône plutôt qu'à côté du nombre (demande utilisateur
+    // explicite : "deplace le chiffre indiquant le gain futur en dessous de l'icone") -- libère la
+    // largeur qu'il prenait à côté du nombre, en plus du retrait des 2 indicateurs ci-dessus :
+    // les 8 ressources retiennent donc à nouveau sur une seule ligne sans avoir besoin de
+    // rétrécir le texte plus qu'actuellement.
     const barIconSize = 36, iconGap = 3;
     const mobileNumberSlot = 24;
-    // 170 : réserve la place du chrono/bouton pause/bouton menu en haut à droite (voir plus haut,
-    // this.menuButton/pauseButton/chronoText -- positionnés indépendamment, toujours ancrés à
-    // droite) -- sans cette réserve, la grille pleine largeur venait chevaucher ce groupe sur un
-    // téléphone étroit (bug vécu pour de vrai : dernière colonne illisible, cachée sous le chrono).
-    const mobileRightReserve = 170;
+    const mobileRateGap = 1, mobileRateFontSize = 10;
+    // 170 -> 110 : le chrono ne prend plus de largeur à côté de Pause/Menu (déplacé EN DESSOUS
+    // d'eux, voir plus haut dans cette fonction, demande utilisateur explicite) -- seule la place
+    // de Pause+Menu eux-mêmes reste à réserver ici.
+    const mobileRightReserve = 110;
     const mobileAvailableWidth = w - 16 - mobileRightReserve;
-    // Grille UNIQUE (ressources ET indicateurs main-d'œuvre/logements ensemble, voir plus bas) :
-    // 8 ressources + 2 indicateurs = 10 cases, 5 colonnes -> toujours EXACTEMENT 2 rangées (demande
-    // utilisateur explicite : "les icones de travailleur manquant et place libre doivent etre mis
-    // sur les 2 premieres lignes comme pour les ressources", au lieu d'une 3e rangée séparée comme
-    // avant) -- remplace l'ancien choix adaptatif 8/4 colonnes (repli devenu inutile : 5 colonnes
-    // laisse largement plus de place par case que l'ancien cas à 8, testé sur les mêmes largeurs
-    // d'écran qui avaient motivé ce repli).
-    const mobileCells = [...this.resourceOrder, 'needed', 'housing'];
-    const mobileResCols = 5;
-    const mobileResRows = Math.ceil(mobileCells.length / mobileResCols);
+    const mobileResCols = this.resourceOrder.length;
     const mobileColWidth = mobileAvailableWidth / mobileResCols;
-    const mobileRowHeight = barIconSize + 6;
     const barY = 8;
-    const topBarHeight = mobileResRows * mobileRowHeight + 18;
+    const topBarHeight = barY + barIconSize + mobileRateGap + mobileRateFontSize + 10;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
     // Voir getEffectiveZoomMin()/clampCameraVertical() : le bandeau du haut cache une bande du
     // monde sans réduire la hauteur de caméra elle-même, il faut donc le soustraire à part.
     this.hudTopInset = topBarHeight;
 
     this.resourceBarIconsGraphics.clear().setVisible(true);
-    mobileCells.forEach((cell, i) => {
-      const col = i % mobileResCols, row = Math.floor(i / mobileResCols);
-      const bx = 8 + col * mobileColWidth;
-      const by = barY + row * mobileRowHeight;
-      const isLabor = cell === 'needed' || cell === 'housing';
-      if (isLabor) {
-        // Même taille/police que les ressources désormais (demande utilisateur explicite : "comme
-        // pour les ressources") -- avant sur sa propre rangée avec une icône bien plus grande (x3,
-        // demande utilisateur antérieure), incompatible avec un partage de rangée homogène.
-        this.laborStatIconImages[cell].setPosition(bx, by).setDisplaySize(barIconSize, barIconSize).setVisible(true);
-        this.laborStatValueTexts[cell].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 - 8).setFontSize(13).setVisible(true);
-        this.positionResourceZone(this.laborHitZones[cell], bx, by, mobileColWidth, barIconSize);
-        return;
-      }
-      const res = cell;
+    this.resourceOrder.forEach((res, i) => {
+      const bx = 8 + i * mobileColWidth;
+      const by = barY;
       if (this.resourceBarIconTextureKeys[res]) {
         this.resourceBarIconImages[res].setPosition(bx, by).setDisplaySize(barIconSize, barIconSize).setVisible(true);
       } else {
@@ -2312,11 +2263,20 @@ class GameScene extends Phaser.Scene {
       }
       this.resourceValueTexts[res].setPosition(bx + barIconSize + iconGap, by + barIconSize / 2 - 8).setFontSize(13).setVisible(true);
       if (this.resourceRateTexts[res]) {
-        this.resourceRateTexts[res].setPosition(bx + barIconSize + iconGap + mobileNumberSlot, by + barIconSize / 2 - 6).setFontSize(11).setVisible(true);
+        // setOrigin(0.5, 0) explicite (pas hérité) : la colonne PC positionne ce même texte à côté
+        // du nombre avec l'origine par défaut (0,0) -- sans ce réglage explicite ICI (et là-bas),
+        // l'origine laissée par le dernier passage dans l'AUTRE mise en page fausserait le calage
+        // au prochain changement de mode (bug potentiel évité, pas vécu).
+        this.resourceRateTexts[res].setOrigin(0.5, 0)
+          .setPosition(bx + barIconSize / 2, by + barIconSize + mobileRateGap)
+          .setFontSize(mobileRateFontSize).setVisible(true);
       }
       // Zone de tap (voir attachHoverTooltip/resourceHitZones/positionResourceZone) : toute la
-      // largeur de la colonne, pas juste l'icône -- plus facile à viser au doigt.
-      this.positionResourceZone(this.resourceHitZones[res], bx, by, mobileColWidth, barIconSize);
+      // largeur de la colonne ET la hauteur du gain/perte en dessous, pas juste l'icône -- plus
+      // facile à viser au doigt.
+      this.positionResourceZone(
+        this.resourceHitZones[res], bx, by, mobileColWidth, barIconSize + mobileRateGap + mobileRateFontSize
+      );
     });
 
     // Tailles réduites (voir demande utilisateur : le pavé prenait la moitié de l'écran sur
@@ -2326,11 +2286,11 @@ class GameScene extends Phaser.Scene {
     const compact = h < 420;
     // x1.8, pas x2 (demande utilisateur explicite : "je voudrais que sur telephone, le menu sois
     // le plus bas possible... reduit encore la taille de x1,8 de la valeur initiale") -- 30/36 ->
-    // 51/55 (même marge d'origine, ~4-8px, conservée autour de l'icône agrandie à 47px, voir
-    // positionBuildButtonContents). Plus petit = menuHeight plus petite = menuTop plus bas (voir
-    // plus bas, menuTop reste ancré au ras du bas de l'écran) : sert directement la demande d'un
-    // pavé "le plus bas possible".
-    const btnHeight = compact ? 51 : 55;
+    // 49/53 (marge minimale, ~2-6px, autour de l'icône -- demande utilisateur explicite plus
+    // récente : "reduit la taille des boutons en gardant la taille des icones", après le retrait du
+    // coût du bouton -- voir positionBuildButtonContents). Plus petit = menuHeight plus petite =
+    // menuTop plus bas (voir plus bas, menuTop reste ancré au ras du bas de l'écran).
+    const btnHeight = compact ? 49 : 53;
     // Espacement réduit (demande utilisateur explicite), en plus des boutons plus petits.
     const gap = compact ? 3 : 4;
     const mobileCategoryRowHeight = compact ? 18 : 20;
@@ -2440,63 +2400,31 @@ class GameScene extends Phaser.Scene {
   // à sa suite, le tout centré verticalement dans le rectangle (x, y, w, h) du bouton. MOBILE
   // UNIQUEMENT désormais (demande utilisateur explicite : boutons CARRÉS sur PC, logo centré +
   // coût en dessous -- voir positionBuildButtonContentsSquare/layoutHud, colonne PC).
+  // Coût retiré du bouton (demande utilisateur explicite : "retire l'indication du coup en
+  // ressource... il apparaiterait dans l'infobulle" -- voir attachHoverTooltip pour le survol PC,
+  // updateInfoPanel pour le texte affiché sur téléphone une fois le bâtiment choisi pour
+  // construction, aucun survol n'existe au doigt) : icône SEULE, centrée dans tout le bouton
+  // plutôt qu'alignée à gauche avec la ligne de coût à sa suite comme avant.
   positionBuildButtonContents(id, x, y, w, h) {
-    // x1.8, pas x2 (demande utilisateur explicite : "reduit encore la taille de x1,8 de la valeur
-    // initiale", pour que le pavé mobile reste le plus bas possible sur l'écran) -- 26 -> 47. Voir
-    // btnHeight (layoutHud, grille mobile), agrandi en proportion pour que ce plafond h - 6 ne
-    // re-rogne pas l'icône agrandie. Bornée par la largeur en plus de la hauteur, au cas où une
-    // colonne mobile serait un jour plus étroite que haute.
-    const iconSize = Math.min(h - 6, w * 0.34, 47);
+    const iconSize = Math.min(h - 6, w * 0.6, 47);
     const icon = this.buildButtonIcons[id];
-    icon.setPosition(x + 6 + iconSize / 2, y + h / 2).setVisible(true);
+    icon.setPosition(x + w / 2, y + h / 2).setVisible(true);
     // Image (voir buildingIconKeys) : taille d'affichage directe, indépendante de la résolution
     // native du fichier source. Graphics de secours (Recycleur) : dessinée à s=30 en
     // référence dans buildHud, setScale reste donc le bon levier pour celui-là.
     if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
     else icon.setScale(iconSize / 30);
-
-    let costImgSize = Math.min(h - 12, 15);
-    let fontSize = Math.max(10, Math.min(13, h - 20));
-    let gapImg = 2, gapTxt = 6;
-    const costs = this.buildButtonCostIcons[id];
-    // Mesure d'abord la largeur totale nécessaire à cette taille "normale" (comme la version PC,
-    // voir positionBuildButtonContentsSquare) : rétrécit TOUT (icônes/police/espacements) si ça
-    // déborderait du bouton -- jusqu'ici jamais plus de 2 coûts, jamais arrivé en pratique (demande
-    // utilisateur explicite : coût du Temple à 4 ressources).
-    costs.forEach(({ txt }) => txt.setFontSize(fontSize));
-    let totalCostW = -gapTxt;
-    costs.forEach(({ txt }) => { totalCostW += costImgSize + gapImg + txt.width + gapTxt; });
-    const availableW = x + w - (x + 6 + iconSize + 8) - 6;
-    if (totalCostW > availableW && totalCostW > 0) {
-      const scale = Math.max(0.45, availableW / totalCostW);
-      costImgSize = Math.max(7, costImgSize * scale);
-      fontSize = Math.max(8, Math.round(fontSize * scale));
-      gapImg = Math.max(1, gapImg * scale);
-      gapTxt = Math.max(3, gapTxt * scale);
-      costs.forEach(({ txt }) => txt.setFontSize(fontSize));
-    }
-    // Espacements resserrés (8/2/6 au lieu de 10/3/10, même demande utilisateur) : laisse assez de
-    // place à 2 coûts (icône + nombre chacun) dans une colonne étroite sans déborder sur la
-    // suivante.
-    let cx = x + 6 + iconSize + 8;
-    for (const { img, txt } of costs) {
-      img.setPosition(cx, y + h / 2).setDisplaySize(costImgSize, costImgSize).setVisible(true);
-      cx += costImgSize + gapImg;
-      txt.setPosition(cx, y + h / 2).setVisible(true);
-      cx += txt.width + gapTxt;
-    }
   }
 
-  // Version CARRÉE de positionBuildButtonContents (demande utilisateur explicite : "des boutons
-  // plus carré avec en central le logo du batiment et en dessous le cout en planche et pierre")
-  // -- PC uniquement (voir layoutHud, colonne PC) : logo centré horizontalement dans le tiers
-  // supérieur du bouton, ligne de coût (icône+nombre par ressource) centrée horizontalement
-  // juste en dessous, plutôt que la disposition icône-à-gauche/coûts-à-la-suite de la version
-  // mobile (rectangle large, pas de contrainte de centrage). w/h désormais INDÉPENDANTS (voir
-  // layoutHud, demande utilisateur explicite : forcer un carré parfait laissait un grand vide
-  // entre les colonnes dès que la hauteur de rangée devenait la contrainte) -- size = le plus
-  // petit des deux sert de référence pour les tailles (icône/coût), pour ne jamais déborder du
-  // bouton même quand il n'est plus parfaitement carré.
+  // Version CARRÉE de positionBuildButtonContents -- PC uniquement (voir layoutHud, colonne PC).
+  // Coût retiré du bouton (demande utilisateur explicite : "retire l'indication du coup en
+  // ressource... il apparaiterait dans l'infobulle" -- voir attachHoverTooltip) : logo SEUL,
+  // centré dans tout le bouton (avant : dans le tiers supérieur, la ligne de coût prenant le
+  // tiers du bas). w/h restent INDÉPENDANTS (voir layoutHud, demande utilisateur explicite :
+  // forcer un carré parfait laissait un grand vide entre les colonnes dès que la hauteur de
+  // rangée devenait la contrainte) -- size = le plus petit des deux sert de référence pour la
+  // taille de l'icône, pour ne jamais déborder du bouton même quand il n'est plus parfaitement
+  // carré.
   positionBuildButtonContentsSquare(id, x, y, w, h) {
     const cx = x + w / 2;
     const size = Math.min(w, h);
@@ -2506,45 +2434,9 @@ class GameScene extends Phaser.Scene {
     // grand bouton.
     const iconSize = Math.min(size * 0.5, 85);
     const icon = this.buildButtonIcons[id];
-    icon.setPosition(cx, y + h * 0.38).setVisible(true);
+    icon.setPosition(cx, y + h / 2).setVisible(true);
     if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
     else icon.setScale(iconSize / 30);
-
-    const costs = this.buildButtonCostIcons[id];
-    // Plafonds relevés en proportion de l'icône ci-dessus (14 -> 22, 12 -> 18), même raison.
-    let costImgSize = Math.max(9, Math.min(22, size * 0.16));
-    let fontSize = Math.max(10, Math.min(18, Math.round(size * 0.15)));
-    let gapAfterImg = 2, gapAfterTxt = 8;
-    // Largeur totale mesurée D'ABORD (police déjà fixée, .width lisible) pour pouvoir centrer le
-    // groupe entier sous le logo -- contrairement à la version mobile, alignée à gauche sans
-    // besoin de connaître la largeur totale à l'avance.
-    costs.forEach(({ txt }) => txt.setFontSize(fontSize));
-    let totalW = -gapAfterTxt;
-    costs.forEach(({ txt }) => { totalW += costImgSize + gapAfterImg + txt.width + gapAfterTxt; });
-    // Rétrécit toute la ligne si elle déborderait du bouton (demande utilisateur explicite : coût
-    // du Temple à 4 ressources -- jusqu'ici jamais plus de 2, ces tailles n'avaient jamais eu
-    // besoin de tenir compte de la largeur réellement disponible). Reproportionne TOUT (icônes,
-    // police, espacements) plutôt que de laisser la police fixe et juste rapprocher les éléments,
-    // qui aurait fini par les faire se chevaucher au lieu de rester lisibles mais petits.
-    const maxRowWidth = w - 8;
-    if (totalW > maxRowWidth && totalW > 0) {
-      const scale = Math.max(0.45, maxRowWidth / totalW);
-      costImgSize = Math.max(7, costImgSize * scale);
-      fontSize = Math.max(8, Math.round(fontSize * scale));
-      gapAfterImg = Math.max(1, gapAfterImg * scale);
-      gapAfterTxt = Math.max(3, gapAfterTxt * scale);
-      costs.forEach(({ txt }) => txt.setFontSize(fontSize));
-      totalW = -gapAfterTxt;
-      costs.forEach(({ txt }) => { totalW += costImgSize + gapAfterImg + txt.width + gapAfterTxt; });
-    }
-    const costY = y + h * 0.78;
-    let cxRun = cx - totalW / 2;
-    for (const { img, txt } of costs) {
-      img.setPosition(cxRun, costY).setDisplaySize(costImgSize, costImgSize).setVisible(true);
-      cxRun += costImgSize + gapAfterImg;
-      txt.setPosition(cxRun, costY).setVisible(true);
-      cxRun += txt.width + gapAfterTxt;
-    }
   }
 
   setBuildMode(mode) {
@@ -3961,13 +3853,17 @@ class GameScene extends Phaser.Scene {
       text = 'Construction : Route\nGlisse sur la carte pour tracer.\nTape "Annuler" pour arrêter.';
     } else if (this.buildMode) {
       const def = GameConfig.buildings[this.buildMode];
+      // Coût affiché ICI (demande utilisateur explicite : plus affiché directement sur le bouton,
+      // voir buildHud/positionBuildButtonContents -- ce texte reste le seul endroit qui le montre
+      // encore sur téléphone, où l'infobulle au survol du bouton n'existe pas, voir attachHoverTooltip).
+      const costLine = `Coût : ${this.formatResources(def.cost, true)}`;
       if (this.buildGhostHex) {
         const valid = this.isValidBuildSpot(this.buildGhostHex.col, this.buildGhostHex.row);
-        text = `Construction : ${def.name}\n`
+        text = `Construction : ${def.name} (${costLine})\n`
           + (valid ? 'Valide pour construire ici,\nou tape une autre case.' : 'Case invalide : choisis-en une autre.')
           + '\nTape "Annuler" pour arrêter.';
       } else {
-        text = `Construction : ${def.name}\nTape une case pour choisir où construire.`;
+        text = `Construction : ${def.name} (${costLine})\nTape une case pour choisir où construire.`;
       }
     } else if (this.selectedBuildingKey) {
       const tile = GameState.tiles.get(this.selectedBuildingKey);
@@ -4144,9 +4040,6 @@ class GameScene extends Phaser.Scene {
       else if (rate < 0) t.setText(`${rate}`).setColor('#e07a7a');
       else t.setText('±0').setColor('#9aa5ad');
     }
-    this.laborStatValueTexts.needed.setText(String(GameState.neededWorkers()));
-    this.laborStatValueTexts.housing.setText(String(GameState.availableHousing()));
-
     // Chrono (voir demande utilisateur) : this.elapsed n'avance déjà que hors pause (voir plus
     // haut, dans le bloc "if (!this.paused)") -- rien à faire de spécial ici pour la pause,
     // juste formater la valeur courante.
