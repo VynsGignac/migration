@@ -532,7 +532,8 @@ class GameScene extends Phaser.Scene {
   // ces vues bloquent toute interaction avec la carte en dessous, comme isPointerOverHud le fait
   // déjà pour les éléments du HUD classique.
   isModalOpen() {
-    return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen || this.laborRoutingOpen;
+    return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen
+      || this.laborRoutingOpen || this.startMenuOpen;
   }
 
   // Vrai si le pointeur est actuellement au-dessus d'un élément du HUD (bandeau/colonne, pavé de
@@ -903,6 +904,7 @@ class GameScene extends Phaser.Scene {
     this.buildGameOver();
     this.buildResourceRouting();
     this.buildLaborRoutingPanel();
+    this.buildStartMenu();
 
     // Boutons dédiés Entrepôt/Université/Maison (demande utilisateur explicite, voir
     // openWarehouseQuickMenu/openUniversityQuickMenu/openHouseQuickMenu) : lancent les menus
@@ -1080,6 +1082,8 @@ class GameScene extends Phaser.Scene {
     }
 
     this.layoutHud();
+    this.layoutStartMenu();
+    this.pauseForStartMenu();
     // Nommée (pas une fléchée anonyme) + retirée au shutdown : this.scale (ScaleManager) est un
     // objet de NIVEAU JEU qui survit à un scene.restart() (voir restartGame), contrairement au
     // reste de la scène -- sans ce nettoyage, chaque "Recommencer" accumulerait un abonnement
@@ -1093,6 +1097,7 @@ class GameScene extends Phaser.Scene {
       this.layoutGameOver();
       this.layoutResourceRouting();
       this.layoutLaborRoutingPanel();
+      this.layoutStartMenu();
       this.clampZoomAndCamera();
     };
     this.scale.on('resize', this._onResize);
@@ -1760,6 +1765,135 @@ class GameScene extends Phaser.Scene {
     } else if (this.pausedByLaborRouting) {
       this.pausedByLaborRouting = false;
       if (this.paused) this.togglePause();
+    }
+  }
+
+  // Menu de démarrage (demande utilisateur explicite, v0.4 : "un menu de demarrage au lancement
+  // du jeu... quelque chose tres simple, avec juste des boutons Nouvelle partie/Charger/
+  // Parametre/Quitter... la version doit etre affiché") -- plein écran, toujours ouvert dès la
+  // création de la scène (voir la fin de cette méthode : jeu mis en pause dessous, sans passer
+  // par togglePause() pour éviter le toast "Jeu en pause" au tout premier lancement). Se ferme
+  // définitivement une fois un choix fait -- pas de bouton retour prévu pour l'instant (demande
+  // explicitement "quelque chose tres simple").
+  buildStartMenu() {
+    this.startMenuOpen = true;
+
+    this.startMenuOverlay = this.add.rectangle(0, 0, 10, 10, 0x10151a, 1)
+      .setOrigin(0, 0).setDepth(1030).setInteractive();
+    this.uiElements.push(this.startMenuOverlay);
+
+    this.startMenuTitle = this.add.text(0, 0, 'Migration', {
+      font: 'bold 36px sans-serif', color: '#ffd23f',
+    }).setOrigin(0.5, 0.5).setDepth(1031);
+    this.uiElements.push(this.startMenuTitle);
+
+    // Version affichée en toutes lettres (demande utilisateur explicite), pas juste le petit
+    // texte discret en bas à gauche de l'écran (voir versionText) qui reste par ailleurs.
+    this.startMenuVersion = this.add.text(0, 0, `v${GameVersion}`, {
+      font: '14px sans-serif', color: '#ffffff99',
+    }).setOrigin(0.5, 0.5).setDepth(1031);
+    this.uiElements.push(this.startMenuVersion);
+
+    const buttonDefs = [
+      { key: 'newGame', text: 'Nouvelle partie', action: () => this.onStartMenuNewGame() },
+      { key: 'load', text: 'Charger', action: () => this.onStartMenuLoad() },
+      { key: 'settings', text: 'Paramètres', action: () => this.onStartMenuSettings() },
+      { key: 'quit', text: 'Quitter', action: () => this.onStartMenuQuit() },
+    ];
+    this.startMenuButtons = {};
+    for (const { key, text, action } of buttonDefs) {
+      const btn = this.add.text(0, 0, text, {
+        font: 'bold 16px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 22, y: 12 },
+      }).setOrigin(0.5, 0.5).setDepth(1031).setInteractive({ useHandCursor: true });
+      btn.on('pointerup', action);
+      this.startMenuButtons[key] = btn;
+      this.uiElements.push(btn);
+    }
+    // Pause posée par pauseForStartMenu(), PAS ici : buildMenuToggle/confirmButton/buildButtons
+    // n'existent pas encore à ce stade de buildHud() (créés plus loin) -- setBuildButtonsEnabled()
+    // y référence buildMenuToggle directement et plantait (TypeError: Cannot read properties of
+    // undefined), avortant silencieusement le reste de create() (bug vécu pour de vrai : plus
+    // aucune mise en page, écran figé sur un fragment du monde). Voir l'appel de
+    // pauseForStartMenu() après le tout premier layoutHud(), une fois buildHud() achevée.
+  }
+
+  // Met le jeu en pause pour le menu de démarrage, sans passer par togglePause() (pas de toast
+  // "Jeu en pause" au tout premier affichage) -- appelé séparément de buildStartMenu() ci-dessus
+  // (voir le commentaire juste au-dessus) une fois tout le reste de buildHud() construit.
+  pauseForStartMenu() {
+    this.paused = true;
+    this.pauseButton.setText('▶');
+    this.setBuildButtonsEnabled(false);
+  }
+
+  // Repositionne le menu de démarrage (appelé à la création ET au redimensionnement, comme les
+  // autres panneaux modaux) -- ne fait rien tant que buildStartMenu() n'est pas encore passée
+  // (premier layoutHud(), appelé avant elle dans certains chemins).
+  layoutStartMenu() {
+    if (!this.startMenuOverlay) return;
+    const w = this.scale.width, h = this.scale.height;
+    this.startMenuOverlay.setSize(w, h);
+
+    const titleFontSize = this.mobileLayout ? 26 : 36;
+    this.startMenuTitle.setFontSize(titleFontSize).setPosition(w / 2, h * 0.28);
+    this.startMenuVersion.setPosition(w / 2, h * 0.28 + titleFontSize * 0.9);
+
+    const order = ['newGame', 'load', 'settings', 'quit'];
+    const btnGap = 14;
+    let y = h * 0.48;
+    for (const key of order) {
+      const btn = this.startMenuButtons[key];
+      btn.setPosition(w / 2, y);
+      y += btn.height + btnGap;
+    }
+  }
+
+  // Ferme définitivement le menu de démarrage (voir les boutons Nouvelle partie/Charger) --
+  // aucune des deux autres options (Paramètres/Quitter) ne le referme, voir plus bas.
+  hideStartMenu() {
+    if (!this.startMenuOpen) return;
+    this.startMenuOpen = false;
+    this.startMenuOverlay.setVisible(false).disableInteractive();
+    this.startMenuTitle.setVisible(false);
+    this.startMenuVersion.setVisible(false);
+    for (const key in this.startMenuButtons) this.startMenuButtons[key].setVisible(false).disableInteractive();
+  }
+
+  // "Nouvelle partie" : le monde est déjà généré neuf (voir create(), qui pose l'Entrepôt de
+  // départ etc. AVANT que ce menu ne s'affiche par-dessus) -- il suffit donc de fermer le menu et
+  // de relever la pause posée par buildStartMenu(), sans repasser par togglePause() (même raison :
+  // pas de toast "Reprise du jeu" à l'entrée en jeu).
+  onStartMenuNewGame() {
+    this.hideStartMenu();
+    this.paused = false;
+    this.pauseButton.setText('⏸');
+    this.setBuildButtonsEnabled(true);
+  }
+
+  // "Charger" : ferme le menu de démarrage et ouvre directement le panneau Sauvegardes existant
+  // (voir toggleSaveMenu/loadFromSlot) -- pas de logique de chargement séparée à écrire, celle-ci
+  // gère déjà tout (choix d'emplacement, désérialisation).
+  onStartMenuLoad() {
+    this.hideStartMenu();
+    this.toggleSaveMenu(true);
+  }
+
+  // "Paramètres" : rien à régler pour l'instant (demande utilisateur explicite : "pour l'instant
+  // quelque chose tres simple") -- juste un accusé de réception, le menu reste ouvert.
+  onStartMenuSettings() {
+    this.showToast('Paramètres : à venir');
+  }
+
+  // "Quitter" : ferme vraiment l'appli sur Android (voir @capacitor/app, ajouté pour ce bouton --
+  // le pont natif Capacitor expose window.Capacitor.Plugins.App automatiquement dès qu'un plugin
+  // est enregistré côté natif, aucun script à ajouter côté web). Un navigateur ne peut pas se
+  // fermer lui-même par script (restriction de sécurité universelle) : simple message sur le site
+  // web/PWA plutôt qu'un bouton qui ne ferait rien.
+  onStartMenuQuit() {
+    if (window.Capacitor?.isNativePlatform?.() && window.Capacitor.Plugins?.App) {
+      window.Capacitor.Plugins.App.exitApp();
+    } else {
+      this.showToast('Ferme cet onglet pour quitter');
     }
   }
 
@@ -4374,6 +4508,7 @@ class GameScene extends Phaser.Scene {
       this.layoutTechTree();
       this.layoutResourceRouting();
       this.layoutLaborRoutingPanel();
+      this.layoutStartMenu();
     }
     this.clampZoomAndCamera();
 
