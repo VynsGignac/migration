@@ -2340,13 +2340,23 @@ class GameScene extends Phaser.Scene {
     // sous la valeur actuelle et non sous l'icone pour gagner de la place"), donc la hauteur totale
     // du bandeau dépend maintenant de ce bloc texte plutôt que de l'icône + une rangée séparée.
     const sampleRes = this.resourceOrder[0];
-    const valueTextTop = barIconSize / 2 - 8; // offset relatif à "by", formule reprise ci-dessous
     this.resourceValueTexts[sampleRes].setFontSize(mobileValueFontSize);
-    let textBlockBottom = valueTextTop + this.resourceValueTexts[sampleRes].height;
+    let textBlockHeight = this.resourceValueTexts[sampleRes].height;
     if (this.resourceRateTexts[sampleRes]) {
       this.resourceRateTexts[sampleRes].setFontSize(mobileRateFontSize);
-      textBlockBottom += mobileRateGap + this.resourceRateTexts[sampleRes].height;
+      textBlockHeight += mobileRateGap + this.resourceRateTexts[sampleRes].height;
     }
+    // Bloc valeur+gain CENTRÉ verticalement sur l'icône (demande utilisateur explicite : "remonte
+    // un peu le texte des quantités de ressource et gain... pour le centrer en hauteur sur les
+    // icones") -- ancien "barIconSize / 2 - 8" calé au jugé pour une police plus grande, jamais
+    // recalé après les réductions de taille d'icône successives (d'où le texte resté trop bas).
+    // Peut légèrement remonter au-dessus du haut de l'icône (offset négatif) quand le bloc texte
+    // est plus haut que l'icône elle-même (rowContentHeight, plus bas, en tient compte).
+    // Plafonné à -barY : empêche le bloc texte de remonter au-delà du haut du bandeau lui-même
+    // quand il est nettement plus haut que l'icône (centrage alors très légèrement imparfait,
+    // negligeable, plutôt qu'un texte à moitié hors du bandeau).
+    const valueTextTop = Math.max(barIconSize / 2 - textBlockHeight / 2, -barY);
+    const textBlockBottom = valueTextTop + textBlockHeight;
     const rowContentHeight = Math.max(barIconSize, textBlockBottom);
     const topBarHeight = barY + rowContentHeight + bottomPad;
     this.sidebarBg.setPosition(0, 0).setSize(w, topBarHeight).setVisible(true);
