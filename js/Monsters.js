@@ -158,6 +158,22 @@ const Monsters = {
     const advance = speedPx * dt;
     this.totalDistancePx += advance;
 
+    const messages = [];
+
+    // Régénère les blobs de ressources (bois/pierre/montagne) à CHAQUE tour complet de la horde
+    // (demande utilisateur explicite : "à la fin de la horde, les blobs de ressource sois
+    // regeneré, pas forcement exactement à la meme place que precedement") -- réutilise
+    // exactement generateResourceBlobs() (même génération aléatoire qu'au tout début de la
+    // partie, voir GameState), qui ne fait qu'AJOUTER de nouveaux blobs sur des cases encore
+    // libres (_tileIsFreeForResource) : les ressources restantes d'avant, elles, ne sont ni
+    // déplacées ni perdues. "lap" ci-dessus est calculé AVANT d'avancer (vitesse de CE tick) ; on
+    // compare avec le nouveau total pour détecter le franchissement.
+    const lapAfter = Math.floor(this.totalDistancePx / worldWidthPx);
+    if (lapAfter > lap) {
+      gameState.generateResourceBlobs();
+      messages.push('La horde a bouclé un tour : de nouvelles ressources sont apparues.');
+    }
+
     // Fenêtres "sous le feu" (voir markGroupUnderAttack) : décrémentées une fois par frame ici,
     // entrées expirées retirées plutôt que laissées grossir indéfiniment dans la Map.
     for (const [groupId, remaining] of this.groupUnderAttack) {
@@ -165,8 +181,6 @@ const Monsters = {
       if (next <= 0) this.groupUnderAttack.delete(groupId);
       else this.groupUnderAttack.set(groupId, next);
     }
-
-    const messages = [];
 
     for (const m of this.list) {
       // Position TOUJOURS avancée, même mort (voir régénération ci-dessous, GameConfig.monsters.
