@@ -26,6 +26,9 @@ assets/
 # temporaire généré au premier lancement.
 whatsapp-bot/.baileys_auth/
 whatsapp-bot/qr.png
+# Logs/artefacts de diagnostic (voir historique du dépannage QR/pairing) -- jamais utiles à commiter.
+whatsapp-bot/*.log
+whatsapp-bot/diag-qr.png
 
 # URL du webhook Discord (voir discord-bot/send-apk.js) : équivaut à un mot de passe (quiconque la
 # possède peut poster dans le salon), jamais à commiter.
