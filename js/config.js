@@ -749,11 +749,13 @@ const GameConfig = {
         speedBonusByLevel: [0.05, 0.10, 0.15],
       },
       log_charrue: {
-        // Nouvel effet (demande utilisateur explicite, remplace l'ancienne chance de 5 %) : +1
-        // GARANTI sur la quantité de chaque livraison, plutôt qu'une chance aléatoire d'obtenir 1
-        // de plus -- voir GameState.updateShipments.
+        // Nouvel effet (demande utilisateur explicite, remplace l'ancienne chance de 5 % puis une
+        // première version erronée en +1 garanti à l'arrivée) : augmente la taille MAXIMALE d'un
+        // paquet chargé au départ (voir GameState.effectiveShipBatchSize, lu par _spawnShipments et
+        // les fonctions spécialisées équivalentes) -- un chargement peut donc rester plus petit que
+        // ce plafond si le stock disponible ou la place chez le destinataire est le facteur limitant.
         name: 'Caisse de transport', parent: 'log_roue', ring: 2, angle: 216,
-        description: 'Augmente de 1 la quantité de ressource transportée dans chaque paquet.',
+        description: 'Augmente de 1 la quantité maximale de ressource transportable par paquet.',
         batchBonus: 1,
       },
       log_amenagement: {

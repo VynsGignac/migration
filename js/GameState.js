@@ -432,6 +432,16 @@ const GameState = {
     return null;
   },
 
+  // Taille EFFECTIVE maximale d'un paquet transporté sur une route (voir GameConfig.logistics.
+  // shipBatchSize) : de base + bonus de Caisse de transport (voir GameConfig.techTree.nodes.
+  // log_charrue, demande utilisateur explicite : "on augmente la taille de ressource maximale
+  // transportée par un paquet" -- PAS un bonus garanti à l'arrivée comme précédemment, mais un
+  // plafond de chargement plus haut au DÉPART). Lu par _spawnShipments et les fonctions
+  // spécialisées équivalentes (construction/pain/lingot de fer), ainsi qu'estimateResourceRates.
+  effectiveShipBatchSize() {
+    return GameConfig.logistics.shipBatchSize + (this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.batchBonus : 0);
+  },
+
   // Rayon d'extraction EFFECTIF d'un bâtiment "de récolte" (kind extractor) : rayon de base +
   // bonus d'Expertise (voir GameConfig.techTree.nodes.ind_expertise, demande utilisateur explicite,
   // remplace son ancien effet "+X % de vitesse pour tous les bâtiments de production"). Utilisé
@@ -1036,10 +1046,7 @@ const GameState = {
   // chaque cycle de livraison individuel -- d'où la stabilité demandée.
   estimateResourceRates() {
     const labor = this.allocateLabor();
-    // Caisse de transport (voir GameConfig.techTree.nodes.log_charrue, demande utilisateur
-    // explicite) : +1 GARANTI sur chaque paquet livré (voir updateShipments) -- reflété ici pour
-    // que l'estimation reste cohérente avec le débit réel.
-    const batch = GameConfig.logistics.shipBatchSize + (this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.batchBonus : 0);
+    const batch = this.effectiveShipBatchSize();
 
     const roueLevel = this.techLevel('log_roue');
     const roueBonus = roueLevel > 0 ? GameConfig.techTree.nodes.log_roue.speedBonusByLevel[roueLevel - 1] : 0;
@@ -1847,7 +1854,7 @@ const GameState = {
   // Pour chaque bâtiment ayant du stock en sortie et pas déjà de chargement en route,
   // cherche un partenaire compatible à portée et lui expédie un chargement.
   _spawnShipments() {
-    const batch = GameConfig.logistics.shipBatchSize;
+    const batch = this.effectiveShipBatchSize();
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
       if (!def || !def.linkTargets || !tile.outputBuffer || tile.outputBuffer <= 0) continue;
@@ -1926,7 +1933,7 @@ const GameState = {
   // findBestPathToBuildingType) . Même mécanique qu'un producteur normal, sauf que la "source" est
   // le stock central plutôt qu'un outputBuffer local à une case précise.
   _spawnWarehouseBread() {
-    const batch = GameConfig.logistics.shipBatchSize;
+    const batch = this.effectiveShipBatchSize();
     for (const [key, tile] of this.tiles) {
       if (tile.type !== 'warehouse' || tile.underConstruction) continue;
       if (this.resources.bread <= 0) continue;
@@ -1976,7 +1983,7 @@ const GameState = {
   // un envoi de pain en cours bloquerait aussi un envoi de fer depuis le même Entrepôt, et
   // inversement (même bug que celui déjà corrigé entre pain et construction, voir plus haut).
   _spawnWarehouseIronIngot() {
-    const batch = GameConfig.logistics.shipBatchSize;
+    const batch = this.effectiveShipBatchSize();
     for (const [key, tile] of this.tiles) {
       if (tile.type !== 'warehouse' || tile.underConstruction) continue;
       if (this.resources.ironIngot <= 0) continue;
@@ -2050,7 +2057,7 @@ const GameState = {
   // peuvent donc livrer le même chantier simultanément (chacun un aller à la fois, comme pour tout
   // autre chargement), chacun une ressource différente si besoin.
   _spawnWarehouseConstructionDeliveries() {
-    const batch = GameConfig.logistics.shipBatchSize;
+    const batch = this.effectiveShipBatchSize();
     // Busy PAR (Entrepôt, ressource) et non plus juste par Entrepôt (demande utilisateur
     // explicite) : un Entrepôt peut désormais expédier planches ET pierre taillée EN PARALLÈLE
     // pour la construction, plutôt que la seconde ressource devant attendre que la première
@@ -2116,10 +2123,11 @@ const GameState = {
     const roueLevel = this.techLevel('log_roue');
     const roueBonus = roueLevel > 0 ? GameConfig.techTree.nodes.log_roue.speedBonusByLevel[roueLevel - 1] : 0;
     const speed = GameConfig.logistics.shipSpeed * (1 + roueBonus);
-    // Caisse de transport (voir techTree.nodes.log_charrue, demande utilisateur explicite) : +1
-    // GARANTI sur la quantité de CHAQUE livraison qui arrive à bon port (pas sur un chargement
-    // perdu, voir plus bas) -- remplace l'ancienne chance aléatoire.
-    const charrueBonus = this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.batchBonus : 0;
+    // Caisse de transport (voir techTree.nodes.log_charrue/effectiveShipBatchSize, demande
+    // utilisateur explicite : "on augmente la taille de ressource maximale transportée par un
+    // paquet") : agit maintenant au CHARGEMENT (voir _spawnShipments et les fonctions spécialisées
+    // équivalentes, qui lisent effectiveShipBatchSize au lieu de GameConfig.logistics.shipBatchSize
+    // brut) -- rien à faire ici à l'arrivée, s.amount reflète déjà le plafond correct.
     // Gestion des stocks (voir techTree.nodes.log_gestionStocks, demande utilisateur explicite) :
     // chance de DOUBLER la quantité reçue, mais seulement pour une livraison vers un Entrepôt (voir
     // plus bas, branche "toType === 'warehouse'") -- pas les chantiers en construction, ni les
@@ -2152,7 +2160,7 @@ const GameState = {
       delivered = true;
       const destTile = this.tiles.get(s.toKey);
       if (destTile && destTile.type === s.toType) {
-        const amount = s.amount + charrueBonus;
+        const amount = s.amount;
         if (s.forConstruction && destTile.underConstruction) {
           const needed = destTile.constructionNeeded[s.resource];
           destTile.constructionDelivered[s.resource] = Math.min(needed, destTile.constructionDelivered[s.resource] + amount);
