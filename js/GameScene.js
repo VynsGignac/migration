@@ -533,7 +533,7 @@ class GameScene extends Phaser.Scene {
   // déjà pour les éléments du HUD classique.
   isModalOpen() {
     return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen
-      || this.laborRoutingOpen || this.startMenuOpen;
+      || this.laborRoutingOpen || this.startMenuOpen || this.devotionPanelOpen;
   }
 
   // Vrai si le pointeur est actuellement au-dessus d'un élément du HUD (bandeau/colonne, pavé de
@@ -904,21 +904,23 @@ class GameScene extends Phaser.Scene {
     this.buildGameOver();
     this.buildResourceRouting();
     this.buildLaborRoutingPanel();
+    this.buildDevotionPanel();
     this.buildStartMenu();
 
-    // Boutons dédiés Entrepôt/Université/Maison (demande utilisateur explicite, voir
-    // openWarehouseQuickMenu/openUniversityQuickMenu/openHouseQuickMenu) : lancent les menus
-    // autrefois ouverts en cliquant directement sur ces bâtiments -- PC ET mobile (positionnés
-    // dans layoutHud, coin bas-droit de l'écran dans les deux cas, visibles seulement si aucun
-    // autre menu n'est ouvert). Même style que les boutons de construction (rectangle + icône
-    // image, voir buildIds plus haut) plutôt que du texte : ce sont des raccourcis vers des
-    // bâtiments précis, une icône reste plus parlante qu'un libellé générique.
+    // Boutons dédiés Entrepôt/Université/Maison/Dévotion (demande utilisateur explicite, voir
+    // openWarehouseQuickMenu/openUniversityQuickMenu/openHouseQuickMenu/openDevotionQuickMenu) :
+    // lancent les menus autrefois ouverts en cliquant directement sur ces bâtiments -- PC ET
+    // mobile (positionnés dans layoutHud, coin bas-droit de l'écran dans les deux cas, visibles
+    // seulement si aucun autre menu n'est ouvert). Même style que les boutons de construction
+    // (rectangle + icône image, voir buildIds plus haut) plutôt que du texte : ce sont des
+    // raccourcis vers des bâtiments précis, une icône reste plus parlante qu'un libellé générique.
     this.quickMenuButtons = {};
     this.quickMenuButtonIcons = {};
     const quickMenuDefs = [
       { id: 'warehouse', icon: 'warehouseIcon', tooltip: 'Répartition des ressources', action: () => this.openWarehouseQuickMenu() },
       { id: 'university', icon: 'universityIcon', tooltip: 'Arbre technologique', action: () => this.openUniversityQuickMenu() },
       { id: 'house', icon: 'houseIcon', tooltip: "Main-d'œuvre / logements", action: () => this.openHouseQuickMenu() },
+      { id: 'devotion', icon: 'devotionIcon', tooltip: 'Bénédictions', action: () => this.openDevotionQuickMenu() },
     ];
     quickMenuDefs.forEach(({ id, icon, tooltip, action }) => {
       const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339, 1).setOrigin(0, 0)
@@ -1082,6 +1084,7 @@ class GameScene extends Phaser.Scene {
     }
 
     this.layoutHud();
+    this.layoutDevotionPanel();
     this.layoutStartMenu();
     this.pauseForStartMenu();
     // Nommée (pas une fléchée anonyme) + retirée au shutdown : this.scale (ScaleManager) est un
@@ -1097,6 +1100,7 @@ class GameScene extends Phaser.Scene {
       this.layoutGameOver();
       this.layoutResourceRouting();
       this.layoutLaborRoutingPanel();
+      this.layoutDevotionPanel();
       this.layoutStartMenu();
       this.clampZoomAndCamera();
     };
@@ -2328,6 +2332,155 @@ class GameScene extends Phaser.Scene {
     this.toggleLaborRoutingPanel(true);
   }
 
+  // Panneau modal "Bénédictions" (bouton Dévotion, demande utilisateur explicite : "on va retirer
+  // la notion 'cela permet d'améliorer les batiments' et plutot ce dire que cela va déverrouiller
+  // des paliers... chaque palier offrira 2 choix") -- même coquille que les autres panneaux
+  // modaux (buildResourceRouting/buildLaborRoutingPanel), une ligne par palier de GameConfig.
+  // devotion.tiers : soit "non atteint" (grisé), soit 2 boutons de choix (palier atteint, pas
+  // encore choisi), soit le nom de la bénédiction choisie + son état actif/inactif (choix déjà
+  // fait -- définitif, voir GameState.chooseDevotionTier). Réglage GLOBAL, comme les autres.
+  buildDevotionPanel() {
+    this.devotionPanelOpen = false;
+
+    this.devotionOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.75)
+      .setOrigin(0, 0).setDepth(1010).setVisible(false).setInteractive();
+    this.devotionOverlay.on('pointerup', () => this.toggleDevotionPanel(false));
+    this.uiElements.push(this.devotionOverlay);
+
+    this.devotionPanel = this.add.rectangle(0, 0, 10, 10, 0x14202b, 0.97)
+      .setOrigin(0, 0).setDepth(1011).setStrokeStyle(2, 0xffd23f).setVisible(false).setInteractive();
+    this.uiElements.push(this.devotionPanel);
+
+    this.devotionTitle = this.add.text(0, 0, 'Bénédictions', {
+      font: 'bold 16px sans-serif', color: '#ffd23f',
+    }).setDepth(1012).setVisible(false);
+    this.uiElements.push(this.devotionTitle);
+
+    this.devotionClose = this.add.text(0, 0, '✕', {
+      font: 'bold 15px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 9, y: 6 },
+    }).setDepth(1013).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.devotionClose.on('pointerup', () => this.toggleDevotionPanel(false));
+    this.uiElements.push(this.devotionClose);
+
+    // Une ligne par palier (taille fixe, voir GameConfig.devotion.tiers -- pas de pool réutilisé,
+    // il n'y en a qu'un seul jeu de 5, contrairement à resourceRouting/ses onglets).
+    this.devotionRows = GameConfig.devotion.tiers.map((tierCfg, tierIndex) => {
+      const label = this.add.text(0, 0, '', { font: 'bold 13px sans-serif', color: '#ffffff' })
+        .setDepth(1012).setVisible(false);
+      const statusText = this.add.text(0, 0, '', { font: '12px sans-serif', color: '#9aa5ad' })
+        .setDepth(1012).setVisible(false);
+      const optionButtons = tierCfg.options.map((opt) => {
+        const btn = this.add.text(0, 0, opt.name, {
+          font: '12px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 10, y: 6 },
+        }).setDepth(1012).setInteractive({ useHandCursor: true }).setVisible(false);
+        // Choix DÉFINITIF (demande utilisateur explicite : "une fois qu'un choix est validé, on ne
+        // peut plus le changer") -- chooseDevotionTier() lui-même refuse si déjà choisi ou palier
+        // pas atteint, mais ce bouton n'est de toute façon affiché/interactif que quand un choix
+        // reste possible (voir refreshDevotionPanel).
+        btn.on('pointerup', () => {
+          if (GameState.chooseDevotionTier(tierIndex, opt.id)) this.refreshDevotionPanel();
+        });
+        this.uiElements.push(btn);
+        return { id: opt.id, btn };
+      });
+      this.uiElements.push(label, statusText);
+      return { label, statusText, optionButtons };
+    });
+  }
+
+  // Redessine chaque ligne depuis GameState.devotionTiers/resources.devotion -- appelée à
+  // l'ouverture, au redimensionnement (via layoutDevotionPanel) et après chaque choix.
+  refreshDevotionPanel() {
+    const panel = this.devotionPanel;
+    const rowY0 = panel.y + 46;
+    const rowGap = 60;
+    const labelX = panel.x + 16;
+    const devotion = GameState.resources.devotion;
+
+    GameConfig.devotion.tiers.forEach((tierCfg, i) => {
+      const row = this.devotionRows[i];
+      const state = GameState.devotionTiers[i];
+      const y = rowY0 + i * rowGap;
+      const reached = devotion >= tierCfg.threshold;
+
+      row.label.setText(`Palier ${i + 1} (${tierCfg.threshold} %)`).setPosition(labelX, y).setVisible(true);
+
+      if (state.choice) {
+        // Choix déjà fait : plus jamais de boutons pour ce palier (voir le commentaire sur
+        // btn.on('pointerup') plus haut), juste le nom + l'état actif/inactif (hystérésis, voir
+        // GameState.updateDevotionTiers).
+        const chosen = tierCfg.options.find((o) => o.id === state.choice);
+        row.statusText
+          .setText(`${chosen.name} — ${state.active ? 'Actif' : 'Inactif (Dévotion trop basse)'}`)
+          .setColor(state.active ? '#7fd17f' : '#e07a7a')
+          .setPosition(labelX, y + 20).setVisible(true);
+        for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+      } else if (reached) {
+        // Palier atteint, choix pas encore fait : les 2 options deviennent cliquables.
+        row.statusText.setVisible(false);
+        let bx = labelX;
+        for (const { btn } of row.optionButtons) {
+          btn.setPosition(bx, y + 20).setVisible(true).setInteractive({ useHandCursor: true });
+          bx += btn.width + 10;
+        }
+      } else {
+        // Palier pas encore atteint : grisé, rien à cliquer.
+        row.statusText
+          .setText(`Non atteint (Dévotion actuelle : ${Math.round(devotion)} %)`)
+          .setColor('#9aa5ad').setPosition(labelX, y + 20).setVisible(true);
+        for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+      }
+    });
+  }
+
+  layoutDevotionPanel() {
+    if (!this.devotionPanel) return; // pas encore construit (premier appel avant create)
+    const w = this.scale.width, h = this.scale.height;
+    this.devotionOverlay.setSize(w, h);
+
+    const panelWidth = Math.min(w - 32, 560);
+    const panelHeight = Math.min(h - 24, 420);
+    const px = (w - panelWidth) / 2;
+    const py = (h - panelHeight) / 2;
+    this.devotionPanel.setPosition(px, py).setSize(panelWidth, panelHeight);
+    this.devotionTitle.setPosition(px + 16, py + 12).setFontSize(this.mobileLayout ? 13 : 16);
+    this.devotionClose.setPosition(px + panelWidth - this.devotionClose.width - 10, py + 8);
+
+    if (this.devotionPanelOpen) this.refreshDevotionPanel();
+  }
+
+  // Même principe que toggleResourceRouting/toggleLaborRoutingPanel ci-dessus (pause automatique
+  // tant que le panneau est ouvert, levée seulement si c'est CETTE ouverture qui l'a posée).
+  toggleDevotionPanel(forceState) {
+    this.devotionPanelOpen = forceState !== undefined ? forceState : !this.devotionPanelOpen;
+    const visible = this.devotionPanelOpen;
+    this.devotionOverlay.setVisible(visible);
+    this.devotionPanel.setVisible(visible);
+    this.devotionTitle.setVisible(visible);
+    this.devotionClose.setVisible(visible);
+    if (!visible) {
+      for (const row of this.devotionRows) {
+        row.label.setVisible(false);
+        row.statusText.setVisible(false);
+        for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+      }
+    }
+
+    if (visible) {
+      this.pausedByDevotionPanel = !this.paused;
+      if (!this.paused) this.togglePause();
+      this.layoutDevotionPanel();
+      this.refreshDevotionPanel();
+    } else if (this.pausedByDevotionPanel) {
+      this.pausedByDevotionPanel = false;
+      if (this.paused) this.togglePause();
+    }
+  }
+
+  openDevotionQuickMenu() {
+    this.toggleDevotionPanel(true);
+  }
+
   // Bascule pause/reprise. En pause : la simulation (production, transport, vague) est gelée et
   // la construction désactivée, mais la caméra reste libre et les cases restent cliquables pour
   // consulter leurs infos (voir update() et handleTap()).
@@ -2380,17 +2533,18 @@ class GameScene extends Phaser.Scene {
     this.clampCameraVertical();
   }
 
-  // Positionne les 3 boutons Entrepôt/Université/Maison (voir buildHud/openWarehouseQuickMenu/
-  // openUniversityQuickMenu/openHouseQuickMenu, demande utilisateur explicite) en rangée, alignés
-  // sur le bord droit de rightAnchorX -- appelé une fois par layoutHud() (PC et mobile, chacun
-  // avec son propre ancrage, voir les deux appels). Visibles seulement si aucun autre menu n'est
-  // ouvert ET le pavé de construction mobile lui-même fermé (demande utilisateur explicite : "que
-  // si aucun autre menu n'est ouvert" -- le pavé compte comme tel puisqu'il occupe l'écran et
-  // déplace le bouton Construire, l'ancre utilisée ici côté mobile, voir son appel).
+  // Positionne les 4 boutons Entrepôt/Université/Maison/Dévotion (voir buildHud/
+  // openWarehouseQuickMenu/openUniversityQuickMenu/openHouseQuickMenu/openDevotionQuickMenu,
+  // demande utilisateur explicite) en rangée, alignés sur le bord droit de rightAnchorX -- appelé
+  // une fois par layoutHud() (PC et mobile, chacun avec son propre ancrage, voir les deux appels).
+  // Visibles seulement si aucun autre menu n'est ouvert ET le pavé de construction mobile
+  // lui-même fermé (demande utilisateur explicite : "que si aucun autre menu n'est ouvert" -- le
+  // pavé compte comme tel puisqu'il occupe l'écran et déplace le bouton Construire, l'ancre
+  // utilisée ici côté mobile, voir son appel).
   layoutQuickMenuButtons(rightAnchorX, bottomAnchorY, btnSize) {
     const visible = !this.isModalOpen() && !this.buildMode && !this.buildMenuOpen;
     const gap = 6;
-    const ids = ['warehouse', 'university', 'house'];
+    const ids = ['warehouse', 'university', 'house', 'devotion'];
     ids.forEach((id, i) => {
       const bx = rightAnchorX - (i + 1) * btnSize - i * gap;
       const by = bottomAnchorY - btnSize;
@@ -4552,7 +4706,20 @@ class GameScene extends Phaser.Scene {
       this.layoutTechTree();
       this.layoutResourceRouting();
       this.layoutLaborRoutingPanel();
+      this.layoutDevotionPanel();
       this.layoutStartMenu();
+    }
+    // Même filet que ci-dessus, mais pour la visibilité des boutons Entrepôt/Université/Maison/
+    // Dévotion (voir layoutQuickMenuButtons) : elle est calculée une fois via isModalOpen() au
+    // moment de l'appel, donc figée à "cachée" tant qu'aucun nouveau layoutHud() n'a lieu -- or
+    // fermer un panneau (Sauvegardes, arbre technologique, routage, dévotion, menu de démarrage)
+    // ne redimensionne pas l'écran et ne déclenchait donc jamais ce recalcul. Repéré avec le menu
+    // de démarrage : "Nouvelle partie" masque ce menu (isModalOpen() redevient false) sans que les
+    // boutons ne réapparaissent avant un vrai redimensionnement.
+    const modalOpenNow = this.isModalOpen();
+    if (modalOpenNow !== this.lastModalOpen) {
+      this.lastModalOpen = modalOpenNow;
+      this.layoutHud();
     }
     this.clampZoomAndCamera();
 

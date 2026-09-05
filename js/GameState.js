@@ -24,6 +24,14 @@ function defaultLaborRouting() {
   );
 }
 
+// Un état par palier de GameConfig.devotion.tiers (même ordre) : { choice: id d'option ou null,
+// active: bool }. Fonction top-niveau pour la même raison que defaultResourceRouting/
+// defaultLaborRouting ci-dessus (utilisée dans l'objet littéral GameState ET par reset()/
+// deserialize()).
+function defaultDevotionTiers() {
+  return GameConfig.devotion.tiers.map(() => ({ choice: null, active: false }));
+}
+
 // buildingType -> categoryId (voir GameConfig.laborRouting.categories) : calculé une seule fois au
 // chargement plutôt qu'à chaque tick de production (allocateLabor) ou chaque rafraîchissement de
 // panneau (GameScene) -- une poignée d'entrées, jamais invalidé (la config ne change pas en jeu).
@@ -59,6 +67,10 @@ const GameState = {
   // buildLaborRoutingPanel, demande utilisateur explicite) : "catégorie" -> % de la population
   // totale de la ville ciblée pour elle (somme toujours 100, voir setLaborRouting).
   laborRouting: defaultLaborRouting(),
+  // Choix de bénédiction par palier de Dévotion (voir GameConfig.devotion.tiers/
+  // chooseDevotionTier/updateDevotionTiers, demande utilisateur explicite) -- même index que
+  // GameConfig.devotion.tiers.
+  devotionTiers: defaultDevotionTiers(),
   // Tirs de tour en cours d'affichage : { fromCol, fromRow, toX, toRow, ttl }, purement visuel
   // (les dégâts sont déjà appliqués au moment du tir) — voir GameScene.redrawShots.
   shots: [],
@@ -192,30 +204,50 @@ const GameState = {
       tile.hadDeficit = false;
     }
     if (def.kind === 'tower') tile.fireCooldown = 0;
-    // Amélioration par Dévotion (voir GameConfig.devotion/upgradeBuildingWithDevotion, demande
-    // utilisateur explicite) : champ générique sur TOUT bâtiment terminé, pas seulement certains
-    // kind -- lequel peut concrètement être amélioré reste à définir (demande utilisateur
-    // explicite : "on verra après"), ceci pose juste l'état.
-    tile.devotionUpgraded = false;
     this.dirty = true;
     this.buildingsDirty = true;
   },
 
-  // Consomme GameConfig.devotion.upgradeCost % de Dévotion pour marquer ce bâtiment "amélioré"
-  // (demande utilisateur explicite : "Elle peut etre utilisé pour améliorer un batiment... on
-  // consomme 10 % de devotion"). Pose seulement l'état/le coût -- LEQUEL bâtiment peut être
-  // amélioré et ce que ça change concrètement restent à définir plus tard (demande utilisateur
-  // explicite : "on verra après concretement comment on fait ca"), aucun appelant UI pour
-  // l'instant. Redevient false tout seul si la Dévotion retombe à 0 (voir tickProduction).
-  // Renvoie false sans rien faire si la Dévotion est insuffisante ou si ce bâtiment est déjà
-  // amélioré (pas de double coût).
-  upgradeBuildingWithDevotion(tile) {
-    if (!tile || tile.underConstruction || tile.devotionUpgraded) return false;
-    if (this.resources.devotion < GameConfig.devotion.upgradeCost) return false;
-    this.resources.devotion -= GameConfig.devotion.upgradeCost;
-    tile.devotionUpgraded = true;
+  // Valide le choix d'une bénédiction pour un palier de Dévotion (voir GameConfig.devotion.tiers,
+  // demande utilisateur explicite) : définitif une fois fait ("une fois qu'un choix est validé, on
+  // ne peut plus le changer"), refusé si le palier n'est pas encore atteint, déjà choisi, ou si
+  // optionId ne correspond à aucune des 2 options de ce palier. L'effet concret de chaque
+  // bénédiction reste à définir (demande utilisateur explicite : "on verra plus tard") -- ceci ne
+  // fait que mémoriser le choix ; l'activation/désactivation (hystérésis) est gérée séparément par
+  // updateDevotionTiers (voir tickProduction), appelée à chaque tick indépendamment de ce choix.
+  chooseDevotionTier(tierIndex, optionId) {
+    const tierCfg = GameConfig.devotion.tiers[tierIndex];
+    const state = this.devotionTiers[tierIndex];
+    if (!tierCfg || !state || state.choice) return false;
+    if (this.resources.devotion < tierCfg.threshold) return false;
+    if (!tierCfg.options.some((o) => o.id === optionId)) return false;
+    state.choice = optionId;
+    state.active = true; // le palier vient d'être atteint pour pouvoir choisir, donc forcément actif tout de suite
     this.dirty = true;
     return true;
+  },
+
+  // Bascule actif/inactif CHAQUE bénédiction déjà choisie selon la Dévotion actuelle, avec
+  // hystérésis (voir GameConfig.devotion.tierInactiveMargin, demande utilisateur explicite) :
+  // repasse inactif sous (seuil - margin), redevient actif seulement au retour à (seuil) pile --
+  // jamais entre les deux, pour éviter un clignotement. Un palier jamais choisi (state.choice
+  // null) reste toujours inactif, rien à faire. Appelée à chaque tick de production (voir
+  // tickProduction, juste après la mise à jour de la Dévotion elle-même).
+  updateDevotionTiers() {
+    const tiers = GameConfig.devotion.tiers;
+    const margin = GameConfig.devotion.tierInactiveMargin;
+    for (let i = 0; i < tiers.length; i++) {
+      const state = this.devotionTiers[i];
+      if (!state.choice) continue;
+      const threshold = tiers[i].threshold;
+      if (state.active && this.resources.devotion < threshold - margin) {
+        state.active = false;
+        this.dirty = true;
+      } else if (!state.active && this.resources.devotion >= threshold) {
+        state.active = true;
+        this.dirty = true;
+      }
+    }
   },
 
   // Change la part de "resource" envoyée vers "buildingType" (demande utilisateur explicite : menu
@@ -1217,27 +1249,19 @@ const GameState = {
       devotionGain += baseRate * efficiency * speedMultiplier * dtSeconds;
     }
 
-    // Dévotion : baisse naturelle constante (decayRate) + un peu plus par bâtiment amélioré actif
-    // (upkeepPerBuilding, demande utilisateur explicite : "les batiments améliorer consomme aussi
-    // un peu de devotion") -- s'applique TOUJOURS, même sans Temple à portée. Bornée [0, cap] en
-    // une fois avec le gain ci-dessus (voir le commentaire plus haut). Si le résultat tombe à 0,
-    // TOUS les bâtiments améliorés repassent en version de base d'un coup (demande utilisateur
-    // explicite) -- un seul passage sur les tuiles amélioré (upgradedTiles), pas deux, pour
-    // compter l'entretien ET faire ce retour en arrière sans reparcourir toute la carte deux fois.
-    const upgradedTiles = [];
-    for (const [, tile] of this.tiles) {
-      if (tile.devotionUpgraded) upgradedTiles.push(tile);
-    }
-    const devotionDrain = (GameConfig.devotion.decayRate + upgradedTiles.length * GameConfig.devotion.upkeepPerBuilding) * dtSeconds;
+    // Dévotion : baisse naturelle constante (decayRate), s'applique TOUJOURS même sans Temple à
+    // portée. Bornée [0, cap] en une fois avec le gain ci-dessus (voir le commentaire plus haut).
+    // Ne sert plus à "améliorer" un bâtiment (ancienne notion retirée, voir GameConfig.devotion) --
+    // updateDevotionTiers, juste après, bascule actif/inactif chaque bénédiction déjà choisie
+    // selon ce nouveau niveau.
+    const devotionDrain = GameConfig.devotion.decayRate * dtSeconds;
     if (devotionGain > 0 || devotionDrain > 0) {
       this.resources.devotion = Math.max(0, Math.min(
         GameConfig.devotion.cap, this.resources.devotion + devotionGain - devotionDrain
       ));
-      if (this.resources.devotion <= 0) {
-        for (const tile of upgradedTiles) tile.devotionUpgraded = false;
-      }
       this.dirty = true;
     }
+    this.updateDevotionTiers();
 
     // 2.5 Population : chaque Maison consomme du pain proportionnellement à ses habitants.
     // Deux minuteries INDÉPENDANTES plutôt qu'une seule (voir l'ancienne version) : la techno
@@ -2009,6 +2033,7 @@ const GameState = {
     this.laborAssignment = null;
     this.resourceRouting = defaultResourceRouting();
     this.laborRouting = defaultLaborRouting();
+    this.devotionTiers = defaultDevotionTiers();
     this.shots = [];
     this.unlockedTech = new Map();
     this.revealedTiles = new Set();
@@ -2035,6 +2060,7 @@ const GameState = {
       nextShipmentId: this.nextShipmentId,
       resourceRouting: this.resourceRouting,
       laborRouting: this.laborRouting,
+      devotionTiers: this.devotionTiers.map((t) => ({ ...t })),
       unlockedTech: Array.from(this.unlockedTech.entries()),
       maxPopulation: this.maxPopulation,
       maxBuildings: this.maxBuildings,
@@ -2061,6 +2087,13 @@ const GameState = {
     // || defaultLaborRouting() : même raison (compatible avec les sauvegardes d'avant cette
     // fonctionnalité).
     this.laborRouting = data.laborRouting || defaultLaborRouting();
+    // Recalé sur defaultDevotionTiers() (pas juste data.devotionTiers || default()) : reste
+    // correct même si GameConfig.devotion.tiers a changé de longueur depuis la sauvegarde (ancien
+    // format absent, ou nombre de paliers modifié) -- chaque palier reprend sa valeur sauvegardée
+    // si présente, sinon repart à { choice: null, active: false }.
+    this.devotionTiers = defaultDevotionTiers().map((def, i) => (
+      data.devotionTiers && data.devotionTiers[i] ? { ...def, ...data.devotionTiers[i] } : def
+    ));
     this.laborAssignment = null;
     this.dirty = true;
     this.buildingsDirty = true;

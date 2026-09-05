@@ -160,21 +160,39 @@ const GameConfig = {
   },
   // Dévotion (demande utilisateur explicite) : PAS un stock qui s'accumule comme les autres
   // ressources -- un pourcentage (0-100, voir GameState.resources.devotion) qui redescend tout
-  // seul avec le temps (decayRate, %/s) et sert à "améliorer" un bâtiment (coût upgradeCost, %,
-  // voir GameState.upgradeBuildingWithDevotion -- le déclencheur/l'effet concret restent à
-  // définir, demande utilisateur explicite : "on verra après"). Chaque bâtiment amélioré ajoute
-  // upkeepPerBuilding (%/s) à cette baisse ; si la Dévotion retombe à 0, TOUS les bâtiments
-  // améliorés repassent en version de base (voir tickProduction). templeBaseGain (%/s) : chaque
-  // Temple en fournit un peu MÊME sans Autel à portée (voir tickProduction -- "le temple lui même
-  // fournit aussi 0.25 % par seconde", en plus de buildings.temple.devotionPerAltar par Autel,
-  // demande utilisateur explicite). decayRate 0,5%/5s = 0,1 %/s ; upkeepPerBuilding 1%/5s = 0,2 %/s
-  // (valeurs précisées par l'utilisateur, plus provisoires).
+  // seul avec le temps (decayRate, %/s). templeBaseGain (%/s) : chaque Temple en fournit un peu
+  // MÊME sans Autel à portée (voir tickProduction -- "le temple lui même fournit aussi 0.25 % par
+  // seconde", en plus de buildings.temple.devotionPerAltar par Autel, demande utilisateur
+  // explicite). decayRate 0,5%/5s = 0,1 %/s (valeur précisée par l'utilisateur, provisoire).
+  //
+  // N'améliore PLUS de bâtiment (ancienne notion retirée, demande utilisateur explicite : "on va
+  // retirer la notion 'cela permet d'améliorer les batiments' et plutot ce dire que cela va
+  // déverrouiller des paliers") : 5 PALIERS fixes (tiers, % de Dévotion ATTEINT, pas consommé),
+  // chacun débloquant un choix à faire une fois pour toutes entre 2 bénédictions (voir
+  // GameState.devotionTiers/chooseDevotionTier). "id" sert de clé stable dans la sauvegarde --
+  // ne jamais le changer une fois des parties sauvegardées avec, quitte à renommer "label".
+  // Effets concrets de chaque bénédiction volontairement PAS encore définis (demande utilisateur
+  // explicite : "on verra plus tard pour les effets concrets") -- seule l'infrastructure
+  // (paliers/choix/activation) existe pour l'instant, chaque bénédiction n'est qu'un nom+la
+  // structure prête à recevoir un effet plus tard.
   devotion: {
     cap: 100,
     decayRate: 0.1,
-    upgradeCost: 10,
-    upkeepPerBuilding: 0.2,
     templeBaseGain: 0.25,
+    // Hystérésis (demande utilisateur explicite : "si la devotion redescend 5% plus bas que le
+    // palier... alors l'effet... devient inactif (et se reactive automatiquement dès que le
+    // palier est réatteind sans choix à faire)") : un choix déjà validé reste actif tant que la
+    // Dévotion ne descend pas sous (seuil - tierInactiveMargin) ; il ne se réactive qu'au retour à
+    // (seuil) pile, pas dès (seuil - margin) -- évite un clignotement actif/inactif juste sous le
+    // seuil. Le CHOIX lui-même (une fois fait) ne se perd jamais, seul son effet bascule actif/non.
+    tierInactiveMargin: 5,
+    tiers: [
+      { id: 'tier1', threshold: 20, options: [{ id: 'commerce', name: 'Commerce religieux' }, { id: 'regard', name: 'Regard divin' }] },
+      { id: 'tier2', threshold: 40, options: [{ id: 'culte', name: 'Culte organisé' }, { id: 'croisade', name: 'Croisade' }] },
+      { id: 'tier3', threshold: 60, options: [{ id: 'fertilite', name: 'Déesse de la fertilité' }, { id: 'artisans', name: 'Dieu des artisans' }] },
+      { id: 'tier4', threshold: 80, options: [{ id: 'voyageurs', name: 'Dieu des voyageurs' }, { id: 'guerre', name: 'Déesse de la guerre' }] },
+      { id: 'tier5', threshold: 100, options: [{ id: 'fureur', name: 'Fureur divine' }, { id: 'apogee', name: 'Apogée céleste' }] },
+    ],
   },
   // Transport des ressources le long des routes.
   logistics: {
