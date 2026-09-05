@@ -439,7 +439,9 @@ const GameState = {
   // plafond de chargement plus haut au DÉPART). Lu par _spawnShipments et les fonctions
   // spécialisées équivalentes (construction/pain/lingot de fer), ainsi qu'estimateResourceRates.
   effectiveShipBatchSize() {
-    return GameConfig.logistics.shipBatchSize + (this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.batchBonus : 0);
+    const level = this.techLevel('log_charrue');
+    const bonus = level > 0 ? GameConfig.techTree.nodes.log_charrue.batchBonusByLevel[level - 1] : 0;
+    return GameConfig.logistics.shipBatchSize + bonus;
   },
 
   // Rayon d'extraction EFFECTIF d'un bâtiment "de récolte" (kind extractor) : rayon de base +

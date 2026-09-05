@@ -235,7 +235,10 @@ const GameConfig = {
   // Transport des ressources le long des routes.
   logistics: {
     shipSpeed: 2, // cases par seconde
-    shipBatchSize: 5, // quantité expédiée par voyage (demande utilisateur explicite, était 3)
+    // Quantité expédiée par voyage -- 5 -> 3 (demande utilisateur explicite : "caisse de transport
+    // devient +1/+2/+3 (3 de bases, 6 avec la techno)") : la techno Caisse de transport (voir
+    // techTree.nodes.log_charrue/GameState.effectiveShipBatchSize) fournit le reste.
+    shipBatchSize: 3,
     // Portée par défaut à laquelle un producteur peut trouver un Entrepôt/une Université, ET
     // base de la zone d'action RÉELLE de l'Entrepôt (voir warehouseExtraRange ci-dessous, séparé
     // exprès : agrandir seulement l'Entrepôt sans toucher à la portée des autres bâtiments).
@@ -754,9 +757,12 @@ const GameConfig = {
         // paquet chargé au départ (voir GameState.effectiveShipBatchSize, lu par _spawnShipments et
         // les fonctions spécialisées équivalentes) -- un chargement peut donc rester plus petit que
         // ce plafond si le stock disponible ou la place chez le destinataire est le facteur limitant.
-        name: 'Caisse de transport', parent: 'log_roue', ring: 2, angle: 216,
-        description: 'Augmente de 1 la quantité maximale de ressource transportable par paquet.',
-        batchBonus: 1,
+        // 3 niveaux, PAS cumulatifs (demande utilisateur explicite : "+1/+2/+3 (3 de bases, 6 avec
+        // la techno)" -- le niveau 3 vaut +3, pas +1+2+3), même principe que le reste de la branche
+        // Logistique (Roue/Aménagement urbain).
+        name: 'Caisse de transport', parent: 'log_roue', ring: 2, angle: 216, maxLevel: 3,
+        description: 'Augmente de 1 / 2 / 3 la quantité maximale de ressource transportable par paquet (base 3, donc 6 au niveau 3).',
+        batchBonusByLevel: [1, 2, 3],
       },
       log_amenagement: {
         name: 'Aménagement urbain', parent: 'log_charrue', ring: 3, angle: 191, maxLevel: 3,
