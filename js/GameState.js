@@ -388,9 +388,9 @@ const GameState = {
     return quotas;
   },
 
-  // Transforme un Avant poste déjà posé en Château (voir GameConfig.buildings.castle et techTree.
+  // Transforme un Fortin déjà posé en Château (voir GameConfig.buildings.castle et techTree.
   // nodes.def_forgerie) : contrairement à placeBuilding, ne change QUE le type -- fireCooldown
-  // et l'appartenance à une route restent ceux de l'Avant poste, aucune raison de les réinitialiser.
+  // et l'appartenance à une route restent ceux du Fortin, aucune raison de les réinitialiser.
   // "cost" sur buildings.castle est le coût de CETTE transformation, pas d'une construction neuve.
   upgradeToCastle(col, row) {
     const key = this.key(col, row);
@@ -1014,7 +1014,7 @@ const GameState = {
       const def = tile && GameConfig.buildings[tile.type];
       if (!def) continue;
       // Le Château (voir buildings.castle.capMultiplier) absorbe utilement 2x plus de
-      // travailleurs qu'un Avant poste normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
+      // travailleurs qu'un Fortin normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
       // pourrait encore en accueillir 4 de plus (voir efficiencyForWorkers).
       const isProduction = def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'shrine';
       const fullStaff = (isProduction ? productionFullStaff : baseFullStaff) * (def.capMultiplier || 1);
@@ -1066,6 +1066,22 @@ const GameState = {
     const tbd3Bonus = tbd3PerTech * totalResearchLevels;
     const tbd4Level = this.techLevel('rec_tbd4');
     const sculpteurBonus = tbd4Level > 0 ? GameConfig.techTree.nodes.rec_tbd4.bonusByLevel[tbd4Level - 1] : 0;
+    // Vie de quartier (voir GameConfig.techTree.nodes.pop_mariage/tickProduction) : même calcul,
+    // reflété ici pour la même raison que tbd3/tbd4 ci-dessus.
+    let quartierZone = null;
+    if (this.isTechUnlocked('pop_mariage')) {
+      quartierZone = new Set();
+      for (const [hKey, hTile] of this.tiles) {
+        const hDef = GameConfig.buildings[hTile.type];
+        if (!hDef || hDef.kind !== 'house' || hTile.underConstruction) continue;
+        if (hTile.population < this.housePopulationCap(hDef)) continue;
+        const [hCol, hRow] = hKey.split(',').map(Number);
+        for (const c of HexUtils.hexesInRange(hCol, hRow, GameConfig.population.laborRadius, this.cols, this.rows)) {
+          quartierZone.add(this.key(c.col, c.row));
+        }
+      }
+    }
+    const quartierBonus = GameConfig.techTree.nodes.pop_mariage.productionBonus;
 
     const perSecond = { planks: 0, stoneBlocks: 0, bread: 0, ironIngot: 0, weapons: 0, statues: 0 };
 
@@ -1096,6 +1112,7 @@ const GameState = {
       const efficiency = this.efficiencyForWorkers(workers);
       const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (quartierZone && quartierZone.has(key) ? quartierBonus : 0)
         + (tile.type === 'sculpteur' ? sculpteurBonus : 0);
       const productionRate = def.rate * efficiency * speedMultiplier;
       perSecond[res] += Math.min(deliveryCapacity, productionRate);
@@ -1223,6 +1240,29 @@ const GameState = {
     const tbd4Level = this.techLevel('rec_tbd4');
     const sculpteurBonus = tbd4Level > 0 ? GameConfig.techTree.nodes.rec_tbd4.bonusByLevel[tbd4Level - 1] : 0;
 
+    // Vie de quartier (voir GameConfig.techTree.nodes.pop_mariage, demande utilisateur explicite,
+    // remplace l'ancien effet "délai de croissance réduit"/"4e habitant instantané") : chaque
+    // Maison à PLEINE capacité (avec Colocation ou non, voir housePopulationCap) diffuse un bonus
+    // de production aux bâtiments dans son rayon habituel (population.laborRadius, même zone que
+    // celle où elle fournit de la main-d'œuvre). Recalculé ICI, à CHAQUE tick (contrairement à
+    // guildZone/universityZone, qui ne changent que sur buildingsDirty) : la population d'une
+    // Maison évolue en continu, pas seulement quand on construit/détruit -- un calcul figé sur
+    // buildingsDirty resterait périmé dès qu'une Maison passe (ou repasse sous) sa capacité max.
+    let quartierZone = null;
+    if (this.isTechUnlocked('pop_mariage')) {
+      quartierZone = new Set();
+      for (const [hKey, hTile] of this.tiles) {
+        const hDef = GameConfig.buildings[hTile.type];
+        if (!hDef || hDef.kind !== 'house' || hTile.underConstruction) continue;
+        if (hTile.population < this.housePopulationCap(hDef)) continue;
+        const [hCol, hRow] = hKey.split(',').map(Number);
+        for (const c of HexUtils.hexesInRange(hCol, hRow, GameConfig.population.laborRadius, this.cols, this.rows)) {
+          quartierZone.add(this.key(c.col, c.row));
+        }
+      }
+    }
+    const quartierBonus = GameConfig.techTree.nodes.pop_mariage.productionBonus;
+
     // Joaillerie (voir GameConfig.techTree.nodes.rec_joaillerie, demande utilisateur explicite,
     // remplace Alphabétisation) : 1 Gemme automatique toutes les 120s de simulation, dès que
     // débloquée -- même principe que le minuteur de Commerce religieux (voir plus bas).
@@ -1258,9 +1298,10 @@ const GameState = {
       // Déesse de la fertilité (voir GameConfig.devotion.tiers, demande utilisateur explicite) :
       // "2 fois plus efficace" pour les bâtiments de ressource BRUTE, donc les extracteurs -- +1 au
       // multiplicateur (1 -> 2) plutôt qu'un facteur séparé, même mécanique que les autres bonus de
-      // vitesse déjà cumulés ici (tbd3/Guilde).
+      // vitesse déjà cumulés ici (tbd3/Guilde/Vie de quartier).
       const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (quartierZone && quartierZone.has(key) ? quartierBonus : 0)
         + (this.hasActiveBlessing('fertilite') ? 1 : 0);
       let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap + this.capBonus() - tile.outputBuffer);
       if (toExtract <= 0) continue;
@@ -1369,6 +1410,7 @@ const GameState = {
       // rec_tbd4) : dédié au Sculpteur uniquement.
       const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (quartierZone && quartierZone.has(key) ? quartierBonus : 0)
         + (tile.type === 'sculpteur' ? sculpteurBonus : 0)
         + (this.hasActiveBlessing('artisans') ? 1 : 0);
       const roomInOutput = def.outputCap + this.capBonus() - tile.outputBuffer;
@@ -1472,7 +1514,10 @@ const GameState = {
     // Déclin (growthTimer, rythme toujours égal à growthInterval) : au moins un instant en manque
     // de pain sur la période => -1 habitant (voir pop_urbanisme pour le plancher).
     // Croissance (growTimer) : n'avance QUE tant que la Maison est nourrie à l'instant présent (une
-    // seule pénurie la remet à zéro) ; son seuil est raccourci par pop_immigration et pop_mariage.
+    // seule pénurie la remet à zéro) ; son seuil est raccourci par pop_immigration. Vie de quartier
+    // (pop_mariage) ne touche plus la croissance elle-même -- voir quartierZone/quartierBonus plus
+    // haut (bonus de production diffusé par les Maisons pleines, pas un effet direct sur la Maison
+    // elle-même).
     const nutritionNode = GameConfig.techTree.nodes.pop_nutrition;
     const nutritionLevel = this.techLevel('pop_nutrition');
     const breadReduction = nutritionLevel > 0 ? nutritionNode.breadReductionByLevel[nutritionLevel - 1] : 0;
@@ -1480,13 +1525,6 @@ const GameState = {
     const immigrationNode = GameConfig.techTree.nodes.pop_immigration;
     const immigrationLevel = this.techLevel('pop_immigration');
     const growthBonus = immigrationLevel > 0 ? immigrationNode.growthBonusByLevel[immigrationLevel - 1] : 0;
-
-    // Mariage (voir GameConfig.techTree.nodes.pop_mariage, demande utilisateur explicite, nouvel
-    // effet -- remplace l'ancien "délai de croissance réduit par habitant déjà présent") : dès
-    // qu'une Maison atteint EXACTEMENT instantPopThreshold (3) habitants, le suivant apparaît
-    // d'un coup, sans passer par growTimer/growthInterval -- voir plus bas.
-    const mariageUnlocked = this.isTechUnlocked('pop_mariage');
-    const mariageThreshold = GameConfig.techTree.nodes.pop_mariage.instantPopThreshold;
 
     const urbanismeUnlocked = this.isTechUnlocked('pop_urbanisme');
 
@@ -1528,18 +1566,9 @@ const GameState = {
       } else {
         tile.growTimer = 0;
       }
-
-      // Mariage : voir le commentaire plus haut -- vérifié APRÈS la croissance normale ci-dessus,
-      // pour attraper aussi bien une Maison qui vient de passer à 3 par la croissance classique
-      // qu'une qui y était déjà (ex. au chargement d'une sauvegarde, tech débloquée entretemps).
-      if (mariageUnlocked && tile.population === mariageThreshold && tile.population < cap) {
-        tile.population += 1;
-        tile.growTimer = 0;
-        this.dirty = true;
-      }
     }
 
-    // 2.6 Tours (Avant poste) : tirent sur le monstre le plus proche à portée, si reliées à une route.
+    // 2.6 Tours (Fortin) : tirent sur le monstre le plus proche à portée, si reliées à une route.
     // Le délai entre deux tirs se vide à vitesse normale avec un travailleur affecté, deux fois
     // plus lentement sans (même principe que l'efficacité des extracteurs/processeurs ci-dessus,
     // mais appliqué à la fréquence de tir plutôt qu'à un débit de ressource).
@@ -1603,7 +1632,7 @@ const GameState = {
     if (buildings > this.maxBuildings) this.maxBuildings = buildings;
   },
 
-  // Vrai si au moins une case voisine est une route (condition pour qu'un Avant poste ou une
+  // Vrai si au moins une case voisine est une route (condition pour qu'un Fortin ou une
   // Université soit utilisable).
   _hasAdjacentRoad(col, row) {
     for (const n of HexUtils.neighbors(col, row)) {
@@ -1717,7 +1746,7 @@ const GameState = {
     return 0;
   },
 
-  // Portée effective d'une tour (Avant poste/Château), boostée par Balistique (voir GameConfig.
+  // Portée effective d'une tour (Fortin/Château), boostée par Balistique (voir GameConfig.
   // techTree.nodes.def_donjon, renommé "Balistique" mais id conservé) -- pas cumulatif.
   towerRange(def) {
     const level = this.techLevel('def_donjon');

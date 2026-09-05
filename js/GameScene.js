@@ -258,7 +258,7 @@ class GameScene extends Phaser.Scene {
   // Vrai si ce type de bâtiment peut apparaître dans le menu de construction : tous, sauf ceux
   // débloqués par une techno précise (voir GameConfig.techTree.nodes.def_explorateur) -- le seul
   // cas pour l'instant est la Tour de Guet. Le Château n'est volontairement PAS dans cette liste :
-  // il ne se construit pas depuis le menu, seulement en améliorant un Avant poste (voir
+  // il ne se construit pas depuis le menu, seulement en améliorant un Fortin (voir
   // GameState.upgradeToCastle).
   isBuildingUnlocked(id) {
     if (id === 'watchtower') return GameState.isTechUnlocked('def_explorateur');
@@ -974,7 +974,7 @@ class GameScene extends Phaser.Scene {
     this.confirmButton.on('pointerup', () => this.confirmBuild());
     this.uiElements.push(this.confirmButton);
 
-    // Visible uniquement quand le bâtiment sélectionné est un Avant poste et que Féodalité est
+    // Visible uniquement quand le bâtiment sélectionné est un Fortin et que Féodalité est
     // débloquée (voir updateInfoPanel/GameState.upgradeToCastle) -- même style que confirmButton,
     // mais une action sur un bâtiment déjà posé plutôt que sur un placement en cours.
     this.upgradeCastleButton = this.add.text(0, 0, '', {
@@ -985,7 +985,7 @@ class GameScene extends Phaser.Scene {
 
     // Visible dès qu'un bâtiment/route est sélectionné (voir updateInfoPanel) : partage la même
     // rangée que upgradeCastleButton (voir layoutHud, qui les divise en deux quand les deux
-    // s'appliquent en même temps -- un Avant poste peut être à la fois démoli ET amélioré).
+    // s'appliquent en même temps -- un Fortin peut être à la fois démoli ET amélioré).
     this.demolishButton = this.add.text(0, 0, '✕ Démolir', {
       font: 'bold 13px sans-serif', color: '#ffffff', backgroundColor: '#8a3a3a', padding: { x: 12, y: 9 },
     }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
@@ -2806,7 +2806,7 @@ class GameScene extends Phaser.Scene {
     // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
     // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
     // updateInfoPanel) parce que layoutHud a en plus besoin de savoir si les DEUX s'appliquent à
-    // la fois (Avant poste sélectionné + Féodalité) pour diviser la rangée en deux -- recalculé à chaque
+    // la fois (Fortin sélectionné + Féodalité) pour diviser la rangée en deux -- recalculé à chaque
     // appel de layoutHud, et un appel est déclenché explicitement à chaque changement de sélection
     // (voir handleTap) pour que ça reste à jour sans attendre un resize. La VISIBILITÉ/le TEXTE
     // réels restent gérés dans updateInfoPanel (chaque frame), pas ici.
@@ -2902,7 +2902,7 @@ class GameScene extends Phaser.Scene {
         .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(14).setVisible(showConfirm);
       // Démolir/Améliorer partagent la même rangée que Valider (jamais en même temps que
-      // showConfirm, voir updateInfoPanel) : divisée en deux quand un Avant poste sélectionné rend les
+      // showConfirm, voir updateInfoPanel) : divisée en deux quand un Fortin sélectionné rend les
       // DEUX possibles à la fois, sinon celui qui s'applique prend toute la largeur.
       const layoutBothActions = layoutShowDemolish && layoutShowUpgrade;
       if (layoutBothActions) {
@@ -3370,7 +3370,7 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  // Transforme l'Avant poste actuellement sélectionné en Château (voir upgradeCastleButton/
+  // Transforme le Fortin actuellement sélectionné en Château (voir upgradeCastleButton/
   // GameState.upgradeToCastle) -- même esprit que confirmBuild ci-dessus, mais sur un bâtiment
   // déjà posé plutôt qu'un placement en cours.
   upgradeSelectedToCastle() {
@@ -3378,7 +3378,7 @@ class GameScene extends Phaser.Scene {
     const [col, row] = this.selectedBuildingKey.split(',').map(Number);
     const result = GameState.upgradeToCastle(col, row);
     if (result.ok) {
-      this.showToast('Avant poste amélioré en Château');
+      this.showToast('Fortin amélioré en Château');
     } else if (result.reason === 'cost') {
       this.showToast('Pas assez de ressources');
     }
@@ -3983,7 +3983,7 @@ class GameScene extends Phaser.Scene {
         break;
       }
       case 'watchtower': {
-        // Tour fine à toit pointu : silhouette de guet, plus haute et plus étroite qu'un Avant poste
+        // Tour fine à toit pointu : silhouette de guet, plus haute et plus étroite qu'un Fortin
         // (pas de combat, juste de la vue au loin).
         g.fillStyle(ink, 0.9);
         this.tracePoly(g, [[-0.10, 0.32], [-0.10, -0.20], [0.10, -0.20], [0.10, 0.32]], x, y, s);
@@ -3995,7 +3995,7 @@ class GameScene extends Phaser.Scene {
         break;
       }
       case 'castle': {
-        // Même silhouette que l'Avant poste, dédoublée et élargie : deux tours crénelées reliées par
+        // Même silhouette que le Fortin, dédoublée et élargie : deux tours crénelées reliées par
         // un corps commun, pour se distinguer nettement au premier coup d'œil.
         g.fillStyle(ink, 0.92);
         for (const dx of [-0.16, 0.16]) {
@@ -4340,7 +4340,7 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  // Éclairs des tirs de tour (Avant poste) : une ligne brève entre la tour et sa cible, qui s'estompe
+  // Éclairs des tirs de tour (Fortin) : une ligne brève entre la tour et sa cible, qui s'estompe
   // avec le temps (GameState.shots, purement visuel — les dégâts sont déjà appliqués au tir,
   // voir GameState.tickProduction). Même position Y "en ligne droite" que redrawMonsters pour
   // que le trait touche visuellement le carré du monstre visé.
