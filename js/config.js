@@ -119,9 +119,10 @@ const GameConfig = {
     devotion: { long: 'Dévotion', short: 'Dévo.', color: 0xe8c96a },
     // Monnaie des recherches (voir techTree.researchCost), globale et jamais transportée sur les
     // routes (directement dépensée/gagnée dans le stock central) : récupérée en recyclant des
-    // cadavres de monstres (voir buildings.recycler, 1 Gemme par cadavre, 2 avec Imprimerie -- voir
-    // techTree.nodes.rec_imprimerie). Le stock de départ (voir resources.starting) n'est qu'un
-    // petit coussin pour les toutes premières recherches. Renommée depuis "Codex" (demande
+    // cadavres de monstres (voir buildings.recycler, 1 Gemme par cadavre), et automatiquement au
+    // fil du temps une fois Joaillerie débloquée (voir techTree.nodes.rec_joaillerie). Le stock de
+    // départ (voir resources.starting) n'est qu'un petit coussin pour les toutes premières
+    // recherches. Renommée depuis "Codex" (demande
     // utilisateur explicite) -- clé interne "gemme" (voir GameState.deserialize pour la migration
     // des sauvegardes existantes qui utilisaient encore "codex").
     gemme: { long: 'Gemme', short: 'Gemme', color: 0x6f5fa3 },
@@ -474,9 +475,8 @@ const GameConfig = {
     // Camp de Bûcheron/Mineur, voir tickProduction), MAIS sans linkTargets ni outputBuffer : la
     // Gemme (renommée depuis Codex, demande utilisateur explicite -- voir resourceLabels.gemme) ne
     // se transporte jamais sur les routes -- dès qu'une case de cadavre est entièrement épuisée, 1
-    // Gemme est versée d'un coup au stock central (2 avec une chance liée à Imprimerie, voir
-    // techTree.nodes.rec_imprimerie), cas spécial dans tickProduction juste après celui du
-    // Tunnelier/minerai. extractRate = 10/60 : un cadavre (resourceNodes.corpse.amount = 10, voir
+    // Gemme est versée d'un coup au stock central, cas spécial dans tickProduction juste après
+    // celui du Tunnelier/minerai. extractRate = 10/60 : un cadavre (resourceNodes.corpse.amount = 10, voir
     // plus haut -- juste pour un affichage "10 restant" -> "0" lisible pendant la récolte, PAS la
     // vraie quantité de Gemme) prend environ 1 minute à recycler à pleine main-d'œuvre.
     recycler: {
@@ -608,15 +608,16 @@ const GameConfig = {
     ringSpacing: 70,
     // Coût FIXE d'une recherche (demande utilisateur explicite : "tout les couts sois les memes, 1
     // codex", "codex" renommé "gemme" ensuite -- voir resourceLabels.gemme) -- identique pour tous
-    // les nœuds ET tous les niveaux (plus de montée en 1x/2x/3x par niveau comme avant), avant la
-    // réduction de Scolarisation (voir GameState.researchCostFor/techTree.nodes.rec_scolarisation).
-    // Note : à 1 Gemme, Math.round() ramène systématiquement la réduction de Scolarisation à 1
-    // Gemme quand même (0,7 à 0,9 arrondit à 1) -- Scolarisation n'a donc plus d'effet visible tant
-    // que ce coût de base reste à 1 (première étape d'un rééquilibrage annoncé par l'utilisateur,
-    // pas encore traité ici).
+    // les nœuds ET tous les niveaux (plus de montée en 1x/2x/3x par niveau comme avant). Scolarisation
+    // (qui réduisait ce coût) a depuis été retirée de l'arbre (demande utilisateur explicite) -- ce
+    // coût n'a donc plus aucune réduction possible, voir GameState.researchCostFor.
     researchCost: { gemme: 1 },
     nodes: {
-      // Population (branche à 0°) : nutrition -> urbanisme -> {immigration, mariage, colocation}.
+      // Population (branche à 0°) : nutrition -> immigration -> {urbanisme, mariage, colocation}.
+      // Immigration et Urbanisme INVERSÉES par rapport à avant (demande utilisateur explicite,
+      // "inverse Urbanisme et immigration") : Immigration occupe maintenant la position centrale
+      // de la chaîne (ring 2), Urbanisme devient un des 3 choix parallèles (ring 3), à la place
+      // qu'occupait Immigration.
       // Nœuds à plusieurs niveaux (maxLevel > 1) : cliquables plusieurs fois, un niveau par clic sur
       // "Rechercher" (voir GameState.researchTech). Débloquer le NIVEAU 1 suffit à déverrouiller les
       // enfants — les niveaux suivants n'ouvrent rien de plus dans l'arbre, ils renforcent juste l'effet.
@@ -625,35 +626,45 @@ const GameConfig = {
         description: 'Réduit les besoins en pain de la population de 10 % / 20 % / 30 %.',
         breadReductionByLevel: [0.10, 0.20, 0.30],
       },
-      pop_urbanisme: {
-        name: 'Urbanisme', parent: 'pop_nutrition', ring: 2, angle: 0,
-        description: 'Les maisons gardent toujours au moins 1 habitant, même en cas de famine prolongée.',
-      },
       pop_immigration: {
-        name: 'Immigration', parent: 'pop_urbanisme', ring: 3, angle: -25, maxLevel: 3,
+        name: 'Immigration', parent: 'pop_nutrition', ring: 2, angle: 0, maxLevel: 3,
         description: 'La population croît 50 % / 75 % / 100 % plus vite (le déclin garde sa vitesse normale).',
         growthBonusByLevel: [0.50, 0.75, 1.00],
       },
+      pop_urbanisme: {
+        name: 'Urbanisme', parent: 'pop_immigration', ring: 3, angle: -25,
+        description: 'Les maisons gardent toujours au moins 1 habitant, même en cas de famine prolongée.',
+      },
       pop_mariage: {
-        name: 'Mariage', parent: 'pop_urbanisme', ring: 3, angle: 0,
-        description: 'Le temps nécessaire pour accueillir un nouvel habitant diminue de 5 % par habitant déjà présent.',
-        growthDiscountPerCapita: 0.05,
+        name: 'Mariage', parent: 'pop_immigration', ring: 3, angle: 0,
+        // Nouvel effet (demande utilisateur explicite, remplace l'ancien "temps d'accueil réduit
+        // de 5 % par habitant") : dès qu'une Maison atteint 3 habitants, le 4e apparaît d'un coup
+        // au lieu d'attendre son propre délai de croissance -- voir GameState.tickProduction,
+        // section 2.5 (Population).
+        description: 'Si une Maison atteint 3 habitants, un 4e apparaît instantanément.',
+        instantPopThreshold: 3,
       },
       pop_colocation: {
-        name: 'Colocation', parent: 'pop_urbanisme', ring: 3, angle: 25, maxLevel: 2,
-        description: 'Augmente la capacité des maisons de 1 / 2 habitant(s).',
-        extraCapByLevel: [1, 2],
+        // maxLevel 2 -> 3 (demande utilisateur explicite, "ajoute un 3eme niveau a Colocation").
+        name: 'Colocation', parent: 'pop_immigration', ring: 3, angle: 25, maxLevel: 3,
+        description: 'Augmente la capacité des maisons de 1 / 2 / 3 habitant(s).',
+        extraCapByLevel: [1, 2, 3],
       },
 
-      // Industrie (branche à 72°) : apprentissage -> expertise -> guilde -> {forestier, tunnelier, labourage}.
+      // Industrie (branche à 72°) : apprentissage -> expertise -> guilde -> {forestier, tunnelier,
+      // labourage, mine infinie}.
       ind_apprentissage: {
         name: 'Apprentissage', parent: null, ring: 1, angle: 72,
         description: 'Chaque bâtiment de raffinage (Scierie, Tailleur de pierre, Boulangerie) gagne 1 ouvrier gratuit, en plus de la main-d\'œuvre affectée.',
       },
       ind_expertise: {
+        // Nouvel effet (demande utilisateur explicite, remplace l'ancien "+10/20/30 % de vitesse") :
+        // agrandit le rayon d'action des bâtiments de RÉCOLTE (extracteurs -- Camp de Bûcheron/
+        // Mineur, Mineur de Fer, Ferme, Recycleur de gemmes) au lieu d'accélérer leur cadence. Voir
+        // GameState.extractorRadiusFor, seul point de lecture de radiusBonusByLevel.
         name: 'Expertise', parent: 'ind_apprentissage', ring: 2, angle: 72, maxLevel: 3,
-        description: 'Les bâtiments de production fonctionnent 10 % / 20 % / 30 % plus vite.',
-        speedBonusByLevel: [0.10, 0.20, 0.30],
+        description: 'Augmente la zone d\'action des bâtiments de récolte de 1 / 2 / 3 cases.',
+        radiusBonusByLevel: [1, 2, 3],
       },
       ind_guilde: {
         name: 'Guilde', parent: 'ind_expertise', ring: 3, angle: 72, maxLevel: 3,
@@ -661,60 +672,89 @@ const GameConfig = {
         productionBonusByLevel: [0.05, 0.10, 0.15],
       },
       ind_forestier: {
-        name: 'Forestier', parent: 'ind_guilde', ring: 4, angle: 47,
+        name: 'Forestier', parent: 'ind_guilde', ring: 4, angle: 32,
         description: 'Les Camps de Bûcheron replantent du bois sur une autre case, au rythme même où ils l\'abattent.',
       },
       ind_tunnelier: {
-        name: 'Tunnelier', parent: 'ind_guilde', ring: 4, angle: 72,
+        name: 'Tunnelier', parent: 'ind_guilde', ring: 4, angle: 57,
         description: 'Les Camps de Mineur ont 10 % de chances de produire aussi du minerai, en plus de la pierre.',
         oreChance: 0.10,
       },
       ind_labourage: {
-        name: 'Labourage', parent: 'ind_guilde', ring: 4, angle: 97,
+        name: 'Labourage', parent: 'ind_guilde', ring: 4, angle: 82,
         description: 'Les champs de blé de la Ferme sont créés 50 % plus vite.',
         plantSpeedBonus: 0.50,
       },
+      // Nouveau 4e choix sous Guilde (demande utilisateur explicite). Le Mineur de Fer se construit
+      // DÉJÀ sur une case de montagne (voir buildings.ironMiner/GameState.placeBuilding), ce qui en
+      // efface la ressource -- cette techno fait comme si sa propre case restait une montagne à
+      // ressource INFINIE, en plus de son rayon normal (voir GameState.tickProduction, section 1).
+      ind_mineInfinie: {
+        name: 'Mine infinie', parent: 'ind_guilde', ring: 4, angle: 107,
+        description: 'Le Mineur de Fer extrait sa propre case comme une montagne à ressource infinie.',
+      },
 
-      // Recherche (branche à 144°) : alphabétisation -> scolarisation -> {formateur, imprimerie}.
-      rec_alphabetisation: {
-        name: 'Alphabétisation', parent: null, ring: 1, angle: 144, maxLevel: 3,
-        description: 'Tous les bâtiments (production ET tours) sont 5 % / 10 % / 15 % plus efficaces.',
-        efficiencyBonusByLevel: [0.05, 0.10, 0.15],
+      // Recherche (branche à 144°) : Joaillerie (remplace Alphabétisation, demande utilisateur
+      // explicite) se divise en 2 branches linéaires -- gauche (tbd1 -> tbd2 -> tbd3, angle 126) et
+      // droite (tbd4 -> tbd5 -> tbd6, angle 162). Scolarisation/Formateur/Imprimerie SUPPRIMÉES
+      // (demande utilisateur explicite : "enleve tout le reste") -- leurs ids ne sont plus lus nulle
+      // part dans le code (voir GameState.researchCostFor pour Scolarisation, le calcul de
+      // speedMultiplier pour Formateur, tickProduction section 1 pour Imprimerie). Noms tbd1-6
+      // volontairement provisoires (comme log_tbd/Centre-ville avant d'avoir son effet) : à renommer
+      // plus tard.
+      rec_joaillerie: {
+        name: 'Joaillerie', parent: null, ring: 1, angle: 144,
+        description: 'Produit automatiquement 1 Gemme toutes les 2 minutes.',
       },
-      rec_scolarisation: {
-        name: 'Scolarisation', parent: 'rec_alphabetisation', ring: 2, angle: 144, maxLevel: 3,
-        description: 'Réduit de 10 % / 20 % / 30 % le coût en Gemmes de toute recherche (celle-ci comprise).',
-        costReductionByLevel: [0.10, 0.20, 0.30],
+      rec_tbd1: {
+        name: 'tbd1', parent: 'rec_joaillerie', ring: 2, angle: 126,
+        description: 'Le rayon de récolte du Recycleur de gemmes est doublé et son coût de construction divisé par 2.',
       },
-      rec_formateur: {
-        name: 'Formateur', parent: 'rec_scolarisation', ring: 3, angle: 126,
-        description: 'Les bâtiments de production dans la zone d\'action de l\'Université sont 15 % plus efficaces.',
-        zoneBonus: 0.15,
+      rec_tbd2: {
+        // Effet ponctuel (voir GameState.researchTech, cas spécial) : versé une seule fois au
+        // moment de la recherche, pas un bonus permanent -- maxLevel 1 par défaut (implicite).
+        name: 'tbd2', parent: 'rec_tbd1', ring: 3, angle: 126,
+        description: 'Donne instantanément 4 Gemmes.',
       },
-      rec_imprimerie: {
-        name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162,
-        // Voir GameState.tickProduction (section 1, cas spécial "recycler") : un cadavre recyclé
-        // donne normalement 1 Gemme d'un coup (renommée depuis Codex, demande utilisateur explicite,
-        // et réduite de 10 à 1 en même temps) ; avec cette techno, une chance de DOUBLER ce gain
-        // (2 au lieu de 1) -- pas un simple +1 fixe.
-        description: 'Lors du recyclage d\'un cadavre de monstre (voir buildings.recycler), 10 % de chances de doubler la Gemme obtenue (2 au lieu de 1).',
-        gemmeChance: 0.10,
+      rec_tbd3: {
+        name: 'tbd3', parent: 'rec_tbd2', ring: 4, angle: 126, maxLevel: 3,
+        // "Chaque technologie recherchée" = somme des NIVEAUX débloqués sur tout l'arbre (voir
+        // GameState.tickProduction, comptage totalResearchLevels) -- effet boule de neige : chaque
+        // nouvelle recherche (celle-ci comprise) rend TOUTES les précédentes un peu plus rentables.
+        description: 'Chaque technologie recherchée améliore l\'efficacité des bâtiments de production de 1 % / 2 % / 3 %.',
+        bonusPerTechByLevel: [0.01, 0.02, 0.03],
+      },
+      rec_tbd4: {
+        name: 'tbd4', parent: 'rec_joaillerie', ring: 2, angle: 162, maxLevel: 3,
+        description: 'Augmente l\'efficacité des Sculpteurs de 10 % / 15 % / 25 %.',
+        bonusByLevel: [0.10, 0.15, 0.25],
+      },
+      rec_tbd5: {
+        name: 'tbd5', parent: 'rec_tbd4', ring: 3, angle: 162,
+        description: 'Augmente la zone d\'action des Temples de 2 cases et divise leur coût de construction par 2.',
+      },
+      rec_tbd6: {
+        // Voir GameState.tickProduction, section "Tours" (2.6) : bonus de vitesse de tir = niveau
+        // ACTUEL de Dévotion / 100 (donc +100 % de cadence à 100 % de Dévotion) -- remplace
+        // l'ancien bonus d'Alphabétisation sur cette même ligne.
+        name: 'tbd6', parent: 'rec_tbd5', ring: 4, angle: 162,
+        description: 'La vitesse d\'attaque des Donjons (et Châteaux) augmente avec votre Dévotion actuelle.',
       },
 
       // Logistique (branche à 216°) : roue -> caisse de transport -> {aménagement urbain, gestion
-      // des stocks, centre-ville}. Les bonus par niveau (zone/capacité) ne sont PAS cumulatifs
-      // d'un niveau à l'autre (voir demande utilisateur) : le niveau 3 remplace le niveau 2, il ne
-      // s'y ajoute pas -- valable pour toute la branche Logistique, contrairement à Expertise/
-      // Guilde/Alphabétisation (Industrie/Recherche) qui, elles, s'additionnent à d'autres bonus.
+      // des stocks, centre-ville}.
       log_roue: {
         name: 'Roue', parent: null, ring: 1, angle: 216, maxLevel: 3,
         description: 'Augmente la vitesse de transport de 5 % / 10 % / 15 %.',
         speedBonusByLevel: [0.05, 0.10, 0.15],
       },
       log_charrue: {
+        // Nouvel effet (demande utilisateur explicite, remplace l'ancienne chance de 5 %) : +1
+        // GARANTI sur la quantité de chaque livraison, plutôt qu'une chance aléatoire d'obtenir 1
+        // de plus -- voir GameState.updateShipments.
         name: 'Caisse de transport', parent: 'log_roue', ring: 2, angle: 216,
-        description: '5 % de chances d\'obtenir une unité de ressource supplémentaire à chaque livraison (arrivée d\'un chargement).',
-        bonusChance: 0.05,
+        description: 'Augmente de 1 la quantité de ressource transportée dans chaque paquet.',
+        batchBonus: 1,
       },
       log_amenagement: {
         name: 'Aménagement urbain', parent: 'log_charrue', ring: 3, angle: 191, maxLevel: 3,
@@ -722,33 +762,47 @@ const GameConfig = {
         zoneBonusByLevel: [2, 4, 6],
       },
       log_gestionStocks: {
-        name: 'Gestion des stocks', parent: 'log_charrue', ring: 3, angle: 216, maxLevel: 3,
-        description: 'Augmente la capacité de stockage de chaque bâtiment de 5 / 10 / 20 (pas cumulatif).',
-        capBonusByLevel: [5, 10, 20],
+        // Nouvel effet (demande utilisateur explicite, remplace l'ancien bonus de capacité de
+        // stockage) : chance de doubler une livraison qui arrive dans un Entrepôt -- voir
+        // GameState.updateShipments, uniquement la branche "toType === 'warehouse'".
+        name: 'Gestion des stocks', parent: 'log_charrue', ring: 3, angle: 216,
+        description: '15 % de chances de doubler une ressource quand elle arrive dans un Entrepôt.',
+        doubleChance: 0.15,
       },
-      // Nom provisoire : effet de la 3e branche de Logistique pas encore défini par le joueur.
-      log_tbd: { name: 'Centre-ville', parent: 'log_charrue', ring: 3, angle: 241, description: 'Technologie à définir plus tard.' },
+      log_tbd: {
+        // Effet enfin défini (demande utilisateur explicite) : plus un placeholder, mais l'id/le nom
+        // "Centre-ville" restent inchangés (même principe que def_donjon/Artilleur -> Balistique).
+        name: 'Centre-ville', parent: 'log_charrue', ring: 3, angle: 241,
+        description: 'Réduit le coût d\'un Entrepôt de 3 Planches et 2 Pierre taillée.',
+        costReduction: { planks: 3, stoneBlocks: 2 },
+      },
 
-      // Défense (branche à 288°) : explorateur -> artilleur -> {armée de profession, service
-      // militaire, forgerie}. def_donjon garde son id (débloqué par des parties déjà en cours)
-      // même si son nom affiché change en "Artilleur".
+      // Défense (branche à 288°) : explorateur -> balistique -> {artilleur, service militaire,
+      // forgerie}. def_donjon/def_armee gardent leurs ids (débloqués par des parties déjà en
+      // cours) même si leurs noms affichés changent (demande utilisateur explicite : "artilleur a
+      // remplacé par balistique", "Armée de profession a remplacer par artilleur").
       def_explorateur: {
         name: 'Explorateur', parent: null, ring: 1, angle: 288,
         description: 'Permet de construire des Tours de Guet.',
       },
       def_donjon: {
-        name: 'Artilleur', parent: 'def_explorateur', ring: 2, angle: 288, maxLevel: 3,
+        name: 'Balistique', parent: 'def_explorateur', ring: 2, angle: 288, maxLevel: 3,
         description: 'Augmente la portée du Donjon (et du Château) de 1 / 2 / 3 cases (pas cumulatif).',
         rangeBonusByLevel: [1, 2, 3],
       },
       def_armee: {
-        name: 'Armée de profession', parent: 'def_donjon', ring: 3, angle: 263, maxLevel: 3,
-        description: 'Augmente les dégâts du Donjon (et du Château) de 25 % / 50 % / 100 % (pas cumulatif).',
-        damageBonusByLevel: [0.25, 0.50, 1.00],
+        // Nouvel effet (demande utilisateur explicite, remplace l'ancien bonus de dégâts) : chance
+        // qu'un tir touche aussi un ennemi ADJACENT à la cible (voir GameState._findAdjacentMonster/
+        // _applyTowerDamage, section "Tours" de tickProduction) -- toujours en plus du tir normal,
+        // jamais à sa place.
+        name: 'Artilleur', parent: 'def_donjon', ring: 3, angle: 263, maxLevel: 3,
+        description: 'Chaque tir a 10 % / 20 % / 30 % de chances de toucher aussi un ennemi adjacent.',
+        splashChanceByLevel: [0.10, 0.20, 0.30],
       },
       def_service: {
+        // 1 -> 2 habitants gratuits (demande utilisateur explicite) -- voir GameState.allocateLabor.
         name: 'Service militaire', parent: 'def_donjon', ring: 3, angle: 288,
-        description: 'Chaque Donjon (et Château) a toujours 1 habitant à l\'intérieur, en plus de la main-d\'œuvre affectée (même principe qu\'Apprentissage).',
+        description: 'Chaque Donjon (et Château) a toujours 2 habitants à l\'intérieur, en plus de la main-d\'œuvre affectée.',
       },
       def_forgerie: {
         name: 'Forgerie', parent: 'def_donjon', ring: 3, angle: 313,

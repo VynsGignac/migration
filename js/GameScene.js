@@ -615,7 +615,9 @@ class GameScene extends Phaser.Scene {
     }
 
     if (def.kind === 'extractor') {
-      const nearby = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows)
+      // GameState.zoneRadiusFor (Expertise, voir GameConfig.techTree.nodes.ind_expertise -- et
+      // recyclerRadius/tbd1 pour le Recycleur) : rayon EFFECTIF, pas def.extractRadius brut.
+      const nearby = HexUtils.hexesInRange(col, row, GameState.zoneRadiusFor(tile.type), this.cols, this.rows)
         .reduce((sum, p) => {
           const res = GameState.getResourceTile(p.col, p.row);
           return sum + (res && res.type === def.resource ? res.amount : 0);
@@ -625,7 +627,7 @@ class GameScene extends Phaser.Scene {
         // Pas d'outputBuffer significatif ici (voir GameState.tickProduction, cas spécial
         // "recycler") : la Gemme est versée d'un coup dès qu'un cadavre est épuisé, rien à
         // afficher comme stock en attente d'expédition.
-        lines.push('1 Gemme par cadavre recyclé (2 avec Imprimerie).');
+        lines.push('1 Gemme par cadavre recyclé.');
         lines.push('Fonctionne seul, sans main-d\'œuvre (toujours à pleine efficacité).');
         lines.push('Gemme versée directement au stock central (pas de livraison par la route).');
       } else {
@@ -653,9 +655,10 @@ class GameScene extends Phaser.Scene {
       lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'shrine') {
       // Temple (voir buildings.temple/altar, demande utilisateur explicite) : Dévotion versée
-      // directement au stock central, proportionnelle au nombre d'Autels dans extractRadius --
-      // pas d'outputBuffer/inputBuffer à afficher, juste ce décompte.
-      const altarCount = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows)
+      // directement au stock central, proportionnelle au nombre d'Autels dans son rayon effectif
+      // (voir GameState.templeRadius, +2 avec tbd5) -- pas d'outputBuffer/inputBuffer à afficher,
+      // juste ce décompte.
+      const altarCount = HexUtils.hexesInRange(col, row, GameState.templeRadius(), this.cols, this.rows)
         .reduce((sum, p) => {
           const t = GameState.tiles.get(GameState.key(p.col, p.row));
           return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
@@ -765,8 +768,8 @@ class GameScene extends Phaser.Scene {
     // retiré du suivi (demande utilisateur explicite) -- reste une ressource jouable normale
     // (stockée/transportée comme les autres, voir tickProduction/_spawnShipments), juste plus
     // affichée dans ce bandeau. "gemme" (renommée depuis "codex", demande utilisateur explicite)
-    // reste affiché même à 0/hors recherche (voir techTree.nodes.rec_imprimerie) : ni plus clair ni
-    // plus simple de le faire apparaître/disparaître selon l'état de l'arbre techno. "gemme" n'a
+    // reste affiché même à 0/hors recherche : ni plus clair ni plus simple de le faire apparaître/
+    // disparaître selon l'état de l'arbre techno. "gemme" n'a
     // pas encore de vraie icône (voir js/assets.js) : passe par le dessin vectoriel de secours
     // (drawResourceBarIcon), comme "wheat"/"stone" à l'origine.
     // ironIngot juste après bread (demande utilisateur explicite : "à côté des planches, pierre

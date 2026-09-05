@@ -75,6 +75,11 @@ const GameState = {
   // de simulation (dtSeconds, ralenti comme le reste de la production), remis à 0 tant que cette
   // bénédiction n'est pas active pour éviter une rafale de bonus accumulés au retour de l'effet.
   commerceReligieuxTimer: 0,
+  // Minuteur de la techno Joaillerie (voir techTree.nodes.rec_joaillerie/tickProduction, demande
+  // utilisateur explicite) : 1 Gemme automatique toutes les 120s de simulation, dès que débloquée.
+  // Même principe que commerceReligieuxTimer ci-dessus (temps de simulation, pas persisté --
+  // repart à 0 au chargement d'une sauvegarde, sans incidence, voir reset()).
+  joaillerieTimer: 0,
   // Tirs de tour en cours d'affichage : { fromCol, fromRow, toX, toRow, ttl }, purement visuel
   // (les dégâts sont déjà appliqués au moment du tir) — voir GameScene.redrawShots.
   shots: [],
@@ -91,8 +96,10 @@ const GameState = {
   // Cases à portée d'au moins un Entrepôt (voir computeGuildZone/techTree.nodes.ind_guilde),
   // recalculé au même moment que revealedTiles (voir GameScene, sur buildingsDirty).
   guildZone: new Set(),
-  // Cases à portée d'au moins une Université (voir computeUniversityZone/techTree.nodes.
-  // rec_formateur), même principe que guildZone ci-dessus.
+  // Cases à portée d'au moins une Université (voir computeUniversityZone), même principe que
+  // guildZone ci-dessus. Plus consultée pour aucun bonus de production depuis la suppression de
+  // Formateur de l'arbre (demande utilisateur explicite) -- gardée telle quelle (voir capBonus
+  // pour le même choix, moins risqué que de retirer tous ses points de lecture).
   universityZone: new Set(),
   // Mis à true par toute méthode qui change l'état visuel, lu puis remis à false par GameScene.
   dirty: true,
@@ -300,9 +307,22 @@ const GameState = {
     if (buildingId === 'castle' && this.hasActiveBlessing('guerre')) mult *= 0.5;
     if (buildingId === 'road' && this.hasActiveBlessing('voyageurs')) mult = 0;
     if (this.hasActiveBlessing('apogee')) mult *= 0.5;
-    if (mult === 1) return { ...baseCost };
+    // Réductions de coût par TECHNO (voir GameConfig.techTree.nodes.rec_tbd1/rec_tbd5, demande
+    // utilisateur explicite) -- même principe multiplicatif que les bénédictions ci-dessus, mais
+    // déclenchées par isTechUnlocked plutôt que hasActiveBlessing.
+    if (buildingId === 'recycler' && this.isTechUnlocked('rec_tbd1')) mult *= 0.5;
+    if (buildingId === 'temple' && this.isTechUnlocked('rec_tbd5')) mult *= 0.5;
     const result = {};
-    for (const res in baseCost) result[res] = mult === 0 ? 0 : Math.round(baseCost[res] * mult);
+    for (const res in baseCost) result[res] = mult === 0 ? 0 : (mult === 1 ? baseCost[res] : Math.round(baseCost[res] * mult));
+    // Centre-ville (voir GameConfig.techTree.nodes.log_tbd, demande utilisateur explicite) :
+    // réduction FLAT (pas un %), appliquée APRÈS le multiplicatif ci-dessus, uniquement à
+    // l'Entrepôt -- jamais sous 0.
+    if (buildingId === 'warehouse' && this.isTechUnlocked('log_tbd')) {
+      const reduction = GameConfig.techTree.nodes.log_tbd.costReduction;
+      for (const res in reduction) {
+        if (res in result) result[res] = Math.max(0, result[res] - reduction[res]);
+      }
+    }
     return result;
   },
 
@@ -395,8 +415,11 @@ const GameState = {
   zoneRadiusFor(type) {
     const def = GameConfig.buildings[type];
     if (!def) return null;
-    if (def.kind === 'extractor') return def.extractRadius;
-    if (def.kind === 'shrine') return def.extractRadius;
+    // recycler AVANT le cas générique 'extractor' (voir recyclerRadius, qui double encore ce
+    // rayon avec tbd1) : c'est aussi un extractor, il faut son propre calcul, pas le générique.
+    if (type === 'recycler') return this.recyclerRadius();
+    if (def.kind === 'extractor') return this.extractorRadiusFor(type);
+    if (def.kind === 'shrine') return this.templeRadius();
     if (def.kind === 'processor') return def.linkRange;
     if (def.kind === 'house') return GameConfig.population.laborRadius;
     if (def.kind === 'tower') return this.towerRange(def);
@@ -407,6 +430,37 @@ const GameState = {
     // brouillard de guerre) ; sert maintenant à Formateur (voir computeUniversityZone ci-dessous).
     if (def.kind === 'university') return GameConfig.logistics.linkRange;
     return null;
+  },
+
+  // Rayon d'extraction EFFECTIF d'un bâtiment "de récolte" (kind extractor) : rayon de base +
+  // bonus d'Expertise (voir GameConfig.techTree.nodes.ind_expertise, demande utilisateur explicite,
+  // remplace son ancien effet "+X % de vitesse pour tous les bâtiments de production"). Utilisé
+  // pour l'extraction ET la plantation (Ferme) -- voir tickProduction -- ainsi que zoneRadiusFor/
+  // l'affichage de la zone d'action. PAS le Recycleur (voir recyclerRadius, qui part de celui-ci
+  // mais double encore le résultat avec tbd1) ni le Temple (voir templeRadius, kind 'shrine').
+  extractorRadiusFor(buildingType) {
+    const def = GameConfig.buildings[buildingType];
+    const level = this.techLevel('ind_expertise');
+    const bonus = level > 0 ? GameConfig.techTree.nodes.ind_expertise.radiusBonusByLevel[level - 1] : 0;
+    return def.extractRadius + bonus;
+  },
+
+  // Rayon EFFECTIF du Recycleur de gemmes : extractorRadiusFor (donc déjà + Expertise) DOUBLÉ si
+  // tbd1 est débloquée (voir GameConfig.techTree.nodes.rec_tbd1, demande utilisateur explicite :
+  // "le rayon de récolte des recycleur de gemme est doublé").
+  recyclerRadius() {
+    let radius = this.extractorRadiusFor('recycler');
+    if (this.isTechUnlocked('rec_tbd1')) radius *= 2;
+    return radius;
+  },
+
+  // Rayon EFFECTIF du Temple : rayon de base + 2 si tbd5 est débloquée (voir GameConfig.
+  // techTree.nodes.rec_tbd5, demande utilisateur explicite : "Augmente la zone d'action des
+  // temples de 2"). Indépendant d'Expertise (qui ne parle que des bâtiments de RÉCOLTE, pas des
+  // Temples, kind 'shrine').
+  templeRadius() {
+    const def = GameConfig.buildings.temple;
+    return def.extractRadius + (this.isTechUnlocked('rec_tbd5') ? 2 : 0);
   },
 
   // Recalcule entièrement l'ensemble des cases révélées (voir revealedTiles) à partir des
@@ -459,8 +513,7 @@ const GameState = {
     this.guildZone = zone;
   },
 
-  // Cases à portée d'au moins une Université (voir techTree.nodes.rec_formateur) : même principe
-  // que computeGuildZone ci-dessus.
+  // Cases à portée d'au moins une Université : même principe que computeGuildZone ci-dessus.
   computeUniversityZone() {
     const zone = new Set();
     for (const [key, tile] of this.tiles) {
@@ -833,14 +886,14 @@ const GameState = {
         // bâtiment qui, lui, en profiterait vraiment.
         const [col, row] = key.split(',').map(Number);
         // Apprentissage (voir techTree.nodes.ind_apprentissage) / Service militaire (voir
-        // techTree.nodes.def_service, même principe pour les tours) : ces bâtiments démarrent
-        // avec 1 travailleur déjà compté, avant même la répartition des habitants ci-dessous --
+        // techTree.nodes.def_service, même principe pour les tours -- 2 habitants gratuits depuis
+        // cette techno, demande utilisateur explicite "1 -> 2 habitant") : ces bâtiments démarrent
+        // avec des travailleurs déjà comptés, avant même la répartition des habitants ci-dessous --
         // l'algorithme glouton (le moins staffé d'abord) leur envoie donc naturellement moins
         // d'habitants réels pour atteindre le même plein rendement.
-        const freeWorker =
-          (def.kind === 'processor' && this.isTechUnlocked('ind_apprentissage')) ||
-          (def.kind === 'tower' && this.isTechUnlocked('def_service'))
-            ? 1 : 0;
+        let freeWorker = 0;
+        if (def.kind === 'processor' && this.isTechUnlocked('ind_apprentissage')) freeWorker = 1;
+        if (def.kind === 'tower' && this.isTechUnlocked('def_service')) freeWorker = 2;
         // category toujours défini : laborRouting.categories couvre TOUS les kinds éligibles
         // ci-dessus (voir le commentaire sur GameConfig.laborRouting).
         producers.set(key, { col, row, workers: freeWorker, category: laborBuildingCategory[tile.type] });
@@ -983,19 +1036,27 @@ const GameState = {
   // chaque cycle de livraison individuel -- d'où la stabilité demandée.
   estimateResourceRates() {
     const labor = this.allocateLabor();
-    const batch = GameConfig.logistics.shipBatchSize;
+    // Caisse de transport (voir GameConfig.techTree.nodes.log_charrue, demande utilisateur
+    // explicite) : +1 GARANTI sur chaque paquet livré (voir updateShipments) -- reflété ici pour
+    // que l'estimation reste cohérente avec le débit réel.
+    const batch = GameConfig.logistics.shipBatchSize + (this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.batchBonus : 0);
 
     const roueLevel = this.techLevel('log_roue');
     const roueBonus = roueLevel > 0 ? GameConfig.techTree.nodes.log_roue.speedBonusByLevel[roueLevel - 1] : 0;
     const shipSpeed = GameConfig.logistics.shipSpeed * (1 + roueBonus);
 
-    const expertiseLevel = this.techLevel('ind_expertise');
-    const expertiseBonus = expertiseLevel > 0 ? GameConfig.techTree.nodes.ind_expertise.speedBonusByLevel[expertiseLevel - 1] : 0;
     const guildLevel = this.techLevel('ind_guilde');
     const guildBonusValue = guildLevel > 0 ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
-    const alphabetisationLevel = this.techLevel('rec_alphabetisation');
-    const alphabetisationBonus = alphabetisationLevel > 0 ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
-    const formateurBonus = this.isTechUnlocked('rec_formateur') ? GameConfig.techTree.nodes.rec_formateur.zoneBonus : 0;
+    // tbd3/tbd4 (voir GameConfig.techTree.nodes.rec_tbd3/rec_tbd4, demande utilisateur explicite) :
+    // même calcul que dans tickProduction (voir plus bas), reflété ici pour que l'estimation reste
+    // cohérente avec la production réelle.
+    const tbd3Level = this.techLevel('rec_tbd3');
+    const tbd3PerTech = tbd3Level > 0 ? GameConfig.techTree.nodes.rec_tbd3.bonusPerTechByLevel[tbd3Level - 1] : 0;
+    let totalResearchLevels = 0;
+    for (const lvl of this.unlockedTech.values()) totalResearchLevels += lvl;
+    const tbd3Bonus = tbd3PerTech * totalResearchLevels;
+    const tbd4Level = this.techLevel('rec_tbd4');
+    const sculpteurBonus = tbd4Level > 0 ? GameConfig.techTree.nodes.rec_tbd4.bonusByLevel[tbd4Level - 1] : 0;
 
     const perSecond = { planks: 0, stoneBlocks: 0, bread: 0, ironIngot: 0, weapons: 0, statues: 0 };
 
@@ -1024,9 +1085,9 @@ const GameState = {
       const deliveryCapacity = batch / travelTime;
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers);
-      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
+      const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
-        + (this.universityZone.has(key) ? formateurBonus : 0);
+        + (tile.type === 'sculpteur' ? sculpteurBonus : 0);
       const productionRate = def.rate * efficiency * speedMultiplier;
       perSecond[res] += Math.min(deliveryCapacity, productionRate);
     }
@@ -1106,7 +1167,10 @@ const GameState = {
       tile.plantTimer = 0;
 
       const [col, row] = key.split(',').map(Number);
-      const inRange = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows);
+      // extractorRadiusFor (Expertise, voir GameConfig.techTree.nodes.ind_expertise, demande
+      // utilisateur explicite) : la Ferme est un bâtiment de récolte, sa zone de plantation en
+      // profite aussi.
+      const inRange = HexUtils.hexesInRange(col, row, this.extractorRadiusFor(tile.type), this.cols, this.rows);
       const currentPatches = inRange.reduce((count, p) => {
         const res = this.resourceTiles.get(this.key(p.col, p.row));
         return count + (res && res.type === def.resource ? 1 : 0);
@@ -1128,19 +1192,41 @@ const GameState = {
 
     // Bonus de la branche Industrie de l'arbre techno (voir GameConfig.techTree.nodes), calculés
     // une fois avant les boucles d'extraction/transformation ci-dessous plutôt qu'à chaque bâtiment.
-    const expertiseLevel = this.techLevel('ind_expertise');
-    const expertiseBonus = expertiseLevel > 0
-      ? GameConfig.techTree.nodes.ind_expertise.speedBonusByLevel[expertiseLevel - 1] : 0;
+    // Expertise n'agit plus ici (voir extractorRadiusFor, elle joue maintenant sur le RAYON, lu
+    // directement dans les boucles concernées, plutôt que sur un multiplicateur de vitesse commun).
     const guildLevel = this.techLevel('ind_guilde');
     const guildBonusValue = guildLevel > 0
       ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
     const forestierUnlocked = this.isTechUnlocked('ind_forestier');
     const tunnelierChance = this.isTechUnlocked('ind_tunnelier') ? GameConfig.techTree.nodes.ind_tunnelier.oreChance : 0;
-    const imprimerieChance = this.isTechUnlocked('rec_imprimerie') ? GameConfig.techTree.nodes.rec_imprimerie.gemmeChance : 0;
-    const alphabetisationLevel = this.techLevel('rec_alphabetisation');
-    const alphabetisationBonus = alphabetisationLevel > 0
-      ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
-    const formateurBonus = this.isTechUnlocked('rec_formateur') ? GameConfig.techTree.nodes.rec_formateur.zoneBonus : 0;
+    const mineInfinieUnlocked = this.isTechUnlocked('ind_mineInfinie');
+    // tbd3 (voir GameConfig.techTree.nodes.rec_tbd3, demande utilisateur explicite) : "chaque
+    // technologie recherchée" = somme de TOUS les niveaux débloqués sur l'arbre entier (celle-ci
+    // comprise), multipliée par le gain par techno du niveau atteint de tbd3 -- effet boule de
+    // neige, appliqué aux bâtiments de PRODUCTION (extracteurs ET processeurs) ci-dessous.
+    const tbd3Level = this.techLevel('rec_tbd3');
+    const tbd3PerTech = tbd3Level > 0 ? GameConfig.techTree.nodes.rec_tbd3.bonusPerTechByLevel[tbd3Level - 1] : 0;
+    let totalResearchLevels = 0;
+    for (const lvl of this.unlockedTech.values()) totalResearchLevels += lvl;
+    const tbd3Bonus = tbd3PerTech * totalResearchLevels;
+    // tbd4 (voir GameConfig.techTree.nodes.rec_tbd4, demande utilisateur explicite) : bonus dédié
+    // au Sculpteur uniquement (voir la boucle de transformation, ci-dessous).
+    const tbd4Level = this.techLevel('rec_tbd4');
+    const sculpteurBonus = tbd4Level > 0 ? GameConfig.techTree.nodes.rec_tbd4.bonusByLevel[tbd4Level - 1] : 0;
+
+    // Joaillerie (voir GameConfig.techTree.nodes.rec_joaillerie, demande utilisateur explicite,
+    // remplace Alphabétisation) : 1 Gemme automatique toutes les 120s de simulation, dès que
+    // débloquée -- même principe que le minuteur de Commerce religieux (voir plus bas).
+    if (!this.isTechUnlocked('rec_joaillerie')) {
+      this.joaillerieTimer = 0;
+    } else {
+      this.joaillerieTimer += dtSeconds;
+      if (this.joaillerieTimer >= 120) {
+        this.joaillerieTimer -= 120;
+        this.resources.gemme += 1;
+        this.dirty = true;
+      }
+    }
 
     // 1. Extraction : les extracteurs remplissent leur propre outputBuffer depuis les cases
     //    de ressource dans leur rayon (les plus proches d'abord), indépendamment du réseau.
@@ -1163,16 +1249,30 @@ const GameState = {
       // Déesse de la fertilité (voir GameConfig.devotion.tiers, demande utilisateur explicite) :
       // "2 fois plus efficace" pour les bâtiments de ressource BRUTE, donc les extracteurs -- +1 au
       // multiplicateur (1 -> 2) plutôt qu'un facteur séparé, même mécanique que les autres bonus de
-      // vitesse déjà cumulés ici (Expertise/Alphabétisation/Guilde/Formateur).
-      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
+      // vitesse déjà cumulés ici (tbd3/Guilde).
+      const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
-        + (this.universityZone.has(key) ? formateurBonus : 0)
         + (this.hasActiveBlessing('fertilite') ? 1 : 0);
       let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap + this.capBonus() - tile.outputBuffer);
       if (toExtract <= 0) continue;
 
-      const inRange = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows);
+      // extractorRadiusFor (Expertise) / recyclerRadius (Expertise + tbd1, doublé) : voir leurs
+      // commentaires respectifs -- seul le Recycleur a un calcul dédié parmi les extracteurs.
+      const radius = tile.type === 'recycler' ? this.recyclerRadius() : this.extractorRadiusFor(tile.type);
+      const inRange = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
       let extracted = 0;
+
+      // Mine infinie (voir GameConfig.techTree.nodes.ind_mineInfinie, demande utilisateur
+      // explicite) : le Mineur de Fer traite sa PROPRE case comme une montagne à ressource
+      // infinie, en plus de son rayon normal -- placeBuilding a effacé la vraie ressource
+      // (ironMinerClearsResource) au moment de sa construction, donc rien à consommer ici, juste
+      // à satisfaire toExtract directement.
+      if (tile.type === 'ironMiner' && mineInfinieUnlocked && toExtract > 0) {
+        tile.outputBuffer += toExtract;
+        extracted += toExtract;
+        this.dirty = true;
+        toExtract = 0;
+      }
 
       for (const pos of inRange) {
         if (toExtract <= 0) break;
@@ -1208,13 +1308,11 @@ const GameState = {
             this.resourceTiles.delete(resKey);
             // Cadavre entièrement recyclé (voir buildings.recycler/demande utilisateur explicite) :
             // 1 Gemme d'un coup (renommée depuis Codex, et réduite de 10 à 1 en même temps -- demande
-            // utilisateur explicite : "Chaque cadavre à maintenant une seule gemme"), doublée (2)
-            // avec une chance liée à Imprimerie (voir techTree.nodes.rec_imprimerie). Un vrai jet
-            // UNIQUE par cadavre, pas une accumulation fractionnée qui aurait lissé la variance au
-            // fil des ticks.
+            // utilisateur explicite : "Chaque cadavre à maintenant une seule gemme"). L'ancienne
+            // chance de doublement liée à Imprimerie a disparu avec cette techno (supprimée de
+            // l'arbre, demande utilisateur explicite).
             if (tile.type === 'recycler') {
-              const doubled = imprimerieChance > 0 && Math.random() < imprimerieChance;
-              this.resources.gemme += doubled ? 2 : 1;
+              this.resources.gemme += 1;
               this.dirty = true;
             }
           }
@@ -1258,10 +1356,11 @@ const GameState = {
       const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
       // Dieu des artisans (voir GameConfig.devotion.tiers, demande utilisateur explicite) : même
       // principe que Déesse de la fertilité ci-dessus, mais pour les bâtiments de ressource
-      // RAFFINÉE, donc les processeurs (cette boucle).
-      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
+      // RAFFINÉE, donc les processeurs (cette boucle). tbd4 (voir GameConfig.techTree.nodes.
+      // rec_tbd4) : dédié au Sculpteur uniquement.
+      const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
-        + (this.universityZone.has(key) ? formateurBonus : 0)
+        + (tile.type === 'sculpteur' ? sculpteurBonus : 0)
         + (this.hasActiveBlessing('artisans') ? 1 : 0);
       const roomInOutput = def.outputCap + this.capBonus() - tile.outputBuffer;
       let actual = Math.min(def.rate * efficiency * speedMultiplier * dtSeconds, roomInOutput);
@@ -1297,7 +1396,9 @@ const GameState = {
       if (!def || def.kind !== 'shrine' || tile.underConstruction) continue;
 
       const [col, row] = key.split(',').map(Number);
-      const inRange = HexUtils.hexesInRange(col, row, def.extractRadius, this.cols, this.rows);
+      // templeRadius (voir GameConfig.techTree.nodes.rec_tbd5, demande utilisateur explicite) :
+      // rayon de base + 2 si débloquée.
+      const inRange = HexUtils.hexesInRange(col, row, this.templeRadius(), this.cols, this.rows);
       const altarCount = inRange.reduce((sum, p) => {
         const t = this.tiles.get(this.key(p.col, p.row));
         return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
@@ -1311,9 +1412,7 @@ const GameState = {
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
-      const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
-        + (this.guildZone.has(key) ? guildBonusValue : 0)
-        + (this.universityZone.has(key) ? formateurBonus : 0);
+      const speedMultiplier = 1 + (this.guildZone.has(key) ? guildBonusValue : 0);
       const baseRate = def.devotionPerAltar * altarCount;
       devotionGain += baseRate * efficiency * speedMultiplier * dtSeconds;
     }
@@ -1373,8 +1472,12 @@ const GameState = {
     const immigrationLevel = this.techLevel('pop_immigration');
     const growthBonus = immigrationLevel > 0 ? immigrationNode.growthBonusByLevel[immigrationLevel - 1] : 0;
 
+    // Mariage (voir GameConfig.techTree.nodes.pop_mariage, demande utilisateur explicite, nouvel
+    // effet -- remplace l'ancien "délai de croissance réduit par habitant déjà présent") : dès
+    // qu'une Maison atteint EXACTEMENT instantPopThreshold (3) habitants, le suivant apparaît
+    // d'un coup, sans passer par growTimer/growthInterval -- voir plus bas.
     const mariageUnlocked = this.isTechUnlocked('pop_mariage');
-    const mariageDiscountPerCapita = GameConfig.techTree.nodes.pop_mariage.growthDiscountPerCapita;
+    const mariageThreshold = GameConfig.techTree.nodes.pop_mariage.instantPopThreshold;
 
     const urbanismeUnlocked = this.isTechUnlocked('pop_urbanisme');
 
@@ -1407,11 +1510,7 @@ const GameState = {
       const cap = this.housePopulationCap(def);
       if (fed && tile.population < cap) {
         tile.growTimer = (tile.growTimer || 0) + dtSeconds;
-        let growthInterval = def.growthInterval / (1 + growthBonus);
-        if (mariageUnlocked) {
-          const discount = Math.min(0.9, tile.population * mariageDiscountPerCapita);
-          growthInterval *= (1 - discount);
-        }
+        const growthInterval = def.growthInterval / (1 + growthBonus);
         if (tile.growTimer >= growthInterval) {
           tile.growTimer = 0;
           tile.population += 1;
@@ -1420,12 +1519,29 @@ const GameState = {
       } else {
         tile.growTimer = 0;
       }
+
+      // Mariage : voir le commentaire plus haut -- vérifié APRÈS la croissance normale ci-dessus,
+      // pour attraper aussi bien une Maison qui vient de passer à 3 par la croissance classique
+      // qu'une qui y était déjà (ex. au chargement d'une sauvegarde, tech débloquée entretemps).
+      if (mariageUnlocked && tile.population === mariageThreshold && tile.population < cap) {
+        tile.population += 1;
+        tile.growTimer = 0;
+        this.dirty = true;
+      }
     }
 
     // 2.6 Tours (Donjon) : tirent sur le monstre le plus proche à portée, si reliées à une route.
     // Le délai entre deux tirs se vide à vitesse normale avec un travailleur affecté, deux fois
     // plus lentement sans (même principe que l'efficacité des extracteurs/processeurs ci-dessus,
     // mais appliqué à la fréquence de tir plutôt qu'à un débit de ressource).
+    // tbd6 (voir GameConfig.techTree.nodes.rec_tbd6, demande utilisateur explicite, remplace le
+    // bonus d'Alphabétisation sur cette même ligne) : la Dévotion ACTUELLE (0-100) devient un bonus
+    // de vitesse de tir en % -- 100 % de Dévotion double la cadence.
+    const tbd6DevotionBonus = this.isTechUnlocked('rec_tbd6') ? this.resources.devotion / 100 : 0;
+    // Artilleur (voir GameConfig.techTree.nodes.def_armee, demande utilisateur explicite, remplace
+    // l'ancien bonus de dégâts) : chance qu'un tir touche AUSSI un ennemi adjacent à la cible.
+    const artilleurLevel = this.techLevel('def_armee');
+    const artilleurSplashChance = artilleurLevel > 0 ? GameConfig.techTree.nodes.def_armee.splashChanceByLevel[artilleurLevel - 1] : 0;
     for (const [key, tile] of this.tiles) {
       const def = GameConfig.buildings[tile.type];
       if (!def || def.kind !== 'tower' || tile.underConstruction) continue;
@@ -1436,39 +1552,22 @@ const GameState = {
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers, def.capMultiplier || 1);
 
-      // Alphabétisation (voir techTree.nodes.rec_alphabetisation) : seule techno qui touche aussi
-      // les tours, vu son intitulé "TOUS les bâtiments" -- contrairement à Expertise/Guilde/
-      // Formateur, qui ne parlent que des bâtiments de PRODUCTION.
-      tile.fireCooldown -= dtSeconds * efficiency * (1 + alphabetisationBonus);
+      tile.fireCooldown -= dtSeconds * efficiency * (1 + tbd6DevotionBonus);
       if (tile.fireCooldown > 0) continue;
       tile.fireCooldown = def.fireInterval;
 
       const target = this._findMonsterInRange(col, row, this.towerRange(def));
       if (target) {
-        // Gèle le décompte de régénération de toute la section de ce monstre (voir Monsters.
-        // markGroupUnderAttack/update, GameConfig.monsters.underAttackFreezeSeconds, demande
-        // utilisateur explicite : "je veux que le compteur de respawn sois freeze tant que la
-        // section est attaqué") -- à CHAQUE tir qui touche, pas seulement en cas de mort.
-        Monsters.markGroupUnderAttack(target);
-        target.hp -= this.towerDamage(def);
-        if (target.hp <= 0) {
-          target.alive = false;
-          this.monstersKilled++;
-          this._maybeDropCorpse(target);
-          // Régénération (voir GameConfig.monsters.chiefRespawnSeconds/goblinRespawnSecondsRange,
-          // demande utilisateur explicite) : un Chef de guerre revient TOUJOURS après un délai
-          // fixe, lancé dès sa mort. Un gobelin, lui, ne lance son propre délai (aléatoire) que
-          // lorsque le meneur de sa zone (Chef ou Seigneur, voir Monsters.init/leaderId) est EN VIE
-          // -- s'il meurt alors que son meneur est déjà mort, il attend (respawnTimer reste null)
-          // que ce meneur réapparaisse avant que son propre décompte démarre (voir Monsters.update,
-          // qui vérifie ça à chaque frame pour tout gobelin mort sans respawnTimer). Le Seigneur de
-          // la horde, lui, ne reçoit jamais de respawnTimer : il ne revient jamais (le tuer met fin
-          // à la partie, voir GameScene.update).
-          if (target.type === 'chief') {
-            target.respawnTimer = GameConfig.monsters.chiefRespawnSeconds;
+        this._applyTowerDamage(target, def);
+        this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
+
+        if (artilleurSplashChance > 0 && Math.random() < artilleurSplashChance) {
+          const adjacent = this._findAdjacentMonster(target);
+          if (adjacent) {
+            this._applyTowerDamage(adjacent, def);
+            this.shots.push({ fromCol: col, fromRow: row, toX: adjacent.x, toRow: adjacent.row, ttl: 0.15 });
           }
         }
-        this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
       }
     }
 
@@ -1521,8 +1620,7 @@ const GameState = {
 
   // Arbre technologique (voir GameConfig.techTree) : un nœud n'est débloquable que si son parent
   // l'est déjà (chaîne de prérequis, au niveau 1 suffit). Chaque niveau coûte des ressources (voir
-  // researchCostFor) depuis la techno Scolarisation (voir techTree.nodes.rec_scolarisation) --
-  // avant elle, ce n'était limité que par les prérequis.
+  // researchCostFor).
   techLevel(id) {
     return this.unlockedTech.get(id) || 0;
   },
@@ -1537,19 +1635,14 @@ const GameState = {
   },
 
   // Coût du PROCHAIN niveau de ce nœud (celui que canResearchTech/researchTech achèteraient) :
-  // researchCost, FIXE quel que soit le nœud ou le niveau visé (demande utilisateur explicite),
-  // réduit par Scolarisation. Renvoie null si le nœud est déjà à son niveau maximum (rien à acheter).
+  // researchCost, FIXE quel que soit le nœud ou le niveau visé (demande utilisateur explicite).
+  // Renvoie null si le nœud est déjà à son niveau maximum (rien à acheter). Scolarisation (qui
+  // réduisait ce coût) a été supprimée de l'arbre (demande utilisateur explicite) -- plus de
+  // réduction à appliquer ici.
   researchCostFor(id) {
     const level = this.techLevel(id);
     if (level >= this.maxTechLevel(id)) return null;
-    const scolarisationLevel = this.techLevel('rec_scolarisation');
-    const discount = scolarisationLevel > 0
-      ? GameConfig.techTree.nodes.rec_scolarisation.costReductionByLevel[scolarisationLevel - 1] : 0;
-    const cost = {};
-    for (const res in GameConfig.techTree.researchCost) {
-      cost[res] = Math.round(GameConfig.techTree.researchCost[res] * (1 - discount));
-    }
-    return cost;
+    return { ...GameConfig.techTree.researchCost };
   },
 
   // Vrai si un prérequis bloque le prochain niveau (parent pas débloqué, ou déjà au maximum) --
@@ -1574,6 +1667,13 @@ const GameState = {
     if (!this.canResearchTech(id)) return false;
     this.spend(this.researchCostFor(id));
     this.unlockedTech.set(id, this.techLevel(id) + 1);
+    // tbd2 (voir GameConfig.techTree.nodes.rec_tbd2, demande utilisateur explicite) : effet
+    // PONCTUEL versé une seule fois au moment même de la recherche, pas un bonus permanent comme
+    // le reste de l'arbre -- maxLevel 1 (implicite) l'empêche de se redéclencher.
+    if (id === 'rec_tbd2') {
+      this.resources.gemme += 4;
+      this.dirty = true;
+    }
     return true;
   },
 
@@ -1598,13 +1698,14 @@ const GameState = {
     return GameConfig.logistics.linkRange + GameConfig.logistics.warehouseExtraRange + bonus;
   },
 
-  // Bonus de capacité de stockage, boosté par Gestion des stocks (voir GameConfig.techTree.nodes.
-  // log_gestionStocks) -- pas cumulatif non plus, s'ajoute une seule fois à inputCap/outputCap
-  // partout où ils sont lus (voir les appels ci-dessous et dans tickProduction).
+  // Ancien bonus de capacité de stockage de Gestion des stocks -- techno reconvertie (demande
+  // utilisateur explicite) en "15 % de chances de doubler une livraison qui arrive dans un
+  // Entrepôt" (voir GameConfig.techTree.nodes.log_gestionStocks/updateShipments), plus aucune
+  // techno ne touche plus la capacité de stockage. Gardée à 0 plutôt que supprimée : appelée
+  // depuis une dizaine d'endroits (inputCap/outputCap un peu partout) qu'il aurait fallu modifier
+  // un par un pour un gain nul.
   capBonus() {
-    const level = this.techLevel('log_gestionStocks');
-    const node = GameConfig.techTree.nodes.log_gestionStocks;
-    return level > 0 ? node.capBonusByLevel[level - 1] : 0;
+    return 0;
   },
 
   // Portée effective d'une tour (Donjon/Château), boostée par Artilleur (voir GameConfig.
@@ -1618,11 +1719,59 @@ const GameState = {
 
   // Dégâts effectifs d'une tour, boostés par Armée de profession (voir techTree.nodes.
   // def_armee) -- pas cumulatif.
+  // Plus de bonus de dégâts ici (def_armee/Artilleur a changé d'effet, demande utilisateur
+  // explicite -- voir GameConfig.techTree.nodes.def_armee/splashChanceByLevel, appliqué dans
+  // tickProduction section "Tours" via _applyTowerDamage/_findAdjacentMonster).
   towerDamage(def) {
-    const level = this.techLevel('def_armee');
-    const node = GameConfig.techTree.nodes.def_armee;
-    const bonus = level > 0 ? node.damageBonusByLevel[level - 1] : 0;
-    return def.damage * (1 + bonus);
+    return def.damage;
+  },
+
+  // Applique les dégâts d'un tir de tour à un monstre (mort, régénération du Chef, décompte de
+  // section "sous le feu" inclus) -- factorisé pour être appelé identiquement sur la cible
+  // principale ET sur une éventuelle cible adjacente (voir Artilleur/def_armee, tickProduction
+  // section "Tours").
+  _applyTowerDamage(monster, def) {
+    // Gèle le décompte de régénération de toute la section de ce monstre (voir Monsters.
+    // markGroupUnderAttack/update, GameConfig.monsters.underAttackFreezeSeconds, demande
+    // utilisateur explicite : "je veux que le compteur de respawn sois freeze tant que la
+    // section est attaqué") -- à CHAQUE tir qui touche, pas seulement en cas de mort.
+    Monsters.markGroupUnderAttack(monster);
+    monster.hp -= this.towerDamage(def);
+    if (monster.hp <= 0) {
+      monster.alive = false;
+      this.monstersKilled++;
+      this._maybeDropCorpse(monster);
+      // Régénération (voir GameConfig.monsters.chiefRespawnSeconds/goblinRespawnSecondsRange,
+      // demande utilisateur explicite) : un Chef de guerre revient TOUJOURS après un délai
+      // fixe, lancé dès sa mort. Un gobelin, lui, ne lance son propre délai (aléatoire) que
+      // lorsque le meneur de sa zone (Chef ou Seigneur, voir Monsters.init/leaderId) est EN VIE
+      // -- s'il meurt alors que son meneur est déjà mort, il attend (respawnTimer reste null)
+      // que ce meneur réapparaisse avant que son propre décompte démarre (voir Monsters.update,
+      // qui vérifie ça à chaque frame pour tout gobelin mort sans respawnTimer). Le Seigneur de
+      // la horde, lui, ne reçoit jamais de respawnTimer : il ne revient jamais (le tuer met fin
+      // à la partie, voir GameScene.update).
+      if (monster.type === 'chief') {
+        monster.respawnTimer = GameConfig.monsters.chiefRespawnSeconds;
+      }
+    }
+  },
+
+  // Un monstre vivant "adjacent" à celui donné (voir Artilleur/def_armee ci-dessus) : même case ou
+  // case voisine (distance de Tchebychev <= 1 en colonne ET en rangée, colonne calculée avec
+  // enroulement cylindrique comme _findMonsterInRange) -- exclut le monstre lui-même. Choisi au
+  // hasard parmi les candidats trouvés, null si aucun.
+  _findAdjacentMonster(target) {
+    const colWidth = GameConfig.hex.size * 1.5;
+    const targetCol = HexUtils.wrapCol(Math.floor(target.x / colWidth), this.cols);
+    const candidates = Monsters.list.filter((m) => {
+      if (!m.alive || m === target) return false;
+      const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
+      const rawColDist = Math.abs(mCol - targetCol);
+      const colDist = Math.min(rawColDist, this.cols - rawColDist);
+      return colDist <= 1 && Math.abs(m.row - target.row) <= 1;
+    });
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
   },
 
   // Cherche le monstre vivant le plus proche (en cases) dont la position actuelle tombe dans le
@@ -1967,9 +2116,15 @@ const GameState = {
     const roueLevel = this.techLevel('log_roue');
     const roueBonus = roueLevel > 0 ? GameConfig.techTree.nodes.log_roue.speedBonusByLevel[roueLevel - 1] : 0;
     const speed = GameConfig.logistics.shipSpeed * (1 + roueBonus);
-    // Caisse de transport (voir techTree.nodes.log_charrue) : chance d'une unité de ressource en
-    // plus à chaque livraison qui arrive à bon port (pas sur un chargement perdu, voir plus bas).
-    const charrueChance = this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.bonusChance : 0;
+    // Caisse de transport (voir techTree.nodes.log_charrue, demande utilisateur explicite) : +1
+    // GARANTI sur la quantité de CHAQUE livraison qui arrive à bon port (pas sur un chargement
+    // perdu, voir plus bas) -- remplace l'ancienne chance aléatoire.
+    const charrueBonus = this.isTechUnlocked('log_charrue') ? GameConfig.techTree.nodes.log_charrue.batchBonus : 0;
+    // Gestion des stocks (voir techTree.nodes.log_gestionStocks, demande utilisateur explicite) :
+    // chance de DOUBLER la quantité reçue, mais seulement pour une livraison vers un Entrepôt (voir
+    // plus bas, branche "toType === 'warehouse'") -- pas les chantiers en construction, ni les
+    // bâtiments de production.
+    const gestionStocksChance = this.isTechUnlocked('log_gestionStocks') ? GameConfig.techTree.nodes.log_gestionStocks.doubleChance : 0;
     const stillTraveling = [];
     const completedBuildings = [];
     let delivered = false;
@@ -1997,7 +2152,7 @@ const GameState = {
       delivered = true;
       const destTile = this.tiles.get(s.toKey);
       if (destTile && destTile.type === s.toType) {
-        const amount = (charrueChance > 0 && Math.random() < charrueChance) ? s.amount + 1 : s.amount;
+        const amount = s.amount + charrueBonus;
         if (s.forConstruction && destTile.underConstruction) {
           const needed = destTile.constructionNeeded[s.resource];
           destTile.constructionDelivered[s.resource] = Math.min(needed, destTile.constructionDelivered[s.resource] + amount);
@@ -2009,7 +2164,8 @@ const GameState = {
             this._completeConstruction(destTile);
           }
         } else if (s.toType === 'warehouse') {
-          this.resources[s.resource] = (this.resources[s.resource] || 0) + amount;
+          const doubled = gestionStocksChance > 0 && Math.random() < gestionStocksChance;
+          this.resources[s.resource] = (this.resources[s.resource] || 0) + (doubled ? amount * 2 : amount);
         } else {
           const destDef = GameConfig.buildings[destTile.type];
           const cap = destDef.inputCap + this.capBonus();
@@ -2128,6 +2284,7 @@ const GameState = {
     this.laborRouting = defaultLaborRouting();
     this.devotionTiers = defaultDevotionTiers();
     this.commerceReligieuxTimer = 0;
+    this.joaillerieTimer = 0;
     this.shots = [];
     this.unlockedTech = new Map();
     this.revealedTiles = new Set();
