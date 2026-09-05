@@ -438,14 +438,23 @@ class GameScene extends Phaser.Scene {
         g.fillStyle(color, 1);
         g.fillEllipse(cx, cy, size * 0.92, size * 0.62);
         break;
-      case 'codex':
+      case 'gemme':
+        // Losange facetté (pierre précieuse), remplace l'ancien pictogramme "livre" du Codex
+        // (demande utilisateur explicite : renommage Codex -> Gemme).
         g.fillStyle(color, 1);
-        g.fillRoundedRect(x + size * 0.1, y + size * 0.06, size * 0.8, size * 0.88, size * 0.08);
-        g.lineStyle(Math.max(1, size * 0.05), 0x000000, 0.35);
-        g.strokeRoundedRect(x + size * 0.1, y + size * 0.06, size * 0.8, size * 0.88, size * 0.08);
         g.beginPath();
-        g.moveTo(cx, y + size * 0.06);
-        g.lineTo(cx, y + size * 0.94);
+        g.moveTo(cx, y + size * 0.04);
+        g.lineTo(x + size * 0.92, y + size * 0.38);
+        g.lineTo(cx, y + size * 0.96);
+        g.lineTo(x + size * 0.08, y + size * 0.38);
+        g.closePath();
+        g.fillPath();
+        g.lineStyle(Math.max(1, size * 0.05), 0x000000, 0.35);
+        g.strokePath();
+        g.lineStyle(Math.max(1, size * 0.04), 0xffffff, 0.4);
+        g.beginPath();
+        g.moveTo(cx, y + size * 0.04);
+        g.lineTo(cx, y + size * 0.96);
         g.strokePath();
         break;
       case 'ore':
@@ -614,11 +623,11 @@ class GameScene extends Phaser.Scene {
       lines.push(`Ressource à proximité : ${Math.round(nearby)}`);
       if (tile.type === 'recycler') {
         // Pas d'outputBuffer significatif ici (voir GameState.tickProduction, cas spécial
-        // "recycler") : le Codex est versé d'un coup dès qu'un cadavre est épuisé, rien à
+        // "recycler") : la Gemme est versée d'un coup dès qu'un cadavre est épuisé, rien à
         // afficher comme stock en attente d'expédition.
-        lines.push('10 Codex par cadavre recyclé (20 avec Imprimerie).');
+        lines.push('1 Gemme par cadavre recyclé (2 avec Imprimerie).');
         lines.push('Fonctionne seul, sans main-d\'œuvre (toujours à pleine efficacité).');
-        lines.push('Codex versé directement au stock central (pas de livraison par la route).');
+        lines.push('Gemme versée directement au stock central (pas de livraison par la route).');
       } else {
         lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
         if (!GameState.hasLinkTargetInRange(col, row, def)) {
@@ -755,22 +764,22 @@ class GameScene extends Phaser.Scene {
     // blé restent des ressources internes (production/stock) mais ne s'affichent plus ici. "ore"
     // retiré du suivi (demande utilisateur explicite) -- reste une ressource jouable normale
     // (stockée/transportée comme les autres, voir tickProduction/_spawnShipments), juste plus
-    // affichée dans ce bandeau. "codex" reste affiché même à 0/hors recherche (voir
-    // techTree.nodes.rec_imprimerie) : ni plus clair ni plus simple de le faire apparaître/
-    // disparaître selon l'état de l'arbre techno. "codex" n'a pas encore de vraie icône (voir
-    // js/assets.js) : passe par le dessin vectoriel de secours (drawResourceBarIcon), comme
-    // "wheat"/"stone" à l'origine.
+    // affichée dans ce bandeau. "gemme" (renommée depuis "codex", demande utilisateur explicite)
+    // reste affiché même à 0/hors recherche (voir techTree.nodes.rec_imprimerie) : ni plus clair ni
+    // plus simple de le faire apparaître/disparaître selon l'état de l'arbre techno. "gemme" n'a
+    // pas encore de vraie icône (voir js/assets.js) : passe par le dessin vectoriel de secours
+    // (drawResourceBarIcon), comme "wheat"/"stone" à l'origine.
     // ironIngot juste après bread (demande utilisateur explicite : "à côté des planches, pierre
     // et pain") -- regroupe les PRODUITS FINIS des chaînes de production ensemble (voir aussi
     // weapons/statues, mêmes chaînes Armurier/Sculpteur, demande utilisateur explicite ultérieure).
-    // devotion juste avant codex : même principe que le Codex (monnaie globale jamais transportée
+    // devotion juste avant gemme : même principe que la Gemme (monnaie globale jamais transportée
     // sur les routes, voir buildings.temple), pas un produit fini livré par la route comme les
     // autres ci-dessus.
-    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'weapons', 'statues', 'devotion', 'codex'];
+    this.resourceOrder = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'weapons', 'statues', 'devotion', 'gemme'];
     // Là où un logo (voir js/assets.js) existe, une vraie image remplace l'icône vectorielle
     // dessinée ci-dessus (drawResourceBarIcon). "ore" absent ici (voir resourceOrder ci-dessus) :
     // oreIcon reste chargée/utilisée ailleurs (voir iconKeyByResource dans redrawShipments, pour
-    // le jeton en transit sur les routes), juste plus dans ce bandeau. "codex" reste sans icône
+    // le jeton en transit sur les routes), juste plus dans ce bandeau. "gemme" reste sans icône
     // dédiée (dessin vectoriel de secours, voir drawResourceBarIcon).
     this.resourceBarIconTextureKeys = {
       planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon',
@@ -796,7 +805,7 @@ class GameScene extends Phaser.Scene {
     }
 
     // Gain/perte par minute (demande utilisateur), pour les 3 ressources finales principales
-    // seulement (planches/pierre taillée/pain -- pas ore/codex, trop secondaires). Un texte par
+    // seulement (planches/pierre taillée/pain -- pas ore/gemme, trop secondaires). Un texte par
     // icône (juste le nombre signé, ex. "+12" -- pas de "Pl"/"PT"/"/min", l'icône juste à côté
     // identifie déjà la ressource, voir demande utilisateur), positionné juste après le nombre
     // principal (voir layoutHud, qui réserve un peu de largeur en plus pour CES 3 emplacements).
@@ -3013,14 +3022,14 @@ class GameScene extends Phaser.Scene {
     // sous la valeur actuelle et non sous l'icone pour gagner de la place"), donc la hauteur totale
     // du bandeau dépend maintenant de ce bloc texte plutôt que de l'icône + une rangée séparée.
     // Deux cas de figure (voir mainRateResources) : la plupart des ressources ont une valeur ET un
-    // gain/perte (bloc 2 lignes), mais devotion/codex n'ont pas de ligne de gain (bloc 1 ligne
+    // gain/perte (bloc 2 lignes), mais devotion/gemme n'ont pas de ligne de gain (bloc 1 ligne
     // seule) -- utiliser le même offset de centrage pour les deux aurait centré le bloc 2 lignes
     // correctement tout en laissant le texte à une seule ligne trop bas (calé comme si une 2e
     // ligne existait en dessous, demande utilisateur explicite : "il y a un probleme pour la
     // devotion et le codex... elle n'est pas centré") -- deux offsets calculés séparément.
     // valueOnlyHeight est mesuré sur CE sample (qui A un gain) : sans incidence, la hauteur d'un
     // texte ne dépend que de sa police (fixe, mobileValueFontSize pour tous), jamais de son
-    // contenu -- pas besoin d'un sample séparé pour devotion/codex.
+    // contenu -- pas besoin d'un sample séparé pour devotion/gemme.
     const sampleRes = this.resourceOrder.find((r) => this.resourceRateTexts[r]) || this.resourceOrder[0];
     this.resourceValueTexts[sampleRes].setFontSize(mobileValueFontSize);
     const valueOnlyHeight = this.resourceValueTexts[sampleRes].height;
@@ -4016,7 +4025,7 @@ class GameScene extends Phaser.Scene {
         break;
       }
       case 'recycler': {
-        // Crâne stylisé (recycle les cadavres de monstres en Codex) : même pictogramme que le
+        // Crâne stylisé (recycle les cadavres de monstres en Gemmes) : même pictogramme que le
         // repli vectoriel des cases "cadavre" sur la carte (voir redrawTileArt), pour rester
         // reconnaissable d'un coup d'œil.
         g.fillStyle(0xe8e8e8, 1);

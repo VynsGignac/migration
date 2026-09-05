@@ -82,12 +82,13 @@ const GameConfig = {
     // Stock de départ, volontairement généreux : les premiers blobs de ressources peuvent être
     // loin de l'Entrepôt de départ (voir world.cols/resourceNodes.startClearance). Ce coussin doit suffire à
     // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
-    // codex modeste (voir demande utilisateur) : les Codex se récupèrent maintenant pour de vrai
-    // sur les cadavres de monstres recyclés (voir buildings.recycler, 10 par cadavre) -- un petit
-    // coussin de départ suffit à lancer les premières recherches avant d'avoir un Recycleur actif.
+    // gemme modeste (renommée depuis "Codex", demande utilisateur explicite) : les Gemmes se
+    // récupèrent sur les cadavres de monstres recyclés (voir buildings.recycler, 1 par cadavre) --
+    // un petit coussin de départ suffit à lancer les premières recherches avant d'avoir un
+    // Recycleur de gemmes actif.
     starting: {
       wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, ironIngot: 0,
-      weapons: 0, statues: 0, devotion: 0, codex: 50,
+      weapons: 0, statues: 0, devotion: 0, gemme: 50,
     },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
@@ -111,17 +112,19 @@ const GameConfig = {
     weapons: { long: 'Armes', short: 'Armes', color: 0x8a3030 },
     // Sculpteur (demande utilisateur explicite) : pierre brute + lingot de fer -> statues.
     statues: { long: 'Statues', short: 'Stat.', color: 0xa8a190 },
-    // Temple (demande utilisateur explicite) : monnaie globale comme le Codex, jamais transportée
+    // Temple (demande utilisateur explicite) : monnaie globale comme la Gemme, jamais transportée
     // sur les routes -- produite en continu proportionnellement au nombre d'Autels dans la zone
     // d'action de chaque Temple (voir buildings.temple/altar, GameState.tickProduction section
     // "Temple").
     devotion: { long: 'Dévotion', short: 'Dévo.', color: 0xe8c96a },
-    // Monnaie des recherches (voir techTree.researchCost), globale et jamais transportée
-    // sur les routes (directement dépensée/gagnée dans le stock central) : récupérée en recyclant
-    // des cadavres de monstres (voir buildings.recycler, 10 Codex par cadavre, 20 avec Imprimerie
-    // -- voir techTree.nodes.rec_imprimerie). Le stock de départ (voir resources.starting) n'est
-    // qu'un petit coussin pour les toutes premières recherches.
-    codex: { long: 'Codex', short: 'Codex', color: 0x6f5fa3 },
+    // Monnaie des recherches (voir techTree.researchCost), globale et jamais transportée sur les
+    // routes (directement dépensée/gagnée dans le stock central) : récupérée en recyclant des
+    // cadavres de monstres (voir buildings.recycler, 1 Gemme par cadavre, 2 avec Imprimerie -- voir
+    // techTree.nodes.rec_imprimerie). Le stock de départ (voir resources.starting) n'est qu'un
+    // petit coussin pour les toutes premières recherches. Renommée depuis "Codex" (demande
+    // utilisateur explicite) -- clé interne "gemme" (voir GameState.deserialize pour la migration
+    // des sauvegardes existantes qui utilisaient encore "codex").
+    gemme: { long: 'Gemme', short: 'Gemme', color: 0x6f5fa3 },
   },
   // Répartition manuelle des ressources à plusieurs débouchés possibles (demande utilisateur
   // explicite : menu ouvert en tapant un Entrepôt -- un onglet par ressource, un curseur par
@@ -274,8 +277,8 @@ const GameConfig = {
     // de l'opacité (case bien mûre vs. presque récoltée).
     wheat: { color: 0xdbc245, amount: 8 },
     // Cadavre de monstre (voir buildings.recycler/demande utilisateur) : amount toujours 10 --
-    // pas la vraie quantité de Codex versée (toujours 10, ou 20 avec Imprimerie, voir
-    // tickProduction), juste ce qui permet à la case de décroître visiblement 10 -> 0 pendant la
+    // pas la vraie quantité de Gemme versée (1, ou 2 avec Imprimerie, voir tickProduction), juste
+    // ce qui permet à la case de décroître visiblement 10 -> 0 pendant la
     // récolte au lieu de rester bloquée à "0 restant" tout du long (bug corrigé, demande
     // utilisateur explicite : avec amount=1, Math.round() affichait 0 dès les tout premiers % du
     // chantier, bien avant que le cadavre ne soit réellement épuisé -- trompeur).
@@ -468,19 +471,20 @@ const GameConfig = {
     },
     // Récolte les cadavres de monstre (voir resourceNodes.corpse/demande utilisateur), rares et
     // dispersés sur la carte plutôt qu'en blobs. Un extracteur classique (même mécanique que
-    // Camp de Bûcheron/Mineur, voir tickProduction), MAIS sans linkTargets ni outputBuffer : le
-    // Codex ne se transporte jamais sur les routes (voir resourceLabels.codex) -- dès qu'une case
-    // de cadavre est entièrement épuisée, 10 Codex sont versés d'un coup au stock central (20 avec
-    // une chance liée à Imprimerie, voir techTree.nodes.rec_imprimerie), cas spécial dans
-    // tickProduction juste après celui du Tunnelier/minerai. extractRate = 10/60 : un cadavre
-    // (resourceNodes.corpse.amount = 10, voir plus haut -- juste pour un affichage "10
-    // restant" -> "0" lisible pendant la récolte, PAS la vraie quantité de Codex) prend environ
-    // 1 minute à recycler à pleine main-d'œuvre.
+    // Camp de Bûcheron/Mineur, voir tickProduction), MAIS sans linkTargets ni outputBuffer : la
+    // Gemme (renommée depuis Codex, demande utilisateur explicite -- voir resourceLabels.gemme) ne
+    // se transporte jamais sur les routes -- dès qu'une case de cadavre est entièrement épuisée, 1
+    // Gemme est versée d'un coup au stock central (2 avec une chance liée à Imprimerie, voir
+    // techTree.nodes.rec_imprimerie), cas spécial dans tickProduction juste après celui du
+    // Tunnelier/minerai. extractRate = 10/60 : un cadavre (resourceNodes.corpse.amount = 10, voir
+    // plus haut -- juste pour un affichage "10 restant" -> "0" lisible pendant la récolte, PAS la
+    // vraie quantité de Gemme) prend environ 1 minute à recycler à pleine main-d'œuvre.
     recycler: {
       // 25 % de 3 planches (0,75, arrondi à 1) transféré en pierre taillée, en plus de son coût
-      // en pierre taillée déjà existant.
-      name: 'Recycleur', cost: { planks: 2, stoneBlocks: 4 }, color: 0x6b1f3a,
-      kind: 'extractor', resource: 'corpse', outputResource: 'codex',
+      // en pierre taillée déjà existant. Nom "Recycleur de gemmes" (demande utilisateur explicite,
+      // suite au renommage Codex -> Gemme).
+      name: 'Recycleur de gemmes', cost: { planks: 2, stoneBlocks: 4 }, color: 0x6b1f3a,
+      kind: 'extractor', resource: 'corpse', outputResource: 'gemme',
       extractRadius: 3, extractRate: 10 / 60, outputCap: 3,
       // PAS de main-d'œuvre (voir allocateLabor/tickProduction, cas spécial "recycler") :
       // toujours à pleine efficacité, sans dépendre d'habitants à proximité -- ce bâtiment se
@@ -521,8 +525,8 @@ const GameConfig = {
     // d'un extracteur (aucune ressource de terrain à épuiser) -- produit de la Dévotion en continu,
     // proportionnellement au nombre d'Autels dans son extractRadius (voir GameState.tickProduction,
     // section "Temple" ; devotionPerAltar = Dévotion/s PAR Autel à pleine efficacité). Versée
-    // directement au stock central, jamais transportée sur les routes -- même principe que le
-    // Codex du Recycleur. Main-d'œuvre normale (contrairement au Recycleur, pas de raison
+    // directement au stock central, jamais transportée sur les routes -- même principe que la
+    // Gemme du Recycleur de gemmes. Main-d'œuvre normale (contrairement au Recycleur, pas de raison
     // particulière de l'exempter ici) : voir GameState.allocateLabor/zoneRadiusFor, kind 'shrine'
     // ajouté aux deux à côté d'extractor/processor/tower.
     temple: {
@@ -603,13 +607,14 @@ const GameConfig = {
     // alors le faire glisser (voir GameScene.techTreeCamX/Y) pour voir le reste.
     ringSpacing: 70,
     // Coût FIXE d'une recherche (demande utilisateur explicite : "tout les couts sois les memes, 1
-    // codex") -- identique pour tous les nœuds ET tous les niveaux (plus de montée en 1x/2x/3x par
-    // niveau comme avant), avant la réduction de Scolarisation (voir GameState.researchCostFor/
-    // techTree.nodes.rec_scolarisation). Note : à 1 Codex, Math.round() ramène systématiquement la
-    // réduction de Scolarisation à 1 Codex quand même (0,7 à 0,9 arrondit à 1) -- Scolarisation n'a
-    // donc plus d'effet visible tant que ce coût de base reste à 1 (première étape d'un rééquilibrage
-    // annoncé par l'utilisateur, pas encore traité ici).
-    researchCost: { codex: 1 },
+    // codex", "codex" renommé "gemme" ensuite -- voir resourceLabels.gemme) -- identique pour tous
+    // les nœuds ET tous les niveaux (plus de montée en 1x/2x/3x par niveau comme avant), avant la
+    // réduction de Scolarisation (voir GameState.researchCostFor/techTree.nodes.rec_scolarisation).
+    // Note : à 1 Gemme, Math.round() ramène systématiquement la réduction de Scolarisation à 1
+    // Gemme quand même (0,7 à 0,9 arrondit à 1) -- Scolarisation n'a donc plus d'effet visible tant
+    // que ce coût de base reste à 1 (première étape d'un rééquilibrage annoncé par l'utilisateur,
+    // pas encore traité ici).
+    researchCost: { gemme: 1 },
     nodes: {
       // Population (branche à 0°) : nutrition -> urbanisme -> {immigration, mariage, colocation}.
       // Nœuds à plusieurs niveaux (maxLevel > 1) : cliquables plusieurs fois, un niveau par clic sur
@@ -678,7 +683,7 @@ const GameConfig = {
       },
       rec_scolarisation: {
         name: 'Scolarisation', parent: 'rec_alphabetisation', ring: 2, angle: 144, maxLevel: 3,
-        description: 'Réduit de 10 % / 20 % / 30 % le coût en Codex de toute recherche (celle-ci comprise).',
+        description: 'Réduit de 10 % / 20 % / 30 % le coût en Gemmes de toute recherche (celle-ci comprise).',
         costReductionByLevel: [0.10, 0.20, 0.30],
       },
       rec_formateur: {
@@ -689,11 +694,11 @@ const GameConfig = {
       rec_imprimerie: {
         name: 'Imprimerie', parent: 'rec_scolarisation', ring: 3, angle: 162,
         // Voir GameState.tickProduction (section 1, cas spécial "recycler") : un cadavre recyclé
-        // donne normalement 10 Codex d'un coup ; avec cette techno, une chance de DOUBLER ce gain
-        // (20 au lieu de 10) -- pas un simple +1 (demande utilisateur explicite, corrige la
-        // version précédente).
-        description: 'Lors du recyclage d\'un cadavre de monstre (voir buildings.recycler), 10 % de chances de doubler le Codex obtenu (20 au lieu de 10).',
-        codexChance: 0.10,
+        // donne normalement 1 Gemme d'un coup (renommée depuis Codex, demande utilisateur explicite,
+        // et réduite de 10 à 1 en même temps) ; avec cette techno, une chance de DOUBLER ce gain
+        // (2 au lieu de 1) -- pas un simple +1 fixe.
+        description: 'Lors du recyclage d\'un cadavre de monstre (voir buildings.recycler), 10 % de chances de doubler la Gemme obtenue (2 au lieu de 1).',
+        gemmeChance: 0.10,
       },
 
       // Logistique (branche à 216°) : roue -> caisse de transport -> {aménagement urbain, gestion

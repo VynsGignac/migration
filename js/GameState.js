@@ -44,7 +44,7 @@ const GameState = {
   cols: GameConfig.world.cols,
   rows: GameConfig.world.rows,
   // Stock central : seuls les Entrepôts y déposent (via une expédition qui arrive à destination).
-  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, codex: 0 }, GameConfig.resources.starting),
+  resources: Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, gemme: 0 }, GameConfig.resources.starting),
   // Clé "col,row" -> { type, outputBuffer?, inputBuffer?, ruinLoot? }
   // Une case absente de la Map est considérée "vide".
   tiles: new Map(),
@@ -1136,7 +1136,7 @@ const GameState = {
       ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
     const forestierUnlocked = this.isTechUnlocked('ind_forestier');
     const tunnelierChance = this.isTechUnlocked('ind_tunnelier') ? GameConfig.techTree.nodes.ind_tunnelier.oreChance : 0;
-    const imprimerieChance = this.isTechUnlocked('rec_imprimerie') ? GameConfig.techTree.nodes.rec_imprimerie.codexChance : 0;
+    const imprimerieChance = this.isTechUnlocked('rec_imprimerie') ? GameConfig.techTree.nodes.rec_imprimerie.gemmeChance : 0;
     const alphabetisationLevel = this.techLevel('rec_alphabetisation');
     const alphabetisationBonus = alphabetisationLevel > 0
       ? GameConfig.techTree.nodes.rec_alphabetisation.efficiencyBonusByLevel[alphabetisationLevel - 1] : 0;
@@ -1187,8 +1187,8 @@ const GameState = {
         const take = Math.min(toExtract, resTile.amount);
         resTile.amount -= take;
         toExtract -= take;
-        // Recycleur exclu : pas d'outputBuffer à faire fructifier (voir plus bas, le Codex est
-        // versé d'un coup à la case de cadavre épuisée, pas accumulé fraction par fraction) --
+        // Recycleur exclu : pas d'outputBuffer à faire fructifier (voir plus bas, la Gemme est
+        // versée d'un coup à la case de cadavre épuisée, pas accumulée fraction par fraction) --
         // sinon il finirait par plafonner sur outputCap après quelques cadavres et se bloquer.
         if (tile.type !== 'recycler') tile.outputBuffer += take;
         extracted += take;
@@ -1207,13 +1207,14 @@ const GameState = {
           } else {
             this.resourceTiles.delete(resKey);
             // Cadavre entièrement recyclé (voir buildings.recycler/demande utilisateur explicite) :
-            // 10 Codex d'un coup, doublés (20) avec une chance liée à Imprimerie -- PAS un simple
-            // +1 comme l'ancienne version (voir techTree.nodes.rec_imprimerie, description mise à
-            // jour en conséquence). Un vrai jet UNIQUE par cadavre, pas une accumulation fractionnée
-            // qui aurait lissé la variance au fil des ticks.
+            // 1 Gemme d'un coup (renommée depuis Codex, et réduite de 10 à 1 en même temps -- demande
+            // utilisateur explicite : "Chaque cadavre à maintenant une seule gemme"), doublée (2)
+            // avec une chance liée à Imprimerie (voir techTree.nodes.rec_imprimerie). Un vrai jet
+            // UNIQUE par cadavre, pas une accumulation fractionnée qui aurait lissé la variance au
+            // fil des ticks.
             if (tile.type === 'recycler') {
               const doubled = imprimerieChance > 0 && Math.random() < imprimerieChance;
-              this.resources.codex += doubled ? 20 : 10;
+              this.resources.gemme += doubled ? 2 : 1;
               this.dirty = true;
             }
           }
@@ -1281,7 +1282,7 @@ const GameState = {
       tile.outputBuffer += actual;
     }
 
-    // Temple : Dévotion gagnée directement au stock central (comme le Codex du Recycleur), jamais
+    // Temple : Dévotion gagnée directement au stock central (comme la Gemme du Recycleur de gemmes), jamais
     // transportée sur les routes -- proportionnelle au nombre d'Autels dans son extractRadius
     // (voir buildings.temple/altar, demande utilisateur explicite). Même courbe de main-d'œuvre que
     // les extracteurs/processeurs ci-dessus. Accumulée dans devotionGain plutôt qu'appliquée
@@ -2115,7 +2116,7 @@ const GameState = {
     this.cols = GameConfig.world.cols;
     this.rows = GameConfig.world.rows;
     this.resources = Object.assign(
-      { wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, codex: 0 },
+      { wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, gemme: 0 },
       GameConfig.resources.starting
     );
     this.tiles = new Map();
@@ -2162,7 +2163,15 @@ const GameState = {
   },
 
   deserialize(data) {
-    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, codex: 0 }, data.resources);
+    // Migration Codex -> Gemme (demande utilisateur explicite, renommage) : une sauvegarde d'avant
+    // ce renommage a encore "codex" dans data.resources, sans "gemme" -- on reprend ce stock sous
+    // le nouveau nom plutôt que de le perdre silencieusement.
+    const rawResources = { ...data.resources };
+    if (rawResources && rawResources.codex != null && rawResources.gemme == null) {
+      rawResources.gemme = rawResources.codex;
+    }
+    delete rawResources.codex;
+    this.resources = Object.assign({ wood: 0, planks: 0, stone: 0, stoneBlocks: 0, wheat: 0, bread: 0, ore: 0, ironIngot: 0, weapons: 0, statues: 0, devotion: 0, gemme: 0 }, rawResources);
     this.tiles = new Map(data.tiles.map(([k, t]) => [k, { ...t }]));
     this.resourceTiles = new Map(data.resourceTiles.map(([k, t]) => [k, { ...t }]));
     this.shipments = data.shipments.map(s => ({ ...s, path: s.path.map(p => ({ ...p })) }));
