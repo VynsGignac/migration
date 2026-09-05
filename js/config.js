@@ -554,15 +554,14 @@ const GameConfig = {
     // que s'il touche une route (voir GameState._hasAdjacentRoad) : un Fortin posé isolé ne
     // tire pas, il faut le relier au réseau.
     donjon: {
-      // Coût divisé par 2 (demande utilisateur explicite) par rapport à l'original (planks: 20,
-      // stoneBlocks: 15) : moitié de 15 arrondie à 8 pour un chiffre entier propre plutôt que 7.5.
+      // Coût 10/8 -> 6/4 (demande utilisateur explicite) -- portée 7 -> 4 cases (même demande,
+      // rééquilibrage à l'introduction des amél"Donjon"/"Tour de siège" ci-dessous, chacune avec
+      // sa propre portée bien plus grande que ce Fortin de base).
       // Nom "Fortin" (demande utilisateur explicite, "aucun changement fonctionnel") -- id
       // "donjon" conservé (compatibilité des sauvegardes existantes), même principe que def_donjon/
       // Balistique.
-      name: 'Fortin', cost: { planks: 10, stoneBlocks: 8 }, color: 0x5a2a3a,
-      // Portée (aussi la zone d'action/de révélation du brouillard de guerre, voir
-      // GameState.zoneRadiusFor) passée de 4 à 7 cases -- demande utilisateur explicite.
-      kind: 'tower', range: 7, fireInterval: 2, damage: 1,
+      name: 'Fortin', cost: { planks: 6, stoneBlocks: 4 }, color: 0x5a2a3a,
+      kind: 'tower', range: 4, fireInterval: 2, damage: 1,
       ruinLoot: { planks: 10, stoneBlocks: 6 },
     },
     // kind: 'watchtower' => aucune action (pas de tir, pas de production), juste une zone de
@@ -575,14 +574,26 @@ const GameConfig = {
       kind: 'watchtower', range: 10,
       ruinLoot: { planks: 3 },
     },
-    // Pas dans le menu de construction : n'existe que comme amélioration d'un Fortin déjà posé
-    // (voir GameState.upgradeToCastle), débloquée par la techno Féodalité (voir techTree.nodes.
-    // def_forgerie). "cost" sert de coût d'amélioration (payé au moment de la transformation),
-    // pas de coût de construction initiale -- même kind: 'tower' que le Fortin, donc traité
-    // automatiquement par tout le code déjà écrit pour les tours (tir, main-d'œuvre, portée...).
+    // Château/Donjon/Tour de siège (voir aussi buildings.keep/siegeTower juste en dessous) : trois
+    // améliorations MUTUELLEMENT EXCLUSIVES d'un Fortin déjà posé (voir GameState.
+    // startFortinUpgrade), chacune débloquée par sa propre techno (Féodalité/Arc long/Ingénierie).
+    // Contrairement à l'ancienne version (payée intégralement et instantanément au moment du
+    // clic), "cost" est maintenant un coût d'amélioration LIVRÉ VIA UN ENTREPÔT comme un chantier
+    // classique (demande utilisateur explicite : "a transporter via entrepot") -- voir
+    // GameState._spawnWarehouseConstructionDeliveries/updateShipments, qui traitent maintenant
+    // aussi bien un chantier neuf (tile.underConstruction) qu'une amélioration en cours
+    // (tile.upgradeTo). Le Fortin reste pleinement opérationnel (il continue de tirer) pendant que
+    // les matériaux arrivent -- seul un chantier NEUF (bâtiment pas encore construit) reste inerte.
+    // Aucune des trois n'est dans le menu de construction : pas de linkTargets/kind différent de
+    // 'tower', donc traitées automatiquement par tout le code déjà écrit pour les tours (tir,
+    // main-d'œuvre, portée...).
     castle: {
-      name: 'Château', cost: { planks: 25, stoneBlocks: 20 }, color: 0x3a2a4a,
-      kind: 'tower', range: 6, fireInterval: 1.2, damage: 3,
+      // fireInterval 1.2 -> 2 et damage 3 -> 1 (demande utilisateur explicite, "avec la meme
+      // vitesse" -- désormais alignée sur le Fortin/le Donjon) : compensé par multiShot (2 flèches
+      // sur 2 ennemis DIFFÉRENTS par salve, voir GameState tickProduction section "Tours") plutôt
+      // qu'un dégât plus élevé sur une seule cible.
+      name: 'Château', cost: { planks: 12, stoneBlocks: 12 }, color: 0x3a2a4a,
+      kind: 'tower', range: 6, fireInterval: 2, damage: 1, multiShot: 2,
       // Accueille 2x plus de travailleurs qu'un Fortin (8 au lieu de 4) -- voir GameState.
       // efficiencyForWorkers, seul bâtiment dont l'efficacité peut dépasser 100 % (demande
       // utilisateur explicite). Les 4 premiers travailleurs comptent comme pour un Fortin
@@ -590,6 +601,25 @@ const GameConfig = {
       // seconde fois (5e travailleur = même gain que le 1er, etc.), jusqu'à 150 % à 8 travailleurs
       // -- pas un simple x2 (qui aurait aussi doublé le socle de 50 % à 0 travailleur, absurde).
       capMultiplier: 2,
+      ruinLoot: { planks: 15, stoneBlocks: 10 },
+    },
+    // Donjon (demande utilisateur explicite -- nom repris du bâtiment de base d'avant son
+    // renommage en "Fortin", id interne "keep" pour ne pas collisionner) : portée nettement
+    // supérieure au Fortin, même vitesse/dégâts que lui -- amélioration "sniper", débloquée par
+    // Arc long (voir techTree.nodes.def_arcLong).
+    keep: {
+      name: 'Donjon', cost: { planks: 12, stoneBlocks: 12 }, color: 0x4a3a2a,
+      kind: 'tower', range: 10, fireInterval: 2, damage: 1,
+      ruinLoot: { planks: 15, stoneBlocks: 10 },
+    },
+    // Tour de siège (demande utilisateur explicite) : cadence très lente (1 tir/8s, 4x plus lent
+    // que le Fortin) mais touche TOUS les ennemis adjacents à sa cible en plus d'elle-même à
+    // chaque tir (splashAllAdjacent, voir GameState._findAllAdjacentMonsters/tickProduction section
+    // "Tours") -- contrairement à Artilleur (def_armee), qui n'a qu'une CHANCE de toucher un SEUL
+    // adjacent choisi au hasard. Débloquée par Ingénierie (voir techTree.nodes.def_ingenierie).
+    siegeTower: {
+      name: 'Tour de siège', cost: { planks: 12, stoneBlocks: 12 }, color: 0x6a5a3a,
+      kind: 'tower', range: 5, fireInterval: 8, damage: 1, splashAllAdjacent: true,
       ruinLoot: { planks: 15, stoneBlocks: 10 },
     },
     // kind: 'university' => pas de zone d'action, ne reçoit/n'expédie aucune ressource (pas de
@@ -851,11 +881,11 @@ const GameConfig = {
       // (contrairement à def_forgerie/upgradeToCastle) : simples emplacements réservés dans l'arbre.
       def_arcLong: {
         name: 'Arc long', parent: 'def_armee', ring: 4, angle: 288,
-        description: 'Débloque le Donjon (nouveau bâtiment, amélioration du Fortin -- détails à venir).',
+        description: 'Débloque le Donjon, une amélioration du Fortin à très longue portée (10 cases).',
       },
       def_ingenierie: {
         name: 'Ingénierie', parent: 'def_armee', ring: 4, angle: 313,
-        description: 'Débloque la Tour de siège (nouveau bâtiment, amélioration du Fortin -- détails à venir).',
+        description: 'Débloque la Tour de siège, une amélioration du Fortin qui touche tous les ennemis adjacents à sa cible (mais tire lentement).',
       },
     },
   },

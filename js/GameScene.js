@@ -257,12 +257,24 @@ class GameScene extends Phaser.Scene {
 
   // Vrai si ce type de bâtiment peut apparaître dans le menu de construction : tous, sauf ceux
   // débloqués par une techno précise (voir GameConfig.techTree.nodes.def_explorateur) -- le seul
-  // cas pour l'instant est la Tour de Guet. Le Château n'est volontairement PAS dans cette liste :
-  // il ne se construit pas depuis le menu, seulement en améliorant un Fortin (voir
-  // GameState.upgradeToCastle).
+  // cas pour l'instant est la Tour de Guet. Château/Donjon/Tour de siège sont volontairement PAS
+  // dans cette liste : ils ne se construisent pas depuis le menu, seulement en améliorant un
+  // Fortin (voir GameState.startFortinUpgrade).
   isBuildingUnlocked(id) {
     if (id === 'watchtower') return GameState.isTechUnlocked('def_explorateur');
     return true;
+  }
+
+  // Les évolutions de Fortin (Château/Donjon/Tour de siège, voir GameState.fortinUpgradeTargets)
+  // actuellement PROPOSABLES pour cette case précise : celle-ci doit être un Fortin opérationnel,
+  // pas déjà en cours d'amélioration (une seule à la fois), et la techno correspondante débloquée.
+  // Utilisé à la fois par buildingInfoText (texte) et layoutHud/updateInfoPanel (boutons) -- une
+  // seule source de vérité pour la liste, dans l'ordre fixe ['castle','keep','siegeTower'].
+  fortinUpgradeOptionsFor(tile) {
+    if (!tile || tile.type !== 'donjon' || tile.underConstruction || tile.upgradeTo) return [];
+    return Object.keys(GameState.fortinUpgradeTargets).filter(
+      (targetType) => GameState.isTechUnlocked(GameState.fortinUpgradeTargets[targetType])
+    );
   }
 
   // Une case est constructible si elle est vide et sans ressource de terrain bloquante. Le coût
@@ -553,7 +565,10 @@ class GameScene extends Phaser.Scene {
     if (this.buildMenuBg.visible && Phaser.Geom.Rectangle.Contains(this.buildMenuBg.getBounds(), pointer.x, pointer.y)) return true;
     if (this.buildMenuToggle.visible && Phaser.Geom.Rectangle.Contains(this.buildMenuToggle.getBounds(), pointer.x, pointer.y)) return true;
     if (this.confirmButton.visible && Phaser.Geom.Rectangle.Contains(this.confirmButton.getBounds(), pointer.x, pointer.y)) return true;
-    if (this.upgradeCastleButton.visible && Phaser.Geom.Rectangle.Contains(this.upgradeCastleButton.getBounds(), pointer.x, pointer.y)) return true;
+    for (const targetType of this.upgradeButtonOrder) {
+      const btn = this.upgradeButtons[targetType];
+      if (btn.visible && Phaser.Geom.Rectangle.Contains(btn.getBounds(), pointer.x, pointer.y)) return true;
+    }
     if (this.demolishButton.visible && Phaser.Geom.Rectangle.Contains(this.demolishButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.pauseButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.menuButton.getBounds(), pointer.x, pointer.y)) return true;
@@ -695,9 +710,26 @@ class GameScene extends Phaser.Scene {
       const active = GameState._hasAdjacentRoad(col, row);
       lines.push(active ? 'Relié à une route : actif.' : 'Pas de route adjacente : inactif.');
       lines.push(`Portée : ${GameState.towerRange(def)}   Dégâts : ${GameState.towerDamage(def)}`);
+      // multiShot (Château)/splashAllAdjacent (Tour de siège, voir GameConfig.buildings) : mention
+      // explicite, sinon un joueur ne devinerait pas ces mécaniques rien qu'avec portée/dégâts.
+      if (def.multiShot) lines.push(`Tire sur ${def.multiShot} ennemis différents à la fois.`);
+      if (def.splashAllAdjacent) lines.push('Touche aussi tous les ennemis adjacents à sa cible.');
       if (active) lines.push(this.laborStatusLine(col, row, def));
-      if (tile.type === 'donjon' && GameState.isTechUnlocked('def_forgerie')) {
-        lines.push('Peut être amélioré en Château (voir bouton ci-dessous).');
+      if (tile.type === 'donjon') {
+        if (tile.upgradeTo) {
+          // Amélioration en cours (voir GameState.startFortinUpgrade) : le Fortin reste actif
+          // (voir ci-dessus) pendant que les matériaux arrivent, comme un chantier classique.
+          lines.push(`Amélioration en cours vers ${GameConfig.buildings[tile.upgradeTo].name} :`);
+          for (const res in tile.upgradeNeeded) {
+            lines.push(`  ${GameConfig.resourceLabels[res].long} : ${Math.round(tile.upgradeDelivered[res])}/${tile.upgradeNeeded[res]}`);
+          }
+        } else {
+          const options = this.fortinUpgradeOptionsFor(tile);
+          if (options.length > 0) {
+            const names = options.map((t) => GameConfig.buildings[t].name).join(', ');
+            lines.push(`Peut être amélioré en ${names} (voir bouton${options.length > 1 ? 's' : ''} ci-dessous).`);
+          }
+        }
       }
     } else if (tile.type === 'warehouse') {
       lines.push('Les livraisons reçues ici rejoignent le stock central.');
@@ -974,18 +1006,29 @@ class GameScene extends Phaser.Scene {
     this.confirmButton.on('pointerup', () => this.confirmBuild());
     this.uiElements.push(this.confirmButton);
 
-    // Visible uniquement quand le bâtiment sélectionné est un Fortin et que Féodalité est
-    // débloquée (voir updateInfoPanel/GameState.upgradeToCastle) -- même style que confirmButton,
-    // mais une action sur un bâtiment déjà posé plutôt que sur un placement en cours.
-    this.upgradeCastleButton = this.add.text(0, 0, '', {
-      font: 'bold 13px sans-serif', color: '#10151a', backgroundColor: '#c9971f', padding: { x: 12, y: 9 },
-    }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
-    this.upgradeCastleButton.on('pointerup', () => this.upgradeSelectedToCastle());
-    this.uiElements.push(this.upgradeCastleButton);
+    // Un Fortin peut évoluer vers 3 bâtiments distincts (Château/Donjon/Tour de siège, voir
+    // GameState.fortinUpgradeTargets) -- jusqu'à 3 boutons peuvent donc être visibles à la fois
+    // (une fois les 3 technos débloquées), contrairement à l'unique "Améliorer en Château"
+    // d'origine. upgradeButtonOrder fixe l'ordre d'affichage ; fortinUpgradeOptionsFor (voir
+    // isBuildingUnlocked, juste au-dessus) décide lesquels sont proposables pour la case
+    // sélectionnée. Même style que confirmButton, mais une action sur un bâtiment déjà posé plutôt
+    // que sur un placement en cours.
+    this.upgradeButtonOrder = ['castle', 'keep', 'siegeTower'];
+    this.upgradeButtons = {};
+    for (const targetType of this.upgradeButtonOrder) {
+      const btn = this.add.text(0, 0, '', {
+        font: 'bold 13px sans-serif', color: '#10151a', backgroundColor: '#c9971f', padding: { x: 12, y: 9 },
+      }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
+      btn.on('pointerup', () => this.upgradeSelectedFortin(targetType));
+      this.uiElements.push(btn);
+      this.upgradeButtons[targetType] = btn;
+    }
 
     // Visible dès qu'un bâtiment/route est sélectionné (voir updateInfoPanel) : partage la même
-    // rangée que upgradeCastleButton (voir layoutHud, qui les divise en deux quand les deux
-    // s'appliquent en même temps -- un Fortin peut être à la fois démoli ET amélioré).
+    // rangée que les boutons d'amélioration ci-dessus (voir layoutHud, qui subdivise l'espace en
+    // deux quand les deux s'appliquent en même temps -- un Fortin peut être à la fois démoli ET
+    // amélioré -- puis subdivise encore la portion "amélioration" par le nombre d'options
+    // proposables).
     this.demolishButton = this.add.text(0, 0, '✕ Démolir', {
       font: 'bold 13px sans-serif', color: '#ffffff', backgroundColor: '#8a3a3a', padding: { x: 12, y: 9 },
     }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
@@ -2811,7 +2854,8 @@ class GameScene extends Phaser.Scene {
     // (voir handleTap) pour que ça reste à jour sans attendre un resize. La VISIBILITÉ/le TEXTE
     // réels restent gérés dans updateInfoPanel (chaque frame), pas ici.
     const layoutSelectedTile = this.selectedBuildingKey ? GameState.tiles.get(this.selectedBuildingKey) : null;
-    const layoutShowUpgrade = !!(layoutSelectedTile && layoutSelectedTile.type === 'donjon' && !layoutSelectedTile.underConstruction && GameState.isTechUnlocked('def_forgerie'));
+    const layoutUpgradeOptions = this.fortinUpgradeOptionsFor(layoutSelectedTile);
+    const layoutShowUpgrade = layoutUpgradeOptions.length > 0;
     const layoutShowDemolish = !!layoutSelectedTile;
 
     // this.mobileLayout calculé tout en haut de layoutHud() désormais (voir le commentaire là-bas :
@@ -2903,16 +2947,29 @@ class GameScene extends Phaser.Scene {
         .setFontSize(14).setVisible(showConfirm);
       // Démolir/Améliorer partagent la même rangée que Valider (jamais en même temps que
       // showConfirm, voir updateInfoPanel) : divisée en deux quand un Fortin sélectionné rend les
-      // DEUX possibles à la fois, sinon celui qui s'applique prend toute la largeur.
+      // DEUX possibles à la fois, sinon celui qui s'applique prend toute la largeur. La portion
+      // "Améliorer" est ensuite subdivisée EN HAUTEUR par layoutUpgradeOptions.length (jusqu'à 3
+      // évolutions proposables en même temps, voir upgradeButtonOrder/buildHud) -- empile de mini-
+      // boutons plutôt qu'une refonte du système de rangées, pour ne pas risquer cette mise en page
+      // déjà finement calée.
       const layoutBothActions = layoutShowDemolish && layoutShowUpgrade;
+      const halfW = (this.sidebarWidth - 20 - desktopGap) / 2;
       if (layoutBothActions) {
-        const halfW = (this.sidebarWidth - 20 - desktopGap) / 2;
         this.demolishButton.setPosition(10, confirmY).setFixedSize(halfW, confirmRowHeight).setFontSize(11);
-        this.upgradeCastleButton.setPosition(10 + halfW + desktopGap, confirmY).setFixedSize(halfW, confirmRowHeight).setFontSize(10);
       } else {
         this.demolishButton.setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight).setFontSize(13);
-        this.upgradeCastleButton.setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight).setFontSize(13);
       }
+      const upgradeAreaX = layoutBothActions ? 10 + halfW + desktopGap : 10;
+      const upgradeAreaW = layoutBothActions ? halfW : (this.sidebarWidth - 20);
+      const upgradeMiniH = confirmRowHeight / Math.max(1, layoutUpgradeOptions.length);
+      this.upgradeButtonOrder.forEach((targetType) => {
+        const idx = layoutUpgradeOptions.indexOf(targetType);
+        if (idx === -1) return;
+        this.upgradeButtons[targetType]
+          .setPosition(upgradeAreaX, confirmY + idx * upgradeMiniH)
+          .setFixedSize(upgradeAreaW, upgradeMiniH)
+          .setFontSize(layoutUpgradeOptions.length > 1 ? 9 : (layoutBothActions ? 10 : 13));
+      });
 
       // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
       // libellés comme "Production" dans les 220px de la colonne PC -- voir categoryButtons).
@@ -3153,16 +3210,24 @@ class GameScene extends Phaser.Scene {
     const upgradeBtnWidth = compact ? 150 : 180;
     const upgradeBtnHeight = compact ? 34 : 38;
     const upgradeX = w - this.buildMenuToggle.width - upgradeBtnWidth - 14;
-    this.upgradeCastleButton
-      .setFontSize(compact ? 10 : 11)
-      .setFixedSize(upgradeBtnWidth, upgradeBtnHeight)
-      .setWordWrapWidth(upgradeBtnWidth - 16)
-      .setPosition(upgradeX, h - upgradeBtnHeight - 8);
+    // Bande totale ancrée en bas (même hauteur qu'avant, upgradeBtnHeight) subdivisée EN HAUTEUR
+    // par le nombre d'évolutions actuellement proposables (voir le commentaire équivalent côté PC,
+    // layoutHud) -- jusqu'à 3 mini-boutons empilés au lieu d'un seul "Améliorer en Château".
+    const upgradeMiniH = upgradeBtnHeight / Math.max(1, layoutUpgradeOptions.length);
+    this.upgradeButtonOrder.forEach((targetType) => {
+      const idx = layoutUpgradeOptions.indexOf(targetType);
+      if (idx === -1) return;
+      this.upgradeButtons[targetType]
+        .setFontSize(layoutUpgradeOptions.length > 1 ? (compact ? 8 : 9) : (compact ? 10 : 11))
+        .setFixedSize(upgradeBtnWidth, upgradeMiniH)
+        .setWordWrapWidth(upgradeBtnWidth - 16)
+        .setPosition(upgradeX, h - upgradeBtnHeight - 8 + idx * upgradeMiniH);
+    });
 
     // Démolir : même emplacement que "Améliorer" quand lui seul s'applique, sinon poussé à sa
     // gauche (voir layoutShowUpgrade, calculé plus haut) -- même taille fixe pour la même raison
-    // (voir le commentaire ci-dessus sur upgradeCastleButton : texte variable = position calculée
-    // sur une largeur obsolète si on se fie à .width).
+    // (voir le commentaire ci-dessus sur les boutons d'amélioration : texte variable = position
+    // calculée sur une largeur obsolète si on se fie à .width).
     const demolishBtnWidth = compact ? 100 : 120;
     const demolishX = layoutShowUpgrade ? upgradeX - demolishBtnWidth - 8 : upgradeX + upgradeBtnWidth - demolishBtnWidth;
     this.demolishButton
@@ -3370,17 +3435,17 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  // Transforme le Fortin actuellement sélectionné en Château (voir upgradeCastleButton/
-  // GameState.upgradeToCastle) -- même esprit que confirmBuild ci-dessus, mais sur un bâtiment
-  // déjà posé plutôt qu'un placement en cours.
-  upgradeSelectedToCastle() {
+  // Démarre l'amélioration du Fortin actuellement sélectionné vers l'une de ses 3 évolutions (voir
+  // upgradeButtons/GameState.startFortinUpgrade) -- même esprit que confirmBuild ci-dessus, mais
+  // sur un bâtiment déjà posé plutôt qu'un placement en cours. Le toast reflète le DÉBUT de
+  // l'amélioration (pas sa fin : les matériaux arrivent progressivement via Entrepôt, voir
+  // buildingInfoText pour le suivi de livraison).
+  upgradeSelectedFortin(targetType) {
     if (this.paused || !this.selectedBuildingKey) return;
     const [col, row] = this.selectedBuildingKey.split(',').map(Number);
-    const result = GameState.upgradeToCastle(col, row);
+    const result = GameState.startFortinUpgrade(col, row, targetType);
     if (result.ok) {
-      this.showToast('Fortin amélioré en Château');
-    } else if (result.reason === 'cost') {
-      this.showToast('Pas assez de ressources');
+      this.showToast(`Amélioration en ${GameConfig.buildings[targetType].name} commencée`);
     }
     this.layoutHud();
   }
@@ -4706,12 +4771,12 @@ class GameScene extends Phaser.Scene {
   // prend de la place que quand il y a effectivement quelque chose à montrer.
   updateInfoPanel() {
     let text = null;
-    // Château/Démolir (voir upgradeCastleButton/demolishButton) : recalculés chaque frame (voir
-    // update() plus bas) pour réagir tout de suite à un changement de sélection, contrairement à
-    // leur position/taille (fixées dans layoutHud -- qui les divise aussi en deux quand les DEUX
+    // Améliorations Fortin/Démolir (voir upgradeButtons/demolishButton) : recalculés chaque frame
+    // (voir update() plus bas) pour réagir tout de suite à un changement de sélection, contrairement
+    // à leur position/taille (fixées dans layoutHud -- qui subdivise aussi l'espace quand les DEUX
     // s'appliquent à la fois, voir layoutShowUpgrade/layoutShowDemolish, recalculé sur chaque
     // appel de layoutHud, lui-même déclenché explicitement à chaque changement de sélection).
-    let showUpgrade = false;
+    let upgradeOptions = [];
     let showDemolish = false;
 
     if (this.buildMode === 'road') {
@@ -4742,7 +4807,7 @@ class GameScene extends Phaser.Scene {
       if (tile && tile.type !== 'ruin' && GameConfig.buildings[tile.type]) {
         const [col, row] = this.selectedBuildingKey.split(',').map(Number);
         text = this.buildingInfoText(col, row, tile);
-        showUpgrade = tile.type === 'donjon' && !tile.underConstruction && GameState.isTechUnlocked('def_forgerie');
+        upgradeOptions = this.fortinUpgradeOptionsFor(tile);
         showDemolish = true;
       } else {
         this.selectedBuildingKey = null;
@@ -4763,16 +4828,21 @@ class GameScene extends Phaser.Scene {
       this.infoPanelText.setVisible(true).setText(text || 'Tape une case pour voir ses infos.');
     }
 
-    this.upgradeCastleButton.setVisible(showUpgrade);
-    if (showUpgrade) {
-      // effectiveBuildingCost (Déesse de la guerre/Apogée céleste, voir GameState) : coût réel de
-      // cette amélioration, peut différer de GameConfig.buildings.castle.cost.
-      const castleCost = GameState.effectiveBuildingCost('castle', GameConfig.buildings.castle.cost);
-      const affordable = GameState.canAfford(castleCost);
-      this.upgradeCastleButton
-        .setText(`Améliorer en Château — ${this.formatResources(castleCost, true)}`)
-        .setAlpha(this.paused ? 0.4 : (affordable ? 1 : 0.5));
-    }
+    // Pas de vérification canAfford ici (contrairement à l'ancien upgradeCastleButton, qui payait
+    // instantanément) : comme un chantier classique, une amélioration de Fortin se paie
+    // progressivement via livraisons d'Entrepôt (voir GameState.startFortinUpgrade), donc jamais
+    // "trop chère pour démarrer" -- seul le coût affiché change (effectiveBuildingCost, bénédictions
+    // de Dévotion).
+    this.upgradeButtonOrder.forEach((targetType) => {
+      const btn = this.upgradeButtons[targetType];
+      const show = upgradeOptions.includes(targetType);
+      btn.setVisible(show);
+      if (show) {
+        const cost = GameState.effectiveBuildingCost(targetType, GameConfig.buildings[targetType].cost);
+        btn.setText(`Améliorer en ${GameConfig.buildings[targetType].name} — ${this.formatResources(cost, true)}`)
+          .setAlpha(this.paused ? 0.4 : 1);
+      }
+    });
 
     this.demolishButton.setVisible(showDemolish).setAlpha(this.paused ? 0.4 : 1);
   }

@@ -388,24 +388,52 @@ const GameState = {
     return quotas;
   },
 
-  // Transforme un Fortin déjà posé en Château (voir GameConfig.buildings.castle et techTree.
-  // nodes.def_forgerie) : contrairement à placeBuilding, ne change QUE le type -- fireCooldown
-  // et l'appartenance à une route restent ceux du Fortin, aucune raison de les réinitialiser.
-  // "cost" sur buildings.castle est le coût de CETTE transformation, pas d'une construction neuve.
-  upgradeToCastle(col, row) {
+  // Techno requise -> type de bâtiment obtenu, pour chacune des 3 améliorations mutuellement
+  // exclusives d'un Fortin (voir GameConfig.buildings.castle/keep/siegeTower, startFortinUpgrade
+  // juste en dessous). Table partagée pour ne pas la dupliquer entre startFortinUpgrade et l'UI
+  // (voir GameScene, qui décide quels boutons proposer).
+  fortinUpgradeTargets: { castle: 'def_forgerie', keep: 'def_arcLong', siegeTower: 'def_ingenierie' },
+
+  // Démarre l'amélioration d'un Fortin déjà posé vers l'une de ses 3 évolutions (voir
+  // fortinUpgradeTargets ci-dessus) -- remplace l'ancien upgradeToCastle (demande utilisateur
+  // explicite : "a transporter via entrepot"), qui payait tout instantanément. Ne change PAS le
+  // type tout de suite : le Fortin reste pleinement opérationnel (il continue de tirer, voir
+  // tickProduction section "Tours", qui ne regarde que tile.underConstruction, pas tile.upgradeTo)
+  // pendant que les matériaux sont livrés comme un chantier classique (voir
+  // _spawnWarehouseConstructionDeliveries/updateShipments, qui traitent maintenant aussi bien
+  // constructionNeeded/Delivered qu'upgradeNeeded/Delivered). La transformation réelle du type a
+  // lieu dans _completeFortinUpgrade, une fois tout livré.
+  startFortinUpgrade(col, row, targetType) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
     if (!tile || tile.type !== 'donjon' || tile.underConstruction) return { ok: false, reason: 'notDonjon' };
-    if (!this.isTechUnlocked('def_forgerie')) return { ok: false, reason: 'locked' };
-    // effectiveBuildingCost (Déesse de la guerre, Apogée céleste) : voir son commentaire.
-    const cost = this.effectiveBuildingCost('castle', GameConfig.buildings.castle.cost);
-    if (!this.canAfford(cost)) return { ok: false, reason: 'cost' };
-
-    this.spend(cost);
-    tile.type = 'castle';
+    if (tile.upgradeTo) return { ok: false, reason: 'alreadyUpgrading' };
+    const requiredTech = this.fortinUpgradeTargets[targetType];
+    if (!requiredTech || !this.isTechUnlocked(requiredTech)) return { ok: false, reason: 'locked' };
+    // effectiveBuildingCost (Déesse de la guerre, Apogée céleste) : voir son commentaire --
+    // s'applique toujours, seul le MOMENT du paiement (livraison progressive plutôt qu'instantané)
+    // a changé.
+    const cost = this.effectiveBuildingCost(targetType, GameConfig.buildings[targetType].cost);
+    tile.upgradeTo = targetType;
+    tile.upgradeNeeded = { ...cost };
+    tile.upgradeDelivered = Object.fromEntries(Object.keys(cost).map((r) => [r, 0]));
     this.dirty = true;
-    this.buildingsDirty = true;
     return { ok: true };
+  },
+
+  // Bascule un Fortin en son évolution choisie une fois tous les matériaux d'amélioration livrés
+  // (voir startFortinUpgrade/updateShipments) -- fireCooldown et l'appartenance à une route restent
+  // ceux du Fortin, aucune raison de les réinitialiser (l'amélioration est continue, pas un nouveau
+  // bâtiment).
+  _completeFortinUpgrade(tile) {
+    tile.type = tile.upgradeTo;
+    delete tile.upgradeTo;
+    delete tile.upgradeNeeded;
+    delete tile.upgradeDelivered;
+    this.dirty = true;
+    // buildingsDirty (pas juste dirty) : la portée (zone d'action/brouillard de guerre) change
+    // avec le nouveau type (Château/Donjon/Tour de siège n'ont pas la même portée que le Fortin).
+    this.buildingsDirty = true;
   },
 
   // Rayon de la "zone d'action" d'un bâtiment selon son type (même logique que GameScene.
@@ -1594,19 +1622,36 @@ const GameState = {
       if (tile.fireCooldown > 0) continue;
       tile.fireCooldown = def.fireInterval;
 
-      const target = this._findMonsterInRange(col, row, this.towerRange(def));
-      if (target) {
-        this._applyTowerDamage(target, def);
-        this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
-
-        if (artilleurSplashChance > 0 && Math.random() < artilleurSplashChance) {
-          const adjacent = this._findAdjacentMonster(target);
-          if (adjacent) {
+      // Tour de siège (splashAllAdjacent, demande utilisateur explicite) : la cible principale ET
+      // TOUS les ennemis adjacents à elle sont touchés à CHAQUE tir -- contrairement à Artilleur
+      // (chance de toucher UN SEUL adjacent choisi au hasard), ici c'est garanti et non cumulé avec
+      // Artilleur sur ces coups adjacents (seule la cible principale y a droit, comme les autres
+      // tours) pour ne pas empiler deux mécaniques de zone différentes sur la même volée.
+      if (def.splashAllAdjacent) {
+        const target = this._findMonsterInRange(col, row, this.towerRange(def));
+        if (target) {
+          this._fireTowerShot(col, row, target, def, artilleurSplashChance);
+          for (const adjacent of this._findAllAdjacentMonsters(target)) {
             this._applyTowerDamage(adjacent, def);
             this.shots.push({ fromCol: col, fromRow: row, toX: adjacent.x, toRow: adjacent.row, ttl: 0.15 });
           }
         }
+        continue;
       }
+
+      // Château (multiShot, demande utilisateur explicite) : jusqu'à multiShot cibles DIFFÉRENTES
+      // en une seule salve (une flèche chacune), au lieu d'une seule cible -- chacune profite quand
+      // même d'Artilleur indépendamment (voir _fireTowerShot).
+      if (def.multiShot) {
+        const targets = this._findMultipleMonstersInRange(col, row, this.towerRange(def), def.multiShot);
+        for (const target of targets) this._fireTowerShot(col, row, target, def, artilleurSplashChance);
+        continue;
+      }
+
+      // Fortin / Donjon : un seul tir normal sur la cible la plus proche, avec la chance d'Artilleur
+      // habituelle.
+      const target = this._findMonsterInRange(col, row, this.towerRange(def));
+      if (target) this._fireTowerShot(col, row, target, def, artilleurSplashChance);
     }
 
     this._spawnShipments();
@@ -1794,20 +1839,43 @@ const GameState = {
     }
   },
 
-  // Un monstre vivant "adjacent" à celui donné (voir Artilleur/def_armee ci-dessus) : même case ou
-  // case voisine (distance de Tchebychev <= 1 en colonne ET en rangée, colonne calculée avec
-  // enroulement cylindrique comme _findMonsterInRange) -- exclut le monstre lui-même. Choisi au
-  // hasard parmi les candidats trouvés, null si aucun.
-  _findAdjacentMonster(target) {
+  // Applique un tir de tour "complet" (dégâts sur la cible + effet visuel + chance d'Artilleur sur
+  // UN adjacent) -- factorisé pour être appelé identiquement par le Fortin/Donjon (un seul tir), le
+  // Château (jusqu'à multiShot tirs, un par cible), et la cible PRINCIPALE de la Tour de siège
+  // (dont les adjacents garantis passent eux directement par _applyTowerDamage, voir tickProduction
+  // section "Tours" -- pas de double-mécanique de zone sur les mêmes coups).
+  _fireTowerShot(col, row, target, def, artilleurSplashChance) {
+    this._applyTowerDamage(target, def);
+    this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
+    if (artilleurSplashChance > 0 && Math.random() < artilleurSplashChance) {
+      const adjacent = this._findAdjacentMonster(target);
+      if (adjacent) {
+        this._applyTowerDamage(adjacent, def);
+        this.shots.push({ fromCol: col, fromRow: row, toX: adjacent.x, toRow: adjacent.row, ttl: 0.15 });
+      }
+    }
+  },
+
+  // Tous les monstres vivants "adjacents" à celui donné (voir Artilleur/def_armee et Tour de
+  // siège/splashAllAdjacent ci-dessus) : même case ou case voisine (distance de Tchebychev <= 1 en
+  // colonne ET en rangée, colonne calculée avec enroulement cylindrique comme _findMonsterInRange)
+  // -- exclut le monstre lui-même.
+  _findAllAdjacentMonsters(target) {
     const colWidth = GameConfig.hex.size * 1.5;
     const targetCol = HexUtils.wrapCol(Math.floor(target.x / colWidth), this.cols);
-    const candidates = Monsters.list.filter((m) => {
+    return Monsters.list.filter((m) => {
       if (!m.alive || m === target) return false;
       const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
       const rawColDist = Math.abs(mCol - targetCol);
       const colDist = Math.min(rawColDist, this.cols - rawColDist);
       return colDist <= 1 && Math.abs(m.row - target.row) <= 1;
     });
+  },
+
+  // Un seul adjacent choisi au hasard parmi _findAllAdjacentMonsters (voir Artilleur/def_armee) --
+  // null si aucun.
+  _findAdjacentMonster(target) {
+    const candidates = this._findAllAdjacentMonsters(target);
     if (candidates.length === 0) return null;
     return candidates[Math.floor(Math.random() * candidates.length)];
   },
@@ -1834,6 +1902,24 @@ const GameState = {
       }
     }
     return closest;
+  },
+
+  // Comme _findMonsterInRange, mais renvoie jusqu'à maxCount monstres DISTINCTS (les plus proches
+  // d'abord) au lieu d'un seul -- voir Château/multiShot, tickProduction section "Tours".
+  _findMultipleMonstersInRange(col, row, range, maxCount) {
+    const colWidth = GameConfig.hex.size * 1.5;
+    const cells = HexUtils.hexesInRange(col, row, range, this.cols, this.rows);
+    const cellSet = new Set(cells.map(c => c.col + ',' + c.row));
+
+    const candidates = [];
+    for (const m of Monsters.list) {
+      if (!m.alive) continue;
+      const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
+      if (!cellSet.has(mCol + ',' + m.row)) continue;
+      candidates.push({ m, dist: Math.abs(m.row - row) + Math.abs(mCol - col) });
+    }
+    candidates.sort((a, b) => a.dist - b.dist);
+    return candidates.slice(0, maxCount).map((c) => c.m);
   },
 
   // Vrai si un monstre vivant occupe PRÉCISÉMENT cette case (voir _findMonsterInRange ci-dessus
@@ -2104,11 +2190,25 @@ const GameState = {
     const dispatchedThisCall = new Set();
 
     for (const [destKey, tile] of this.tiles) {
-      if (!tile.underConstruction) continue;
+      // Chantier neuf (constructionNeeded/Delivered) OU Fortin en cours d'amélioration vers l'une
+      // de ses 3 évolutions (upgradeNeeded/Delivered, voir startFortinUpgrade, demande utilisateur
+      // explicite : "a transporter via entrepot") -- même mécanique de livraison pour les deux,
+      // seuls les objets "needed"/"delivered" à lire diffèrent. Un Fortin en amélioration N'EST PAS
+      // underConstruction (il reste opérationnel), d'où ce second cas.
+      let needed, delivered;
+      if (tile.underConstruction) {
+        needed = tile.constructionNeeded;
+        delivered = tile.constructionDelivered;
+      } else if (tile.upgradeTo) {
+        needed = tile.upgradeNeeded;
+        delivered = tile.upgradeDelivered;
+      } else {
+        continue;
+      }
       const [destCol, destRow] = destKey.split(',').map(Number);
 
-      for (const res in tile.constructionNeeded) {
-        const stillNeeded = tile.constructionNeeded[res] - tile.constructionDelivered[res];
+      for (const res in needed) {
+        const stillNeeded = needed[res] - delivered[res];
         if (stillNeeded <= 0) continue;
         if (this.resources[res] <= 0) continue;
 
@@ -2201,6 +2301,20 @@ const GameState = {
           if (complete) {
             completedBuildings.push(GameConfig.buildings[destTile.type].name);
             this._completeConstruction(destTile);
+          }
+        } else if (s.forConstruction && destTile.upgradeTo) {
+          // Amélioration de Fortin en cours (voir startFortinUpgrade/_spawnWarehouseConstructionDeliveries,
+          // demande utilisateur explicite) : même principe que le chantier neuf ci-dessus, mais sur
+          // upgradeNeeded/Delivered -- le Fortin reste "donjon" (toujours opérationnel) jusqu'à
+          // livraison complète.
+          const needed = destTile.upgradeNeeded[s.resource];
+          destTile.upgradeDelivered[s.resource] = Math.min(needed, destTile.upgradeDelivered[s.resource] + amount);
+          const complete = Object.keys(destTile.upgradeNeeded).every(
+            (r) => destTile.upgradeDelivered[r] >= destTile.upgradeNeeded[r]
+          );
+          if (complete) {
+            completedBuildings.push(GameConfig.buildings[destTile.upgradeTo].name);
+            this._completeFortinUpgrade(destTile);
           }
         } else if (s.toType === 'warehouse') {
           const doubled = gestionStocksChance > 0 && Math.random() < gestionStocksChance;
