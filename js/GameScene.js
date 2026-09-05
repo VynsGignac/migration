@@ -2362,12 +2362,24 @@ class GameScene extends Phaser.Scene {
     this.devotionClose.on('pointerup', () => this.toggleDevotionPanel(false));
     this.uiElements.push(this.devotionClose);
 
+    // Affiché uniquement en mode normal (voir refreshDevotionPanel) quand aucune bénédiction n'a
+    // encore été choisie -- sans ça le panneau serait vide et silencieux.
+    this.devotionEmptyText = this.add.text(0, 0, 'Aucune bénédiction choisie pour l\'instant.', {
+      font: '13px sans-serif', color: '#9aa5ad',
+    }).setDepth(1012).setVisible(false);
+    this.uiElements.push(this.devotionEmptyText);
+
     // Une ligne par palier (taille fixe, voir GameConfig.devotion.tiers -- pas de pool réutilisé,
-    // il n'y en a qu'un seul jeu de 5, contrairement à resourceRouting/ses onglets).
+    // il n'y en a qu'un seul jeu de 5, contrairement à resourceRouting/ses onglets). effectText :
+    // ligne dédiée à la description de l'effet (demande utilisateur explicite : le menu doit
+    // indiquer "leurs effets" en plus du nom et de l'état actif/inactif) -- pour l'instant un
+    // texte générique tant que les effets concrets ne sont pas implémentés (voir refreshDevotionPanel).
     this.devotionRows = GameConfig.devotion.tiers.map((tierCfg, tierIndex) => {
       const label = this.add.text(0, 0, '', { font: 'bold 13px sans-serif', color: '#ffffff' })
         .setDepth(1012).setVisible(false);
       const statusText = this.add.text(0, 0, '', { font: '12px sans-serif', color: '#9aa5ad' })
+        .setDepth(1012).setVisible(false);
+      const effectText = this.add.text(0, 0, '', { font: 'italic 11px sans-serif', color: '#7d8890' })
         .setDepth(1012).setVisible(false);
       const optionButtons = tierCfg.options.map((opt) => {
         const btn = this.add.text(0, 0, opt.name, {
@@ -2383,54 +2395,99 @@ class GameScene extends Phaser.Scene {
         this.uiElements.push(btn);
         return { id: opt.id, btn };
       });
-      this.uiElements.push(label, statusText);
-      return { label, statusText, optionButtons };
+      this.uiElements.push(label, statusText, effectText);
+      return { label, statusText, effectText, optionButtons };
     });
   }
 
-  // Redessine chaque ligne depuis GameState.devotionTiers/resources.devotion -- appelée à
-  // l'ouverture, au redimensionnement (via layoutDevotionPanel) et après chaque choix.
+  // Premier palier atteint mais sans choix encore fait, ou -1 si aucun (voir refreshDevotionPanel/
+  // update() : demande utilisateur explicite "on impose au joueur de faire un choix" dès qu'un
+  // nouveau palier est atteint -- un seul à la fois, les suivants attendent leur tour).
+  findPendingDevotionTier() {
+    const devotion = GameState.resources.devotion;
+    for (let i = 0; i < GameConfig.devotion.tiers.length; i++) {
+      const state = GameState.devotionTiers[i];
+      if (!state.choice && devotion >= GameConfig.devotion.tiers[i].threshold) return i;
+    }
+    return -1;
+  }
+
+  // Redessine le panneau depuis GameState.devotionTiers/resources.devotion -- appelée à
+  // l'ouverture, au redimensionnement (via layoutDevotionPanel) et après chaque choix. Deux modes
+  // mutuellement exclusifs (demande utilisateur explicite) :
+  // - "forcé" : un palier vient d'être atteint sans choix -- seules ses 2 options sont affichées,
+  //   la croix et le clic en dehors sont désactivés (voir toggleDevotionPanel) tant qu'un choix
+  //   n'a pas été fait.
+  // - "normal" : liste des bénédictions déjà choisies (nom, effet, actif/inactif) -- les paliers
+  //   pas encore atteints ou en attente de choix n'apparaissent plus ici (gérés par le mode forcé).
   refreshDevotionPanel() {
     const panel = this.devotionPanel;
     const rowY0 = panel.y + 46;
-    const rowGap = 60;
+    const rowGap = 66;
     const labelX = panel.x + 16;
-    const devotion = GameState.resources.devotion;
+    const pendingIndex = this.findPendingDevotionTier();
+    this.devotionForcedMode = pendingIndex !== -1;
 
-    GameConfig.devotion.tiers.forEach((tierCfg, i) => {
-      const row = this.devotionRows[i];
-      const state = GameState.devotionTiers[i];
-      const y = rowY0 + i * rowGap;
-      const reached = devotion >= tierCfg.threshold;
-
-      row.label.setText(`Palier ${i + 1} (${tierCfg.threshold} %)`).setPosition(labelX, y).setVisible(true);
-
-      if (state.choice) {
-        // Choix déjà fait : plus jamais de boutons pour ce palier (voir le commentaire sur
-        // btn.on('pointerup') plus haut), juste le nom + l'état actif/inactif (hystérésis, voir
-        // GameState.updateDevotionTiers).
-        const chosen = tierCfg.options.find((o) => o.id === state.choice);
-        row.statusText
-          .setText(`${chosen.name} — ${state.active ? 'Actif' : 'Inactif (Dévotion trop basse)'}`)
-          .setColor(state.active ? '#7fd17f' : '#e07a7a')
-          .setPosition(labelX, y + 20).setVisible(true);
-        for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
-      } else if (reached) {
-        // Palier atteint, choix pas encore fait : les 2 options deviennent cliquables.
+    if (this.devotionForcedMode) {
+      this.devotionTitle.setText('Nouveau palier de Dévotion !');
+      this.devotionClose.setVisible(false).disableInteractive();
+      this.devotionOverlay.disableInteractive();
+      this.devotionEmptyText.setVisible(false);
+      const tierCfg = GameConfig.devotion.tiers[pendingIndex];
+      this.devotionRows.forEach((row, i) => {
+        const isPending = i === pendingIndex;
         row.statusText.setVisible(false);
+        row.effectText.setVisible(false);
+        if (!isPending) {
+          row.label.setVisible(false);
+          for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+          return;
+        }
+        row.label
+          .setText(`Palier ${pendingIndex + 1} atteint (${tierCfg.threshold} %) — choisissez une bénédiction :`)
+          .setPosition(labelX, rowY0).setVisible(true);
         let bx = labelX;
         for (const { btn } of row.optionButtons) {
-          btn.setPosition(bx, y + 20).setVisible(true).setInteractive({ useHandCursor: true });
+          btn.setPosition(bx, rowY0 + 26).setVisible(true).setInteractive({ useHandCursor: true });
           bx += btn.width + 10;
         }
-      } else {
-        // Palier pas encore atteint : grisé, rien à cliquer.
-        row.statusText
-          .setText(`Non atteint (Dévotion actuelle : ${Math.round(devotion)} %)`)
-          .setColor('#9aa5ad').setPosition(labelX, y + 20).setVisible(true);
+      });
+      return;
+    }
+
+    this.devotionTitle.setText('Bénédictions');
+    this.devotionClose.setVisible(true).setInteractive({ useHandCursor: true });
+    this.devotionOverlay.setInteractive();
+
+    const chosenIndices = [];
+    GameConfig.devotion.tiers.forEach((tierCfg, i) => { if (GameState.devotionTiers[i].choice) chosenIndices.push(i); });
+
+    this.devotionRows.forEach((row, i) => {
+      const pos = chosenIndices.indexOf(i);
+      if (pos === -1) {
+        row.label.setVisible(false);
+        row.statusText.setVisible(false);
+        row.effectText.setVisible(false);
         for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+        return;
       }
+      const tierCfg = GameConfig.devotion.tiers[i];
+      const state = GameState.devotionTiers[i];
+      const chosen = tierCfg.options.find((o) => o.id === state.choice);
+      const y = rowY0 + pos * rowGap;
+      row.label.setText(`Palier ${i + 1} — ${chosen.name}`).setPosition(labelX, y).setVisible(true);
+      row.statusText
+        .setText(state.active ? 'Actif' : 'Inactif (Dévotion trop basse)')
+        .setColor(state.active ? '#7fd17f' : '#e07a7a')
+        .setPosition(labelX, y + 20).setVisible(true);
+      // Effets concrets pas encore implémentés (demande utilisateur explicite, "on verra plus
+      // tard") -- texte générique en attendant, à remplacer quand chaque bénédiction aura son
+      // effet réel.
+      row.effectText.setText('Effet : à venir').setPosition(labelX, y + 38).setVisible(true);
+      for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
     });
+
+    this.devotionEmptyText.setPosition(labelX, rowY0).setVisible(chosenIndices.length === 0);
   }
 
   layoutDevotionPanel() {
@@ -2450,7 +2507,10 @@ class GameScene extends Phaser.Scene {
   }
 
   // Même principe que toggleResourceRouting/toggleLaborRoutingPanel ci-dessus (pause automatique
-  // tant que le panneau est ouvert, levée seulement si c'est CETTE ouverture qui l'a posée).
+  // tant que le panneau est ouvert, levée seulement si c'est CETTE ouverture qui l'a posée). La
+  // fermeture (croix/clic en dehors) est désactivée par refreshDevotionPanel tant qu'un choix de
+  // palier est imposé -- forceState(false) direct (ex. appel externe) reste toutefois toujours
+  // possible, seuls les gestes joueur normaux sont bloqués.
   toggleDevotionPanel(forceState) {
     this.devotionPanelOpen = forceState !== undefined ? forceState : !this.devotionPanelOpen;
     const visible = this.devotionPanelOpen;
@@ -2459,9 +2519,12 @@ class GameScene extends Phaser.Scene {
     this.devotionTitle.setVisible(visible);
     this.devotionClose.setVisible(visible);
     if (!visible) {
+      this.devotionForcedMode = false;
+      this.devotionEmptyText.setVisible(false);
       for (const row of this.devotionRows) {
         row.label.setVisible(false);
         row.statusText.setVisible(false);
+        row.effectText.setVisible(false);
         for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
       }
     }
@@ -4720,6 +4783,17 @@ class GameScene extends Phaser.Scene {
     if (modalOpenNow !== this.lastModalOpen) {
       this.lastModalOpen = modalOpenNow;
       this.layoutHud();
+    }
+
+    // Ouvre de force le choix de bénédiction dès qu'un nouveau palier de Dévotion est atteint
+    // (demande utilisateur explicite : "on impose au joueur de faire un choix") -- seulement
+    // quand rien d'autre n'est déjà ouvert, pour ne pas interrompre un autre panneau ou la
+    // construction ; comme ouvrir CE panneau met le jeu en pause, la Dévotion cesse d'évoluer
+    // tant qu'il reste ouvert, donc pas de risque de rater/empiler plusieurs paliers pendant ce
+    // temps (voir findPendingDevotionTier/refreshDevotionPanel pour l'enchaînement si plusieurs
+    // paliers étaient malgré tout atteints en même temps).
+    if (!modalOpenNow && !this.paused && !this.buildMode && !this.buildMenuOpen && this.findPendingDevotionTier() !== -1) {
+      this.toggleDevotionPanel(true);
     }
     this.clampZoomAndCamera();
 
