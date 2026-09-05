@@ -1536,18 +1536,17 @@ const GameState = {
   },
 
   // Coût du PROCHAIN niveau de ce nœud (celui que canResearchTech/researchTech achèteraient) :
-  // researchCostPerLevel × le niveau visé (1er niveau = 1x, 2e = 2x...), réduit par Scolarisation.
-  // Renvoie null si le nœud est déjà à son niveau maximum (rien à acheter).
+  // researchCost, FIXE quel que soit le nœud ou le niveau visé (demande utilisateur explicite),
+  // réduit par Scolarisation. Renvoie null si le nœud est déjà à son niveau maximum (rien à acheter).
   researchCostFor(id) {
     const level = this.techLevel(id);
     if (level >= this.maxTechLevel(id)) return null;
-    const targetLevel = level + 1;
     const scolarisationLevel = this.techLevel('rec_scolarisation');
     const discount = scolarisationLevel > 0
       ? GameConfig.techTree.nodes.rec_scolarisation.costReductionByLevel[scolarisationLevel - 1] : 0;
     const cost = {};
-    for (const res in GameConfig.techTree.researchCostPerLevel) {
-      cost[res] = Math.round(GameConfig.techTree.researchCostPerLevel[res] * targetLevel * (1 - discount));
+    for (const res in GameConfig.techTree.researchCost) {
+      cost[res] = Math.round(GameConfig.techTree.researchCost[res] * (1 - discount));
     }
     return cost;
   },

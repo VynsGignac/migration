@@ -116,7 +116,7 @@ const GameConfig = {
     // d'action de chaque Temple (voir buildings.temple/altar, GameState.tickProduction section
     // "Temple").
     devotion: { long: 'Dévotion', short: 'Dévo.', color: 0xe8c96a },
-    // Monnaie des recherches (voir techTree.researchCostPerLevel), globale et jamais transportée
+    // Monnaie des recherches (voir techTree.researchCost), globale et jamais transportée
     // sur les routes (directement dépensée/gagnée dans le stock central) : récupérée en recyclant
     // des cadavres de monstres (voir buildings.recycler, 10 Codex par cadavre, 20 avec Imprimerie
     // -- voir techTree.nodes.rec_imprimerie). Le stock de départ (voir resources.starting) n'est
@@ -602,12 +602,14 @@ const GameConfig = {
     // jamais faire se toucher les nœuds, le diagramme peut dépasser la zone visible — on peut
     // alors le faire glisser (voir GameScene.techTreeCamX/Y) pour voir le reste.
     ringSpacing: 70,
-    // Coût d'une recherche, par niveau acheté (1er niveau = 1x, 2e = 2x, etc.), avant la réduction
-    // de Scolarisation (voir GameState.researchCostFor/techTree.nodes.rec_scolarisation) — identique
-    // pour tous les nœuds de l'arbre, quelle que soit leur branche. En Codex (voir resourceLabels.
-    // codex) : stock de départ énorme pour l'instant (voir resources.starting), donc ce montant
-    // n'a presque aucun effet tant que le vrai gain de Codex (cadavres de monstres) n'existe pas.
-    researchCostPerLevel: { codex: 10 },
+    // Coût FIXE d'une recherche (demande utilisateur explicite : "tout les couts sois les memes, 1
+    // codex") -- identique pour tous les nœuds ET tous les niveaux (plus de montée en 1x/2x/3x par
+    // niveau comme avant), avant la réduction de Scolarisation (voir GameState.researchCostFor/
+    // techTree.nodes.rec_scolarisation). Note : à 1 Codex, Math.round() ramène systématiquement la
+    // réduction de Scolarisation à 1 Codex quand même (0,7 à 0,9 arrondit à 1) -- Scolarisation n'a
+    // donc plus d'effet visible tant que ce coût de base reste à 1 (première étape d'un rééquilibrage
+    // annoncé par l'utilisateur, pas encore traité ici).
+    researchCost: { codex: 1 },
     nodes: {
       // Population (branche à 0°) : nutrition -> urbanisme -> {immigration, mariage, colocation}.
       // Nœuds à plusieurs niveaux (maxLevel > 1) : cliquables plusieurs fois, un niveau par clic sur
