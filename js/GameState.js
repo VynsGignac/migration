@@ -71,7 +71,7 @@ const GameState = {
   // chooseDevotionTier/updateDevotionTiers, demande utilisateur explicite) -- même index que
   // GameConfig.devotion.tiers.
   devotionTiers: defaultDevotionTiers(),
-  // Minuteur de la bénédiction Commerce religieux (voir hasActiveBlessing/tickProduction) : temps
+  // Minuteur de la bénédiction Corne d'abondance (voir hasActiveBlessing/tickProduction) : temps
   // de simulation (dtSeconds, ralenti comme le reste de la production), remis à 0 tant que cette
   // bénédiction n'est pas active pour éviter une rafale de bonus accumulés au retour de l'effet.
   commerceReligieuxTimer: 0,
@@ -1265,7 +1265,7 @@ const GameState = {
 
     // Joaillerie (voir GameConfig.techTree.nodes.rec_joaillerie, demande utilisateur explicite,
     // remplace Alphabétisation) : 1 Gemme automatique toutes les 120s de simulation, dès que
-    // débloquée -- même principe que le minuteur de Commerce religieux (voir plus bas).
+    // débloquée -- même principe que le minuteur de Corne d'abondance (voir plus bas).
     if (!this.isTechUnlocked('rec_joaillerie')) {
       this.joaillerieTimer = 0;
     } else {
@@ -1312,7 +1312,7 @@ const GameState = {
       const inRange = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
       let extracted = 0;
 
-      // Mine infinie (voir GameConfig.techTree.nodes.ind_mineInfinie, demande utilisateur
+      // Gisement (voir GameConfig.techTree.nodes.ind_mineInfinie, demande utilisateur
       // explicite) : le Mineur de Fer traite sa PROPRE case comme une montagne à ressource
       // infinie, en plus de son rayon normal -- placeBuilding a effacé la vraie ressource
       // (ironMinerClearsResource) au moment de sa construction, donc rien à consommer ici, juste
@@ -1484,7 +1484,7 @@ const GameState = {
     }
     this.updateDevotionTiers();
 
-    // Commerce religieux (voir GameConfig.devotion.tiers, demande utilisateur explicite) : toutes
+    // Corne d'abondance (voir GameConfig.devotion.tiers, demande utilisateur explicite) : toutes
     // les 10s de simulation, le stock d'une ressource tirée au hasard augmente de 1 % PAR Entrepôt
     // construit. Timer remis à 0 tant que la bénédiction est inactive (hystérésis) pour ne pas
     // déclencher une rafale de bonus accumulés dès son retour.
@@ -1736,7 +1736,7 @@ const GameState = {
     return GameConfig.logistics.linkRange + GameConfig.logistics.warehouseExtraRange + bonus;
   },
 
-  // Ancien bonus de capacité de stockage de Gestion des stocks -- techno reconvertie (demande
+  // Ancien bonus de capacité de stockage d'Inventaire -- techno reconvertie (demande
   // utilisateur explicite) en "15 % de chances de doubler une livraison qui arrive dans un
   // Entrepôt" (voir GameConfig.techTree.nodes.log_gestionStocks/updateShipments), plus aucune
   // techno ne touche plus la capacité de stockage. Gardée à 0 plutôt que supprimée : appelée
@@ -2159,7 +2159,7 @@ const GameState = {
     // paquet") : agit maintenant au CHARGEMENT (voir _spawnShipments et les fonctions spécialisées
     // équivalentes, qui lisent effectiveShipBatchSize au lieu de GameConfig.logistics.shipBatchSize
     // brut) -- rien à faire ici à l'arrivée, s.amount reflète déjà le plafond correct.
-    // Gestion des stocks (voir techTree.nodes.log_gestionStocks, demande utilisateur explicite) :
+    // Inventaire (voir techTree.nodes.log_gestionStocks, demande utilisateur explicite) :
     // chance de DOUBLER la quantité reçue, mais seulement pour une livraison vers un Entrepôt (voir
     // plus bas, branche "toType === 'warehouse'") -- pas les chantiers en construction, ni les
     // bâtiments de production.

@@ -200,7 +200,10 @@ const GameConfig = {
       {
         id: 'tier1', threshold: 20,
         options: [
-          { id: 'commerce', name: 'Commerce religieux', desc: 'Chaque Entrepôt augmente une ressource de 1 % toutes les 10 s.' },
+          // Nom "Corne d'abondance" (demande utilisateur explicite, remplace "Commerce religieux"
+          // pour rester dans le ton mythologique du reste des bénédictions) -- id "commerce"
+          // inchangé (voir GameState.hasActiveBlessing/tickProduction).
+          { id: 'commerce', name: 'Corne d\'abondance', desc: 'Chaque Entrepôt augmente une ressource de 1 % toutes les 10 s.' },
           { id: 'regard', name: 'Regard divin', desc: 'Le brouillard de guerre est entièrement dissipé.' },
         ],
       },
@@ -701,34 +704,38 @@ const GameConfig = {
       // efface la ressource -- cette techno fait comme si sa propre case restait une montagne à
       // ressource INFINIE, en plus de son rayon normal (voir GameState.tickProduction, section 1).
       ind_mineInfinie: {
-        name: 'Mine infinie', parent: 'ind_guilde', ring: 4, angle: 107,
+        // Nom "Gisement" (demande utilisateur explicite, remplace le nom descriptif "Mine infinie"
+        // pour rester dans le style nom-métier/concept du reste de la branche, comme Forestier/
+        // Tunnelier) -- id "ind_mineInfinie" inchangé.
+        name: 'Gisement', parent: 'ind_guilde', ring: 4, angle: 107,
         description: 'Le Mineur de Fer extrait sa propre case comme une montagne à ressource infinie.',
       },
 
       // Recherche (branche à 144°) : Joaillerie (remplace Alphabétisation, demande utilisateur
-      // explicite) se divise en 2 branches linéaires -- gauche (tbd1 -> tbd2 -> tbd3, angle 126) et
-      // droite (tbd4 -> tbd5 -> tbd6, angle 162). Scolarisation/Formateur/Imprimerie SUPPRIMÉES
-      // (demande utilisateur explicite : "enleve tout le reste") -- leurs ids ne sont plus lus nulle
-      // part dans le code (voir GameState.researchCostFor pour Scolarisation, le calcul de
-      // speedMultiplier pour Formateur, tickProduction section 1 pour Imprimerie). Noms tbd1-6
-      // volontairement provisoires (comme log_tbd/Centre-ville avant d'avoir son effet) : à renommer
-      // plus tard.
+      // explicite) se divise en 2 branches linéaires -- gauche (Récupération -> Filon -> Érudition,
+      // angle 126) et droite (Ciselure -> Sanctuaire -> Ferveur, angle 162). Scolarisation/
+      // Formateur/Imprimerie SUPPRIMÉES (demande utilisateur explicite : "enleve tout le reste") --
+      // leurs ids ne sont plus lus nulle part dans le code (voir GameState.researchCostFor pour
+      // Scolarisation, le calcul de speedMultiplier pour Formateur, tickProduction section 1 pour
+      // Imprimerie). ids rec_tbd1-6 gardés tels quels (demande utilisateur explicite de ne renommer
+      // QUE les noms affichés, pas les ids -- même principe que def_donjon/Balistique ailleurs dans
+      // l'arbre) ; seul le nom affiché change ci-dessous.
       rec_joaillerie: {
         name: 'Joaillerie', parent: null, ring: 1, angle: 144,
         description: 'Produit automatiquement 1 Gemme toutes les 2 minutes.',
       },
       rec_tbd1: {
-        name: 'tbd1', parent: 'rec_joaillerie', ring: 2, angle: 126,
+        name: 'Récupération', parent: 'rec_joaillerie', ring: 2, angle: 126,
         description: 'Le rayon de récolte du Recycleur de gemmes est doublé et son coût de construction divisé par 2.',
       },
       rec_tbd2: {
         // Effet ponctuel (voir GameState.researchTech, cas spécial) : versé une seule fois au
         // moment de la recherche, pas un bonus permanent -- maxLevel 1 par défaut (implicite).
-        name: 'tbd2', parent: 'rec_tbd1', ring: 3, angle: 126,
+        name: 'Filon', parent: 'rec_tbd1', ring: 3, angle: 126,
         description: 'Donne instantanément 4 Gemmes.',
       },
       rec_tbd3: {
-        name: 'tbd3', parent: 'rec_tbd2', ring: 4, angle: 126, maxLevel: 3,
+        name: 'Érudition', parent: 'rec_tbd2', ring: 4, angle: 126, maxLevel: 3,
         // "Chaque technologie recherchée" = somme des NIVEAUX débloqués sur tout l'arbre (voir
         // GameState.tickProduction, comptage totalResearchLevels) -- effet boule de neige : chaque
         // nouvelle recherche (celle-ci comprise) rend TOUTES les précédentes un peu plus rentables.
@@ -736,19 +743,19 @@ const GameConfig = {
         bonusPerTechByLevel: [0.01, 0.02, 0.03],
       },
       rec_tbd4: {
-        name: 'tbd4', parent: 'rec_joaillerie', ring: 2, angle: 162, maxLevel: 3,
+        name: 'Ciselure', parent: 'rec_joaillerie', ring: 2, angle: 162, maxLevel: 3,
         description: 'Augmente l\'efficacité des Sculpteurs de 10 % / 15 % / 25 %.',
         bonusByLevel: [0.10, 0.15, 0.25],
       },
       rec_tbd5: {
-        name: 'tbd5', parent: 'rec_tbd4', ring: 3, angle: 162,
+        name: 'Sanctuaire', parent: 'rec_tbd4', ring: 3, angle: 162,
         description: 'Augmente la zone d\'action des Temples de 2 cases et divise leur coût de construction par 2.',
       },
       rec_tbd6: {
         // Voir GameState.tickProduction, section "Tours" (2.6) : bonus de vitesse de tir = niveau
         // ACTUEL de Dévotion / 100 (donc +100 % de cadence à 100 % de Dévotion) -- remplace
         // l'ancien bonus d'Alphabétisation sur cette même ligne.
-        name: 'tbd6', parent: 'rec_tbd5', ring: 4, angle: 162,
+        name: 'Ferveur', parent: 'rec_tbd5', ring: 4, angle: 162,
         description: 'La vitesse d\'attaque des Fortins (et Châteaux) augmente avec votre Dévotion actuelle.',
       },
 
@@ -780,8 +787,10 @@ const GameConfig = {
       log_gestionStocks: {
         // Nouvel effet (demande utilisateur explicite, remplace l'ancien bonus de capacité de
         // stockage) : chance de doubler une livraison qui arrive dans un Entrepôt -- voir
-        // GameState.updateShipments, uniquement la branche "toType === 'warehouse'".
-        name: 'Gestion des stocks', parent: 'log_charrue', ring: 3, angle: 216,
+        // GameState.updateShipments, uniquement la branche "toType === 'warehouse'". Nom
+        // "Inventaire" (demande utilisateur explicite, remplace "Gestion des stocks" pour rester
+        // dans le style nom court du reste de la branche) -- id "log_gestionStocks" inchangé.
+        name: 'Inventaire', parent: 'log_charrue', ring: 3, angle: 216,
         description: '15 % de chances de doubler une ressource quand elle arrive dans un Entrepôt.',
         doubleChance: 0.15,
       },
