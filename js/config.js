@@ -82,13 +82,15 @@ const GameConfig = {
     // Stock de départ, volontairement généreux : les premiers blobs de ressources peuvent être
     // loin de l'Entrepôt de départ (voir world.cols/resourceNodes.startClearance). Ce coussin doit suffire à
     // lancer les deux chaînes (bois et pierre) et reconstruire un Entrepôt sans jamais bloquer.
-    // gemme modeste (renommée depuis "Codex", demande utilisateur explicite) : les Gemmes se
-    // récupèrent sur les cadavres de monstres recyclés (voir buildings.recycler, 1 par cadavre) --
-    // un petit coussin de départ suffit à lancer les premières recherches avant d'avoir un
-    // Recycleur de gemmes actif.
+    // gemme : 50 -> 5 (demande utilisateur explicite, correction d'une erreur -- "l'objectif n'est
+    // pas de farmer de maniere passive mais que ce sois une recompense d'avoir combattu la horde
+    // plutot que fui"). Les Gemmes se récupèrent sur les cadavres de monstres recyclés (voir
+    // buildings.recycler, 1 par cadavre) -- rares avant le premier tour de la horde, beaucoup moins
+    // après (plus de combat = plus de cadavres). Ce tout petit coussin de départ suffit juste à
+    // lancer Joaillerie (1 Gemme, voir techTree.researchCost) avant même le premier cadavre.
     starting: {
       wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, ironIngot: 0,
-      weapons: 0, statues: 0, devotion: 0, gemme: 50,
+      weapons: 0, statues: 0, devotion: 0, gemme: 5,
     },
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
