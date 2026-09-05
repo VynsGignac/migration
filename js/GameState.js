@@ -388,9 +388,9 @@ const GameState = {
     return quotas;
   },
 
-  // Transforme un Donjon déjà posé en Château (voir GameConfig.buildings.castle et techTree.
+  // Transforme un Avant poste déjà posé en Château (voir GameConfig.buildings.castle et techTree.
   // nodes.def_forgerie) : contrairement à placeBuilding, ne change QUE le type -- fireCooldown
-  // et l'appartenance à une route restent ceux du Donjon, aucune raison de les réinitialiser.
+  // et l'appartenance à une route restent ceux de l'Avant poste, aucune raison de les réinitialiser.
   // "cost" sur buildings.castle est le coût de CETTE transformation, pas d'une construction neuve.
   upgradeToCastle(col, row) {
     const key = this.key(col, row);
@@ -1014,7 +1014,7 @@ const GameState = {
       const def = tile && GameConfig.buildings[tile.type];
       if (!def) continue;
       // Le Château (voir buildings.castle.capMultiplier) absorbe utilement 2x plus de
-      // travailleurs qu'un Donjon normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
+      // travailleurs qu'un Avant poste normal -- sinon ce compteur dirait "complet" à 4 alors qu'il
       // pourrait encore en accueillir 4 de plus (voir efficiencyForWorkers).
       const isProduction = def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'shrine';
       const fullStaff = (isProduction ? productionFullStaff : baseFullStaff) * (def.capMultiplier || 1);
@@ -1539,7 +1539,7 @@ const GameState = {
       }
     }
 
-    // 2.6 Tours (Donjon) : tirent sur le monstre le plus proche à portée, si reliées à une route.
+    // 2.6 Tours (Avant poste) : tirent sur le monstre le plus proche à portée, si reliées à une route.
     // Le délai entre deux tirs se vide à vitesse normale avec un travailleur affecté, deux fois
     // plus lentement sans (même principe que l'efficacité des extracteurs/processeurs ci-dessus,
     // mais appliqué à la fréquence de tir plutôt qu'à un débit de ressource).
@@ -1603,7 +1603,7 @@ const GameState = {
     if (buildings > this.maxBuildings) this.maxBuildings = buildings;
   },
 
-  // Vrai si au moins une case voisine est une route (condition pour qu'un Donjon ou une
+  // Vrai si au moins une case voisine est une route (condition pour qu'un Avant poste ou une
   // Université soit utilisable).
   _hasAdjacentRoad(col, row) {
     for (const n of HexUtils.neighbors(col, row)) {
@@ -1717,8 +1717,8 @@ const GameState = {
     return 0;
   },
 
-  // Portée effective d'une tour (Donjon/Château), boostée par Artilleur (voir GameConfig.
-  // techTree.nodes.def_donjon, renommé "Artilleur" mais id conservé) -- pas cumulatif.
+  // Portée effective d'une tour (Avant poste/Château), boostée par Balistique (voir GameConfig.
+  // techTree.nodes.def_donjon, renommé "Balistique" mais id conservé) -- pas cumulatif.
   towerRange(def) {
     const level = this.techLevel('def_donjon');
     const node = GameConfig.techTree.nodes.def_donjon;

@@ -147,7 +147,7 @@ const GameConfig = {
   // "reste"). Les % fixent la part de la population TOTALE de la ville ciblée pour chaque
   // catégorie (pas juste un ordre de priorité) ; à l'intérieur d'une catégorie, le bâtiment le
   // moins staffé à portée d'une Maison est toujours privilégié en premier, comme avant l'ajout de
-  // ce réglage. castle inclus dans militaire (même kind 'tower' qu'un Donjon, voir
+  // ce réglage. castle inclus dans militaire (même kind 'tower' qu'un Avant poste, voir
   // buildings.castle -- un Château amélioré recrute exactement pareil).
   laborRouting: {
     defaultPercent: 20, // 5 catégories, réparties également par défaut (aucune n'est "la" chaîne historique)
@@ -206,7 +206,7 @@ const GameConfig = {
         id: 'tier2', threshold: 40,
         options: [
           { id: 'culte', name: 'Culte organisé', desc: 'Coût en Statues de l\'Autel divisé par 2.' },
-          { id: 'croisade', name: 'Croisade', desc: 'Coût de construction du Donjon divisé par 2.' },
+          { id: 'croisade', name: 'Croisade', desc: 'Coût de construction de l\'Avant poste divisé par 2.' },
         ],
       },
       {
@@ -546,12 +546,15 @@ const GameConfig = {
     // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval
     // secondes à pleine main-d'œuvre (même système que les extracteurs/processeurs : un
     // travailleur affecté = plein régime, sinon le délai entre deux tirs double). N'est actif
-    // que s'il touche une route (voir GameState._hasAdjacentRoad) : un Donjon posé isolé ne
+    // que s'il touche une route (voir GameState._hasAdjacentRoad) : un Avant poste posé isolé ne
     // tire pas, il faut le relier au réseau.
     donjon: {
       // Coût divisé par 2 (demande utilisateur explicite) par rapport à l'original (planks: 20,
       // stoneBlocks: 15) : moitié de 15 arrondie à 8 pour un chiffre entier propre plutôt que 7.5.
-      name: 'Donjon', cost: { planks: 10, stoneBlocks: 8 }, color: 0x5a2a3a,
+      // Nom "Avant poste" (demande utilisateur explicite, "aucun changement fonctionnel") -- id
+      // "donjon" conservé (compatibilité des sauvegardes existantes), même principe que def_donjon/
+      // Balistique.
+      name: 'Avant poste', cost: { planks: 10, stoneBlocks: 8 }, color: 0x5a2a3a,
       // Portée (aussi la zone d'action/de révélation du brouillard de guerre, voir
       // GameState.zoneRadiusFor) passée de 4 à 7 cases -- demande utilisateur explicite.
       kind: 'tower', range: 7, fireInterval: 2, damage: 1,
@@ -567,27 +570,27 @@ const GameConfig = {
       kind: 'watchtower', range: 10,
       ruinLoot: { planks: 3 },
     },
-    // Pas dans le menu de construction : n'existe que comme amélioration d'un Donjon déjà posé
-    // (voir GameState.upgradeToCastle), débloquée par la techno Forgerie (voir techTree.nodes.
+    // Pas dans le menu de construction : n'existe que comme amélioration d'un Avant poste déjà posé
+    // (voir GameState.upgradeToCastle), débloquée par la techno Féodalité (voir techTree.nodes.
     // def_forgerie). "cost" sert de coût d'amélioration (payé au moment de la transformation),
-    // pas de coût de construction initiale -- même kind: 'tower' que le Donjon, donc traité
+    // pas de coût de construction initiale -- même kind: 'tower' que l'Avant poste, donc traité
     // automatiquement par tout le code déjà écrit pour les tours (tir, main-d'œuvre, portée...).
     castle: {
       name: 'Château', cost: { planks: 25, stoneBlocks: 20 }, color: 0x3a2a4a,
       kind: 'tower', range: 6, fireInterval: 1.2, damage: 3,
-      // Accueille 2x plus de travailleurs qu'un Donjon (8 au lieu de 4) -- voir GameState.
+      // Accueille 2x plus de travailleurs qu'un Avant poste (8 au lieu de 4) -- voir GameState.
       // efficiencyForWorkers, seul bâtiment dont l'efficacité peut dépasser 100 % (demande
-      // utilisateur explicite). Les 4 premiers travailleurs comptent comme pour un Donjon normal
-      // (0 -> 50 %, ..., 4 -> 100 %) ; les 4 suivants ajoutent le même gain marginal une seconde
-      // fois (5e travailleur = même gain que le 1er, etc.), jusqu'à 150 % à 8 travailleurs -- pas
-      // un simple x2 (qui aurait aussi doublé le socle de 50 % à 0 travailleur, absurde).
+      // utilisateur explicite). Les 4 premiers travailleurs comptent comme pour un Avant poste
+      // normal (0 -> 50 %, ..., 4 -> 100 %) ; les 4 suivants ajoutent le même gain marginal une
+      // seconde fois (5e travailleur = même gain que le 1er, etc.), jusqu'à 150 % à 8 travailleurs
+      // -- pas un simple x2 (qui aurait aussi doublé le socle de 50 % à 0 travailleur, absurde).
       capMultiplier: 2,
       ruinLoot: { planks: 15, stoneBlocks: 10 },
     },
     // kind: 'university' => pas de zone d'action, ne reçoit/n'expédie aucune ressource (pas de
     // outputBuffer/inputBuffer, pas de linkTargets). Un clic dessus ouvre l'arbre technologique
     // (voir GameScene.openTechTree) plutôt que d'afficher un panneau d'info classique. N'est
-    // utilisable que si reliée à une route (même vérification que le Donjon).
+    // utilisable que si reliée à une route (même vérification que l'Avant poste).
     university: {
       name: 'Université', cost: { planks: 15, stoneBlocks: 10 }, color: 0x2f4d63,
       kind: 'university',
@@ -741,7 +744,7 @@ const GameConfig = {
         // ACTUEL de Dévotion / 100 (donc +100 % de cadence à 100 % de Dévotion) -- remplace
         // l'ancien bonus d'Alphabétisation sur cette même ligne.
         name: 'tbd6', parent: 'rec_tbd5', ring: 4, angle: 162,
-        description: 'La vitesse d\'attaque des Donjons (et Châteaux) augmente avec votre Dévotion actuelle.',
+        description: 'La vitesse d\'attaque des Avant postes (et Châteaux) augmente avec votre Dévotion actuelle.',
       },
 
       // Logistique (branche à 216°) : roue -> caisse de transport -> {aménagement urbain, gestion
@@ -785,17 +788,18 @@ const GameConfig = {
         costReduction: { planks: 3, stoneBlocks: 2 },
       },
 
-      // Défense (branche à 288°) : explorateur -> balistique -> {artilleur, service militaire,
-      // forgerie}. def_donjon/def_armee gardent leurs ids (débloqués par des parties déjà en
-      // cours) même si leurs noms affichés changent (demande utilisateur explicite : "artilleur a
-      // remplacé par balistique", "Armée de profession a remplacer par artilleur").
+      // Défense (branche à 288°) : explorateur -> balistique -> {artilleur, service militaire} ->
+      // (sous artilleur) {féodalité, arc long, ingénierie}. def_donjon/def_armee gardent leurs ids
+      // (débloqués par des parties déjà en cours) même si leurs noms affichés changent (demande
+      // utilisateur explicite : "artilleur a remplacé par balistique", "Armée de profession a
+      // remplacer par artilleur").
       def_explorateur: {
         name: 'Explorateur', parent: null, ring: 1, angle: 288,
         description: 'Permet de construire des Tours de Guet.',
       },
       def_donjon: {
         name: 'Balistique', parent: 'def_explorateur', ring: 2, angle: 288, maxLevel: 3,
-        description: 'Augmente la portée du Donjon (et du Château) de 1 / 2 / 3 cases (pas cumulatif).',
+        description: 'Augmente la portée de l\'Avant poste (et du Château) de 1 / 2 / 3 cases (pas cumulatif).',
         rangeBonusByLevel: [1, 2, 3],
       },
       def_armee: {
@@ -810,11 +814,27 @@ const GameConfig = {
       def_service: {
         // 1 -> 2 habitants gratuits (demande utilisateur explicite) -- voir GameState.allocateLabor.
         name: 'Service militaire', parent: 'def_donjon', ring: 3, angle: 288,
-        description: 'Chaque Donjon (et Château) a toujours 2 habitants à l\'intérieur, en plus de la main-d\'œuvre affectée.',
+        description: 'Chaque Avant poste (et Château) a toujours 2 habitants à l\'intérieur, en plus de la main-d\'œuvre affectée.',
       },
       def_forgerie: {
-        name: 'Forgerie', parent: 'def_donjon', ring: 3, angle: 313,
-        description: 'Permet d\'améliorer un Donjon en Château.',
+        // Déplacée sous Artilleur, plus sous Balistique directement (demande utilisateur explicite :
+        // "deplace forgerie comme la suite de Artilleur") et renommée "Féodalité" (id "def_forgerie"
+        // conservé -- compatibilité des sauvegardes existantes, upgradeToCastle continue de la lire
+        // par cet id). Effet inchangé.
+        name: 'Féodalité', parent: 'def_armee', ring: 4, angle: 238,
+        description: 'Permet d\'améliorer un Avant poste en Château.',
+      },
+      // Arc long / Ingénierie (demande utilisateur explicite) : débloquent chacune un futur nouveau
+      // bâtiment, amélioration de l'Avant poste comme le Château -- mécaniques et coûts encore à
+      // définir ("on en parlera plus tard"), aucun code de jeu ne lit ces deux ids pour l'instant
+      // (contrairement à def_forgerie/upgradeToCastle) : simples emplacements réservés dans l'arbre.
+      def_arcLong: {
+        name: 'Arc long', parent: 'def_armee', ring: 4, angle: 263,
+        description: 'Débloque le Donjon (nouveau bâtiment, amélioration de l\'Avant poste -- détails à venir).',
+      },
+      def_ingenierie: {
+        name: 'Ingénierie', parent: 'def_armee', ring: 4, angle: 288,
+        description: 'Débloque la Tour de siège (nouveau bâtiment, amélioration de l\'Avant poste -- détails à venir).',
       },
     },
   },
@@ -833,7 +853,7 @@ const GameConfig = {
     // Efficacité selon le nombre de travailleurs affectés à un bâtiment : index 0 = 0 travailleur,
     // index 1 = 1 travailleur, etc. Au-delà du dernier index (4 travailleurs), l'efficacité reste
     // à 100 % (voir GameState.efficiencyForWorkers, qui borne l'index). Utilisée par les
-    // tours (Donjon/Château) -- voir efficiencyByWorkersProduction ci-dessous pour les bâtiments
+    // tours (Avant poste/Château) -- voir efficiencyByWorkersProduction ci-dessous pour les bâtiments
     // de la catégorie Production (extracteurs ET processeurs).
     efficiencyByWorkers: [0.5, 0.65, 0.8, 0.9, 1],
     // Même principe, mais pour TOUS les bâtiments de la catégorie Production (voir
@@ -913,8 +933,8 @@ const GameConfig = {
     // pour compenser et garder exactement sa taille absolue d'avant cette demande.
     sizeFactor: 3.4,
     // Vie de départ PAR TYPE de monstre (voir GameState.tickProduction, section tir de tour, pour
-    // les dégâts infligés par un Donjon) -- demande utilisateur explicite : un gobelin simple meurt
-    // en un seul tir (damage: 1 sur le Donjon), un Chef de guerre en résiste 3, le Seigneur de la
+    // les dégâts infligés par un Avant poste) -- demande utilisateur explicite : un gobelin simple meurt
+    // en un seul tir (damage: 1 sur l'Avant poste), un Chef de guerre en résiste 3, le Seigneur de la
     // horde 10 (voir aussi GameScene.redrawMonsters : un monstre à hp < hpByType[m.type] est
     // affiché "blessé", couleur plus claire, pour qu'on distingue au coup d'œil ceux qui vont
     // mourir au prochain tir).
@@ -937,7 +957,7 @@ const GameConfig = {
     // utilisateur explicite : "je veux que le compteur de respawn sois freeze tant que la section
     // est attaqué". Fenêtre glissante rafraîchie à CHAQUE tir reçu par un membre du groupe (voir
     // GameState, section tir de tour) plutôt qu'un simple "pendant le tir" instantané : supérieure
-    // à fireInterval du Donjon (2s) pour qu'un tir répété garde la section gelée en continu, sans
+    // à fireInterval de l'Avant poste (2s) pour qu'un tir répété garde la section gelée en continu, sans
     // laisser le décompte reprendre puis regeler entre deux tirs.
     underAttackFreezeSeconds: 4,
   },
