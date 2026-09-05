@@ -807,13 +807,18 @@ const GameConfig = {
         // qu'un tir touche aussi un ennemi ADJACENT à la cible (voir GameState._findAdjacentMonster/
         // _applyTowerDamage, section "Tours" de tickProduction) -- toujours en plus du tir normal,
         // jamais à sa place.
-        name: 'Artilleur', parent: 'def_donjon', ring: 3, angle: 263, maxLevel: 3,
+        // angle 288 (même angle qu'Explorateur/Balistique, demande utilisateur explicite : "faire
+        // une ligne droite entre explorateur balistique et artilleur") -- Service militaire prend
+        // l'angle décalé à sa place, voir juste en dessous.
+        name: 'Artilleur', parent: 'def_donjon', ring: 3, angle: 288, maxLevel: 3,
         description: 'Chaque tir a 10 % / 20 % / 30 % de chances de toucher aussi un ennemi adjacent.',
         splashChanceByLevel: [0.10, 0.20, 0.30],
       },
       def_service: {
         // 1 -> 2 habitants gratuits (demande utilisateur explicite) -- voir GameState.allocateLabor.
-        name: 'Service militaire', parent: 'def_donjon', ring: 3, angle: 288,
+        // angle décalé (313, demande utilisateur explicite : "avoir service militaire sur la
+        // gauche ou la droite") pour laisser Explorateur/Balistique/Artilleur en ligne droite à 288.
+        name: 'Service militaire', parent: 'def_donjon', ring: 3, angle: 313,
         description: 'Chaque Avant poste (et Château) a toujours 2 habitants à l\'intérieur, en plus de la main-d\'œuvre affectée.',
       },
       def_forgerie: {
@@ -821,7 +826,9 @@ const GameConfig = {
         // "deplace forgerie comme la suite de Artilleur") et renommée "Féodalité" (id "def_forgerie"
         // conservé -- compatibilité des sauvegardes existantes, upgradeToCastle continue de la lire
         // par cet id). Effet inchangé.
-        name: 'Féodalité', parent: 'def_armee', ring: 4, angle: 238,
+        // angles ci-dessous (263/288/313) recentrés sur Artilleur, maintenant à 288 (demande
+        // utilisateur explicite sur la ligne droite Explorateur/Balistique/Artilleur ci-dessus).
+        name: 'Féodalité', parent: 'def_armee', ring: 4, angle: 263,
         description: 'Permet d\'améliorer un Avant poste en Château.',
       },
       // Arc long / Ingénierie (demande utilisateur explicite) : débloquent chacune un futur nouveau
@@ -829,11 +836,11 @@ const GameConfig = {
       // définir ("on en parlera plus tard"), aucun code de jeu ne lit ces deux ids pour l'instant
       // (contrairement à def_forgerie/upgradeToCastle) : simples emplacements réservés dans l'arbre.
       def_arcLong: {
-        name: 'Arc long', parent: 'def_armee', ring: 4, angle: 263,
+        name: 'Arc long', parent: 'def_armee', ring: 4, angle: 288,
         description: 'Débloque le Donjon (nouveau bâtiment, amélioration de l\'Avant poste -- détails à venir).',
       },
       def_ingenierie: {
-        name: 'Ingénierie', parent: 'def_armee', ring: 4, angle: 288,
+        name: 'Ingénierie', parent: 'def_armee', ring: 4, angle: 313,
         description: 'Débloque la Tour de siège (nouveau bâtiment, amélioration de l\'Avant poste -- détails à venir).',
       },
     },
