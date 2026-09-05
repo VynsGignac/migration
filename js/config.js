@@ -159,26 +159,27 @@ const GameConfig = {
     },
   },
   // Dévotion (demande utilisateur explicite) : PAS un stock qui s'accumule comme les autres
-  // ressources -- un pourcentage (0-100, voir GameState.resources.devotion) qui redescend tout
-  // seul avec le temps (decayRate, %/s). templeBaseGain (%/s) : chaque Temple en fournit un peu
-  // MÊME sans Autel à portée (voir tickProduction -- "le temple lui même fournit aussi 0.25 % par
-  // seconde", en plus de buildings.temple.devotionPerAltar par Autel, demande utilisateur
-  // explicite). decayRate 0,5%/5s = 0,1 %/s (valeur précisée par l'utilisateur, provisoire).
+  // ressources -- un pourcentage (0-100, voir GameState.resources.devotion). Le Temple lui-même
+  // ne produit RIEN (demande utilisateur explicite, "je veux que le temple ne produise rien de
+  // lui meme") -- toute la production vient des Autels à portée (voir buildings.temple.
+  // devotionPerAltar, %/s PAR Autel dans extractRadius).
   //
-  // N'améliore PLUS de bâtiment (ancienne notion retirée, demande utilisateur explicite : "on va
-  // retirer la notion 'cela permet d'améliorer les batiments' et plutot ce dire que cela va
-  // déverrouiller des paliers") : 5 PALIERS fixes (tiers, % de Dévotion ATTEINT, pas consommé),
-  // chacun débloquant un choix à faire une fois pour toutes entre 2 bénédictions (voir
-  // GameState.devotionTiers/chooseDevotionTier). "id" sert de clé stable dans la sauvegarde --
-  // ne jamais le changer une fois des parties sauvegardées avec, quitte à renommer "label".
-  // Effets concrets de chaque bénédiction volontairement PAS encore définis (demande utilisateur
-  // explicite : "on verra plus tard pour les effets concrets") -- seule l'infrastructure
-  // (paliers/choix/activation) existe pour l'instant, chaque bénédiction n'est qu'un nom+la
-  // structure prête à recevoir un effet plus tard.
+  // decayBands : la perte naturelle N'EST PLUS un taux fixe -- elle dépend de la Dévotion ACTUELLE
+  // (demande utilisateur explicite, valeurs finales après plusieurs itérations chiffrées avec
+  // l'utilisateur) : chaque tranche de 20 points a son propre taux (%/s), qui grimpe avec le
+  // niveau -- 0 sous 20 %, jusqu'à 2 %/s (10 %/5s) au-dessus de 80 %. Voir
+  // GameState.devotionDecayRateFor, qui choisit la première tranche dont `max` dépasse strictement
+  // la Dévotion actuelle (donc 20 % pile tombe déjà dans la tranche 20-40, etc.) ; ratePerSecond =
+  // valeur en %/5s divisée par 5 (ex. 1 %/5s -> 0.2).
   devotion: {
     cap: 100,
-    decayRate: 0.1,
-    templeBaseGain: 0.25,
+    decayBands: [
+      { max: 20, ratePerSecond: 0 },
+      { max: 40, ratePerSecond: 0.2 },
+      { max: 60, ratePerSecond: 0.5 },
+      { max: 80, ratePerSecond: 1.0 },
+      { max: 100, ratePerSecond: 2.0 },
+    ],
     // Hystérésis (demande utilisateur explicite : "si la devotion redescend 5% plus bas que le
     // palier... alors l'effet... devient inactif (et se reactive automatiquement dès que le
     // palier est réatteind sans choix à faire)") : un choix déjà validé reste actif tant que la
@@ -528,11 +529,11 @@ const GameConfig = {
       // Coût précisé par l'utilisateur (planches/pierre/fer/statues, pas juste planches/pierre
       // comme les autres bâtiments).
       name: 'Temple', cost: { planks: 5, stoneBlocks: 5, ironIngot: 5, statues: 20 }, color: 0xd4af6a,
-      // extractRadius 3 -> 10 (demande utilisateur explicite : "zone d'action (10 cases)").
-      // devotionPerAltar : 0,25 %/5s par Autel = 0,05 %/s (voir GameConfig.devotion pour le taux
-      // de base du Temple lui-même, gagné même sans Autel à portée -- valeurs précisées par
-      // l'utilisateur).
-      kind: 'shrine', extractRadius: 10, devotionPerAltar: 0.05,
+      // extractRadius 10 -> 3 (demande utilisateur explicite, après calcul théorique du nombre
+      // d'Autels que ça permet -- voir échanges précédents : 37 cases dans ce rayon, 36 Autels
+      // possibles au maximum). devotionPerAltar : 0,5 %/5s par Autel = 0,1 %/s (demande utilisateur
+      // explicite -- le Temple lui-même ne produit plus rien, voir GameConfig.devotion).
+      kind: 'shrine', extractRadius: 3, devotionPerAltar: 0.1,
       ruinLoot: { planks: 8 },
     },
     // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval

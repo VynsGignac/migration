@@ -262,6 +262,18 @@ const GameState = {
     }
   },
 
+  // Taux de perte naturelle (%/s) pour un niveau de Dévotion donné (voir GameConfig.devotion.
+  // decayBands, demande utilisateur explicite) : la première tranche dont "max" dépasse
+  // STRICTEMENT la valeur donnée -- donc 20 % pile tombe déjà dans la tranche 20-40, etc., pas
+  // dans celle du dessous. Le dernier élément couvre aussi 100 % (aucune tranche n'a max > 100).
+  devotionDecayRateFor(devotion) {
+    const bands = GameConfig.devotion.decayBands;
+    for (const band of bands) {
+      if (devotion < band.max) return band.ratePerSecond;
+    }
+    return bands[bands.length - 1].ratePerSecond;
+  },
+
   // Vrai si la bénédiction "optionId" (voir GameConfig.devotion.tiers[*].options) a été choisie ET
   // est actuellement active (pas juste choisie -- voir updateDevotionTiers/hystérésis, demande
   // utilisateur explicite : un effet devient inactif si la Dévotion redescend sous son palier).
@@ -1289,29 +1301,30 @@ const GameState = {
         const t = this.tiles.get(this.key(p.col, p.row));
         return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
       }, 0);
-      // PAS de "continue" si altarCount === 0 (contrairement à avant) : le Temple fournit
-      // toujours templeBaseGain (voir GameConfig.devotion, demande utilisateur explicite : "le
-      // temple lui même fournit aussi 0.25 % par seconde"), même sans Autel à portée -- seul le
-      // second terme (par Autel) dépend d'altarCount. Un même Autel peut compter dans PLUSIEURS
-      // Temples à la fois (demande utilisateur explicite) : chaque Temple fait ce calcul
-      // indépendamment sur toute la carte, rien n'empêche déjà un Autel d'apparaître dans
-      // plusieurs zones -- comportement déjà correct, inchangé ici.
+      // "continue" si altarCount === 0 (demande utilisateur explicite : "je veux que le temple ne
+      // produise rien de lui meme") -- plus de gain de base, tout vient des Autels à portée. Un
+      // même Autel peut compter dans PLUSIEURS Temples à la fois (demande utilisateur explicite) :
+      // chaque Temple fait ce calcul indépendamment sur toute la carte, rien n'empêche déjà un
+      // Autel d'apparaître dans plusieurs zones -- comportement déjà correct, inchangé ici.
+      if (altarCount === 0) continue;
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (this.universityZone.has(key) ? formateurBonus : 0);
-      const baseRate = GameConfig.devotion.templeBaseGain + def.devotionPerAltar * altarCount;
+      const baseRate = def.devotionPerAltar * altarCount;
       devotionGain += baseRate * efficiency * speedMultiplier * dtSeconds;
     }
 
-    // Dévotion : baisse naturelle constante (decayRate), s'applique TOUJOURS même sans Temple à
-    // portée. Bornée [0, cap] en une fois avec le gain ci-dessus (voir le commentaire plus haut).
-    // Ne sert plus à "améliorer" un bâtiment (ancienne notion retirée, voir GameConfig.devotion) --
+    // Dévotion : baisse naturelle qui dépend maintenant de la Dévotion ACTUELLE (voir
+    // GameConfig.devotion.decayBands/devotionDecayRateFor, demande utilisateur explicite) au lieu
+    // d'un taux fixe -- s'applique TOUJOURS, même sans Temple à portée. Évaluée sur le niveau
+    // d'AVANT ce tick (comme les autres taux de cette fonction, tous calculés sur l'état au début
+    // du tick). Bornée [0, cap] en une fois avec le gain ci-dessus (voir le commentaire plus haut).
     // updateDevotionTiers, juste après, bascule actif/inactif chaque bénédiction déjà choisie
     // selon ce nouveau niveau.
-    const devotionDrain = GameConfig.devotion.decayRate * dtSeconds;
+    const devotionDrain = this.devotionDecayRateFor(this.resources.devotion) * dtSeconds;
     if (devotionGain > 0 || devotionDrain > 0) {
       this.resources.devotion = Math.max(0, Math.min(
         GameConfig.devotion.cap, this.resources.devotion + devotionGain - devotionDrain

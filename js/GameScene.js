@@ -653,14 +653,16 @@ class GameScene extends Phaser.Scene {
         }, 0);
       lines.push(`Autels à portée : ${altarCount}`);
       // "%/s" (pas juste un nombre) : la Dévotion est un pourcentage (0-100 %, voir GameConfig.
-      // devotion), pas un stock qui s'accumule sans limite comme les autres ressources -- ce Temple
-      // ne fait qu'en ralentir la baisse naturelle (GameConfig.devotion.decayRate), pas "produire"
-      // au sens habituel.
-      // templeBaseGain : gagné même sans Autel à portée (voir GameConfig.devotion, demande
-      // utilisateur explicite), le reste proportionnel au nombre d'Autels ci-dessus.
-      const shrineRate = GameConfig.devotion.templeBaseGain + def.devotionPerAltar * altarCount;
+      // devotion), pas un stock qui s'accumule sans limite comme les autres ressources. Le Temple
+      // ne produit RIEN par lui-même (demande utilisateur explicite) : tout vient des Autels à
+      // portée ci-dessus -- 0 Autel = 0 gain, quelle que soit la main-d'œuvre.
+      const shrineRate = def.devotionPerAltar * altarCount;
       lines.push(`Dévotion/s à pleine main-d'œuvre : +${shrineRate.toFixed(2)} %`);
-      lines.push(`Baisse naturelle : -${GameConfig.devotion.decayRate}%/s (voir bandeau du haut).`);
+      // Baisse naturelle par TRANCHE de Dévotion actuelle (voir GameConfig.devotion.decayBands/
+      // GameState.devotionDecayRateFor, demande utilisateur explicite) -- affiche le taux courant
+      // (pas fixe comme avant), qui grimpe avec le niveau atteint.
+      const decayRate = GameState.devotionDecayRateFor(GameState.resources.devotion);
+      lines.push(`Baisse naturelle actuelle : -${decayRate.toFixed(2)} %/s (voir bandeau du haut).`);
       lines.push('Dévotion versée directement au stock central (pas de livraison par la route).');
       lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'house') {
