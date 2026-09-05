@@ -71,6 +71,10 @@ const GameState = {
   // chooseDevotionTier/updateDevotionTiers, demande utilisateur explicite) -- même index que
   // GameConfig.devotion.tiers.
   devotionTiers: defaultDevotionTiers(),
+  // Minuteur de la bénédiction Commerce religieux (voir hasActiveBlessing/tickProduction) : temps
+  // de simulation (dtSeconds, ralenti comme le reste de la production), remis à 0 tant que cette
+  // bénédiction n'est pas active pour éviter une rafale de bonus accumulés au retour de l'effet.
+  commerceReligieuxTimer: 0,
   // Tirs de tour en cours d'affichage : { fromCol, fromRow, toX, toRow, ttl }, purement visuel
   // (les dégâts sont déjà appliqués au moment du tir) — voir GameScene.redrawShots.
   shots: [],
@@ -159,20 +163,23 @@ const GameState = {
       // soumise à une vraie vérification de solde -- contrairement à un chantier ci-dessous, qui
       // n'est plus bloqué par le coût (demande utilisateur : "je n'ai plus besoin de vérifier si
       // les matériaux de construction sont disponibles maintenant... il restera en attente tant
-      // que les ressources ne sont pas disponibles").
-      if (!this.canAfford(def.cost)) return { ok: false, reason: 'cost' };
-      this.spend(def.cost);
+      // que les ressources ne sont pas disponibles"). effectiveBuildingCost (Dieu des voyageurs,
+      // Apogée céleste) : voir son commentaire.
+      const roadCost = this.effectiveBuildingCost('road', def.cost);
+      if (!this.canAfford(roadCost)) return { ok: false, reason: 'cost' };
+      this.spend(roadCost);
       this.tiles.set(key, { type: 'road' });
       this.dirty = true;
       this.buildingsDirty = true;
       return { ok: true };
     }
 
+    const cost = this.effectiveBuildingCost(buildingId, def.cost);
     this.tiles.set(key, {
       type: buildingId,
       underConstruction: true,
-      constructionNeeded: { ...def.cost },
-      constructionDelivered: Object.fromEntries(Object.keys(def.cost).map(r => [r, 0])),
+      constructionNeeded: { ...cost },
+      constructionDelivered: Object.fromEntries(Object.keys(cost).map(r => [r, 0])),
     });
     this.dirty = true;
     this.buildingsDirty = true;
@@ -243,11 +250,48 @@ const GameState = {
       if (state.active && this.resources.devotion < threshold - margin) {
         state.active = false;
         this.dirty = true;
+        // buildingsDirty (pas seulement dirty) : certaines bénédictions (Regard divin) changent le
+        // brouillard de guerre indépendamment de tout bâtiment posé/détruit -- computeRevealedTiles
+        // n'est recalculé par GameScene que sur ce drapeau (voir son commentaire).
+        this.buildingsDirty = true;
       } else if (!state.active && this.resources.devotion >= threshold) {
         state.active = true;
         this.dirty = true;
+        this.buildingsDirty = true;
       }
     }
+  },
+
+  // Vrai si la bénédiction "optionId" (voir GameConfig.devotion.tiers[*].options) a été choisie ET
+  // est actuellement active (pas juste choisie -- voir updateDevotionTiers/hystérésis, demande
+  // utilisateur explicite : un effet devient inactif si la Dévotion redescend sous son palier).
+  // Utilisé par tickProduction/placeBuilding/upgradeToCastle/computeRevealedTiles ici, et par
+  // Monsters.update pour Fureur divine.
+  hasActiveBlessing(optionId) {
+    for (let i = 0; i < GameConfig.devotion.tiers.length; i++) {
+      if (this.devotionTiers[i].choice === optionId) return this.devotionTiers[i].active;
+    }
+    return false;
+  },
+
+  // Coût EFFECTIF d'un bâtiment (ou de l'amélioration Château), après réduction des bénédictions
+  // de Dévotion actives (demande utilisateur explicite) -- appliqué UNE FOIS au moment de la
+  // construction/amélioration (voir placeBuilding/upgradeToCastle), pas recalculé après coup si la
+  // bénédiction change entretemps (comme un prix figé à la caisse). Les réductions se CUMULENT en
+  // se MULTIPLIANT, jamais en s'additionnant (demande utilisateur explicite, exemple donné : 100
+  // réduit de 20 % puis 50 % = 80 puis 40, pas 100 - 20 - 50 = 30) -- d'où un simple produit de
+  // multiplicateurs plutôt qu'une somme de pourcentages.
+  effectiveBuildingCost(buildingId, baseCost) {
+    let mult = 1;
+    if (buildingId === 'donjon' && this.hasActiveBlessing('croisade')) mult *= 0.5;
+    if (buildingId === 'altar' && this.hasActiveBlessing('culte')) mult *= 0.5;
+    if (buildingId === 'castle' && this.hasActiveBlessing('guerre')) mult *= 0.5;
+    if (buildingId === 'road' && this.hasActiveBlessing('voyageurs')) mult = 0;
+    if (this.hasActiveBlessing('apogee')) mult *= 0.5;
+    if (mult === 1) return { ...baseCost };
+    const result = {};
+    for (const res in baseCost) result[res] = mult === 0 ? 0 : Math.round(baseCost[res] * mult);
+    return result;
   },
 
   // Change la part de "resource" envoyée vers "buildingType" (demande utilisateur explicite : menu
@@ -321,7 +365,8 @@ const GameState = {
     const tile = this.tiles.get(key);
     if (!tile || tile.type !== 'donjon' || tile.underConstruction) return { ok: false, reason: 'notDonjon' };
     if (!this.isTechUnlocked('def_forgerie')) return { ok: false, reason: 'locked' };
-    const cost = GameConfig.buildings.castle.cost;
+    // effectiveBuildingCost (Déesse de la guerre, Apogée céleste) : voir son commentaire.
+    const cost = this.effectiveBuildingCost('castle', GameConfig.buildings.castle.cost);
     if (!this.canAfford(cost)) return { ok: false, reason: 'cost' };
 
     this.spend(cost);
@@ -361,7 +406,10 @@ const GameState = {
     // que la zone d'action réelle des bâtiments -- un seul point de passage (rendu ET logique,
     // voir harvestRuin, lisent tous les deux ce même revealedTiles) plutôt qu'un contournement
     // éparpillé à chaque endroit qui le consulte.
-    if (GameConfig.debug && GameConfig.debug.disableFog) {
+    // Regard divin (voir GameConfig.devotion.tiers, demande utilisateur explicite : "le brouillard
+    // de guerre est dissipé") : même traitement que le débug disableFog ci-dessous -- toute la
+    // carte révélée d'un coup tant que cette bénédiction reste active.
+    if ((GameConfig.debug && GameConfig.debug.disableFog) || this.hasActiveBlessing('regard')) {
       const revealed = new Set();
       for (let col = 0; col < this.cols; col++) {
         for (let row = 0; row < this.rows; row++) revealed.add(this.key(col, row));
@@ -1100,9 +1148,14 @@ const GameState = {
       const efficiency = tile.type === 'recycler'
         ? 1
         : this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
+      // Déesse de la fertilité (voir GameConfig.devotion.tiers, demande utilisateur explicite) :
+      // "2 fois plus efficace" pour les bâtiments de ressource BRUTE, donc les extracteurs -- +1 au
+      // multiplicateur (1 -> 2) plutôt qu'un facteur séparé, même mécanique que les autres bonus de
+      // vitesse déjà cumulés ici (Expertise/Alphabétisation/Guilde/Formateur).
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
-        + (this.universityZone.has(key) ? formateurBonus : 0);
+        + (this.universityZone.has(key) ? formateurBonus : 0)
+        + (this.hasActiveBlessing('fertilite') ? 1 : 0);
       let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap + this.capBonus() - tile.outputBuffer);
       if (toExtract <= 0) continue;
 
@@ -1190,9 +1243,13 @@ const GameState = {
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
       const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
+      // Dieu des artisans (voir GameConfig.devotion.tiers, demande utilisateur explicite) : même
+      // principe que Déesse de la fertilité ci-dessus, mais pour les bâtiments de ressource
+      // RAFFINÉE, donc les processeurs (cette boucle).
       const speedMultiplier = 1 + expertiseBonus + alphabetisationBonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
-        + (this.universityZone.has(key) ? formateurBonus : 0);
+        + (this.universityZone.has(key) ? formateurBonus : 0)
+        + (this.hasActiveBlessing('artisans') ? 1 : 0);
       const roomInOutput = def.outputCap + this.capBonus() - tile.outputBuffer;
       let actual = Math.min(def.rate * efficiency * speedMultiplier * dtSeconds, roomInOutput);
       // inputResources (voir buildings.armurier/sculpteur) : recette 1:1:1, bornée par la ressource
@@ -1262,6 +1319,29 @@ const GameState = {
       this.dirty = true;
     }
     this.updateDevotionTiers();
+
+    // Commerce religieux (voir GameConfig.devotion.tiers, demande utilisateur explicite) : toutes
+    // les 10s de simulation, le stock d'une ressource tirée au hasard augmente de 1 % PAR Entrepôt
+    // construit. Timer remis à 0 tant que la bénédiction est inactive (hystérésis) pour ne pas
+    // déclencher une rafale de bonus accumulés dès son retour.
+    if (!this.hasActiveBlessing('commerce')) {
+      this.commerceReligieuxTimer = 0;
+    } else {
+      this.commerceReligieuxTimer += dtSeconds;
+      if (this.commerceReligieuxTimer >= 10) {
+        this.commerceReligieuxTimer -= 10;
+        let warehouseCount = 0;
+        for (const [, t] of this.tiles) {
+          if (t.type === 'warehouse' && !t.underConstruction) warehouseCount++;
+        }
+        if (warehouseCount > 0) {
+          const pool = ['wood', 'planks', 'stone', 'stoneBlocks', 'wheat', 'bread', 'ore', 'ironIngot', 'weapons', 'statues'];
+          const res = pool[Math.floor(Math.random() * pool.length)];
+          this.resources[res] += this.resources[res] * 0.01 * warehouseCount;
+          this.dirty = true;
+        }
+      }
+    }
 
     // 2.5 Population : chaque Maison consomme du pain proportionnellement à ses habitants.
     // Deux minuteries INDÉPENDANTES plutôt qu'une seule (voir l'ancienne version) : la techno
@@ -2034,6 +2114,7 @@ const GameState = {
     this.resourceRouting = defaultResourceRouting();
     this.laborRouting = defaultLaborRouting();
     this.devotionTiers = defaultDevotionTiers();
+    this.commerceReligieuxTimer = 0;
     this.shots = [];
     this.unlockedTech = new Map();
     this.revealedTiles = new Set();

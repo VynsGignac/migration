@@ -186,12 +186,45 @@ const GameConfig = {
     // (seuil) pile, pas dès (seuil - margin) -- évite un clignotement actif/inactif juste sous le
     // seuil. Le CHOIX lui-même (une fois fait) ne se perd jamais, seul son effet bascule actif/non.
     tierInactiveMargin: 5,
+    // desc : effet concret de chaque bénédiction (demande utilisateur explicite), affiché tel
+    // quel dans le panneau (voir GameScene.refreshDevotionPanel) -- vérifié par id dans
+    // GameState.hasActiveBlessing/effectiveBuildingCost/tickProduction et Monsters.update.
     tiers: [
-      { id: 'tier1', threshold: 20, options: [{ id: 'commerce', name: 'Commerce religieux' }, { id: 'regard', name: 'Regard divin' }] },
-      { id: 'tier2', threshold: 40, options: [{ id: 'culte', name: 'Culte organisé' }, { id: 'croisade', name: 'Croisade' }] },
-      { id: 'tier3', threshold: 60, options: [{ id: 'fertilite', name: 'Déesse de la fertilité' }, { id: 'artisans', name: 'Dieu des artisans' }] },
-      { id: 'tier4', threshold: 80, options: [{ id: 'voyageurs', name: 'Dieu des voyageurs' }, { id: 'guerre', name: 'Déesse de la guerre' }] },
-      { id: 'tier5', threshold: 100, options: [{ id: 'fureur', name: 'Fureur divine' }, { id: 'apogee', name: 'Apogée céleste' }] },
+      {
+        id: 'tier1', threshold: 20,
+        options: [
+          { id: 'commerce', name: 'Commerce religieux', desc: 'Chaque Entrepôt augmente une ressource de 1 % toutes les 10 s.' },
+          { id: 'regard', name: 'Regard divin', desc: 'Le brouillard de guerre est entièrement dissipé.' },
+        ],
+      },
+      {
+        id: 'tier2', threshold: 40,
+        options: [
+          { id: 'culte', name: 'Culte organisé', desc: 'Coût en Statues de l\'Autel divisé par 2.' },
+          { id: 'croisade', name: 'Croisade', desc: 'Coût de construction du Donjon divisé par 2.' },
+        ],
+      },
+      {
+        id: 'tier3', threshold: 60,
+        options: [
+          { id: 'fertilite', name: 'Déesse de la fertilité', desc: 'Les bâtiments de ressource brute sont 2 fois plus efficaces.' },
+          { id: 'artisans', name: 'Dieu des artisans', desc: 'Les bâtiments de ressource raffinée sont 2 fois plus efficaces.' },
+        ],
+      },
+      {
+        id: 'tier4', threshold: 80,
+        options: [
+          { id: 'voyageurs', name: 'Dieu des voyageurs', desc: 'Les routes sont gratuites.' },
+          { id: 'guerre', name: 'Déesse de la guerre', desc: 'Coût de l\'amélioration en Château réduit de 50 %.' },
+        ],
+      },
+      {
+        id: 'tier5', threshold: 100,
+        options: [
+          { id: 'fureur', name: 'Fureur divine', desc: 'Toutes les secondes, un gobelin de la horde est tué (il respawn normalement).' },
+          { id: 'apogee', name: 'Apogée céleste', desc: 'Tous les coûts de construction sont réduits de 50 % (se cumule en multipliant avec les autres réductions).' },
+        ],
+      },
     ],
   },
   // Transport des ressources le long des routes.

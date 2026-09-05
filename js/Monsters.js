@@ -77,6 +77,10 @@ const Monsters = {
     // en temps réel comme respawnTimer, jamais persisté (pas critique de le perdre en rechargeant
     // une sauvegarde, juste un état de combat transitoire).
     this.groupUnderAttack = new Map();
+    // Minuteur de Fureur divine (voir killRandomGoblin/update ci-dessous, GameConfig.devotion.tiers,
+    // demande utilisateur explicite) : temps RÉEL comme le reste de la horde, jamais persisté (état
+    // transitoire, comme groupUnderAttack).
+    this.fureurTimer = 0;
     for (let displayRow = 0; displayRow < cfg.rowCount; displayRow++) {
       const worldRow = Math.floor(displayRow * gameState.rows / cfg.rowCount);
       const rowBlock = Math.floor(displayRow / blockSize);
@@ -136,6 +140,22 @@ const Monsters = {
     this.groupUnderAttack.set(this.groupIdFor(monster), GameConfig.monsters.underAttackFreezeSeconds);
   },
 
+  // Fureur divine (voir GameConfig.devotion.tiers, demande utilisateur explicite) : tue un gobelin
+  // vivant tiré au hasard dans toute la horde, sans passer par markGroupUnderAttack -- "cela ne
+  // compte pas comme 'une section est attaquée'", donc le respawn de sa section n'est PAS gelé par
+  // cet effet (contrairement à un tir de tour, voir GameState section tir de tour). Le respawn du
+  // gobelin lui-même suit ensuite les règles habituelles (voir update(), branche m.leaderId != null),
+  // sans traitement spécial.
+  killRandomGoblin(gameState) {
+    const candidates = this.list.filter((m) => m.alive && m.type === 'goblin');
+    if (candidates.length === 0) return;
+    const target = candidates[Math.floor(Math.random() * candidates.length)];
+    target.hp = 0;
+    target.alive = false;
+    gameState.monstersKilled++;
+    gameState._maybeDropCorpse(target);
+  },
+
   // Avance chaque monstre vivant et détruit les cases qu'il vient de traverser (sur SA rangée
   // uniquement, contrairement à l'ancienne vague qui détruisait la colonne entière). Comme tous
   // les monstres d'une même rangée avancent à la même vitesse en gardant leur écart initial,
@@ -180,6 +200,19 @@ const Monsters = {
       const next = remaining - dt;
       if (next <= 0) this.groupUnderAttack.delete(groupId);
       else this.groupUnderAttack.set(groupId, next);
+    }
+
+    // Fureur divine (voir killRandomGoblin ci-dessus) : temps réel, comme le déplacement de la
+    // horde -- remis à 0 tant que la bénédiction est inactive pour ne pas tuer une rafale de
+    // gobelins d'un coup à sa réactivation.
+    if (!gameState.hasActiveBlessing('fureur')) {
+      this.fureurTimer = 0;
+    } else {
+      this.fureurTimer += dt;
+      while (this.fureurTimer >= 1) {
+        this.fureurTimer -= 1;
+        this.killRandomGoblin(gameState);
+      }
     }
 
     for (const m of this.list) {
@@ -262,5 +295,6 @@ const Monsters = {
     // Pas persisté (voir groupUnderAttack plus haut, état de combat transitoire) : une
     // sauvegarde rechargée repart avec toutes les sections "hors du feu", sans erreur.
     this.groupUnderAttack = new Map();
+    this.fureurTimer = 0;
   },
 };

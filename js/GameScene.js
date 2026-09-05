@@ -2480,10 +2480,7 @@ class GameScene extends Phaser.Scene {
         .setText(state.active ? 'Actif' : 'Inactif (Dévotion trop basse)')
         .setColor(state.active ? '#7fd17f' : '#e07a7a')
         .setPosition(labelX, y + 20).setVisible(true);
-      // Effets concrets pas encore implémentés (demande utilisateur explicite, "on verra plus
-      // tard") -- texte générique en attendant, à remplacer quand chaque bénédiction aura son
-      // effet réel.
-      row.effectText.setText('Effet : à venir').setPosition(labelX, y + 38).setVisible(true);
+      row.effectText.setText(chosen.desc || 'Effet à venir').setPosition(labelX, y + 38).setVisible(true);
       for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
     });
 
@@ -2604,6 +2601,23 @@ class GameScene extends Phaser.Scene {
   // lui-même fermé (demande utilisateur explicite : "que si aucun autre menu n'est ouvert" -- le
   // pavé compte comme tel puisqu'il occupe l'écran et déplace le bouton Construire, l'ancre
   // utilisée ici côté mobile, voir son appel).
+  // Rafraîchit le nombre affiché sur chaque bouton du menu de construction (voir
+  // buildButtonCostIcons, créés une fois dans buildHud avec le coût DE BASE) d'après
+  // GameState.effectiveBuildingCost -- nécessaire depuis que des bénédictions de Dévotion actives
+  // (Croisade, Culte organisé, Déesse de la guerre, Dieu des voyageurs, Apogée céleste) peuvent
+  // réduire ces coûts en cours de partie. Le nombre et l'ordre des ressources d'un coût ne changent
+  // jamais (seuls les montants bougent, y compris à 0 pour une Route gratuite), donc les icônes
+  // elles-mêmes n'ont pas besoin d'être reconstruites, juste leur texte. Appelée seulement quand
+  // l'état actif d'au moins une bénédiction a changé (voir update(), pas à chaque frame).
+  refreshBuildButtonCosts() {
+    for (const id in this.buildButtonCostIcons) {
+      const baseCost = GameConfig.buildings[id].cost;
+      const cost = GameState.effectiveBuildingCost(id, baseCost);
+      const amounts = Object.values(cost);
+      this.buildButtonCostIcons[id].forEach(({ txt }, i) => txt.setText(String(Math.round(amounts[i] || 0))));
+    }
+  }
+
   layoutQuickMenuButtons(rightAnchorX, bottomAnchorY, btnSize) {
     const visible = !this.isModalOpen() && !this.buildMode && !this.buildMenuOpen;
     const gap = 6;
@@ -4697,7 +4711,10 @@ class GameScene extends Phaser.Scene {
       // positionBuildButtonContents) et aucun survol n'existe au doigt pour l'infobulle
       // (attachHoverTooltip) -- ce texte reste donc le seul endroit qui le montre encore une fois
       // le bâtiment choisi pour construction.
-      const costSuffix = this.mobileLayout ? ` (Coût : ${this.formatResources(def.cost, true)})` : '';
+      // effectiveBuildingCost (bénédictions de Dévotion actives, voir GameState) : le coût réel
+      // facturé peut différer de def.cost, ce texte doit refléter celui qui sera vraiment prélevé.
+      const effectiveCost = GameState.effectiveBuildingCost(this.buildMode, def.cost);
+      const costSuffix = this.mobileLayout ? ` (Coût : ${this.formatResources(effectiveCost, true)})` : '';
       if (this.buildGhostHex) {
         const valid = this.isValidBuildSpot(this.buildGhostHex.col, this.buildGhostHex.row);
         text = `Construction : ${def.name}${costSuffix}\n`
@@ -4734,9 +4751,12 @@ class GameScene extends Phaser.Scene {
 
     this.upgradeCastleButton.setVisible(showUpgrade);
     if (showUpgrade) {
-      const affordable = GameState.canAfford(GameConfig.buildings.castle.cost);
+      // effectiveBuildingCost (Déesse de la guerre/Apogée céleste, voir GameState) : coût réel de
+      // cette amélioration, peut différer de GameConfig.buildings.castle.cost.
+      const castleCost = GameState.effectiveBuildingCost('castle', GameConfig.buildings.castle.cost);
+      const affordable = GameState.canAfford(castleCost);
       this.upgradeCastleButton
-        .setText(`Améliorer en Château — ${this.formatResources(GameConfig.buildings.castle.cost, true)}`)
+        .setText(`Améliorer en Château — ${this.formatResources(castleCost, true)}`)
         .setAlpha(this.paused ? 0.4 : (affordable ? 1 : 0.5));
     }
 
@@ -4783,6 +4803,16 @@ class GameScene extends Phaser.Scene {
     if (modalOpenNow !== this.lastModalOpen) {
       this.lastModalOpen = modalOpenNow;
       this.layoutHud();
+    }
+
+    // Signature des bénédictions actives (voir GameState.devotionTiers) : ne rafraîchit l'affichage
+    // des coûts de construction (voir refreshBuildButtonCosts) que quand elle change -- plusieurs
+    // bénédictions peuvent réduire ces coûts, et leur état actif/inactif peut basculer sans qu'aucun
+    // bâtiment ne soit posé/détruit (hystérésis, voir GameState.updateDevotionTiers).
+    const blessingSignature = GameState.devotionTiers.map((t) => (t.active ? t.choice : '')).join('|');
+    if (blessingSignature !== this.lastBlessingSignature) {
+      this.lastBlessingSignature = blessingSignature;
+      this.refreshBuildButtonCosts();
     }
 
     // Ouvre de force le choix de bénédiction dès qu'un nouveau palier de Dévotion est atteint
