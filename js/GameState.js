@@ -1856,20 +1856,38 @@ const GameState = {
     }
   },
 
-  // Tous les monstres vivants "adjacents" à celui donné (voir Artilleur/def_armee et Tour de
-  // siège/splashAllAdjacent ci-dessus) : même case ou case voisine (distance de Tchebychev <= 1 en
-  // colonne ET en rangée, colonne calculée avec enroulement cylindrique comme _findMonsterInRange)
-  // -- exclut le monstre lui-même.
+  // Monstres vivants "adjacents" à celui donné (voir Artilleur/def_armee et Tour de siège/
+  // splashAllAdjacent ci-dessus) : un pavé numérique à 8 cases autour de la cible (haut-gauche,
+  // haut, haut-droite, gauche, droite, bas-gauche, bas, bas-droite -- PAS la case de la cible
+  // elle-même, déjà gérée par le tir principal, voir _fireTowerShot) -- AU PLUS 8 monstres au total,
+  // demande utilisateur explicite après avoir mesuré empiriquement que la formation de la horde est
+  // bien plus dense qu'une vraie case de carte (jusqu'à ~24-29 monstres réels dans cette zone avant
+  // ce correctif, voir _findMultipleMonstersInRange plus bas pour un autre effet de cette même
+  // densité) : la formation empile plusieurs individus par case réelle (depthSpacingFactor plus
+  // serré qu'une colonne réelle, et 2 lignes de formation par vraie rangée, voir GameConfig.
+  // monsters) -- un seul représentant PAR CASE voisine (8 au maximum, jamais plus même si une case
+  // contient plusieurs monstres empilés) plutôt que de tous les compter.
   _findAllAdjacentMonsters(target) {
     const colWidth = GameConfig.hex.size * 1.5;
     const targetCol = HexUtils.wrapCol(Math.floor(target.x / colWidth), this.cols);
-    return Monsters.list.filter((m) => {
-      if (!m.alive || m === target) return false;
+    const targetRow = target.row;
+    const byCell = new Map();
+    for (const m of Monsters.list) {
+      if (!m.alive || m === target) continue;
       const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
-      const rawColDist = Math.abs(mCol - targetCol);
-      const colDist = Math.min(rawColDist, this.cols - rawColDist);
-      return colDist <= 1 && Math.abs(m.row - target.row) <= 1;
-    });
+      const rowOffset = m.row - targetRow;
+      if (Math.abs(rowOffset) > 1) continue;
+      // Décalage de colonne SIGNÉ (distingue voisin de gauche/droite pour la clé de case), corrigé
+      // pour l'enroulement cylindrique (voir HexUtils.wrapCol/_findMonsterInRange).
+      let colOffset = mCol - targetCol;
+      if (colOffset > this.cols / 2) colOffset -= this.cols;
+      if (colOffset < -this.cols / 2) colOffset += this.cols;
+      if (Math.abs(colOffset) > 1) continue;
+      if (colOffset === 0 && rowOffset === 0) continue; // case de la cible elle-même, pas un voisin
+      const cellKey = colOffset + ',' + rowOffset;
+      if (!byCell.has(cellKey)) byCell.set(cellKey, m);
+    }
+    return Array.from(byCell.values());
   },
 
   // Un seul adjacent choisi au hasard parmi _findAllAdjacentMonsters (voir Artilleur/def_armee) --
