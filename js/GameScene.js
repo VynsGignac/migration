@@ -98,7 +98,11 @@ class GameScene extends Phaser.Scene {
     // lecture audio tant qu'aucune interaction utilisateur n'a eu lieu (politique d'autoplay) --
     // this.sound.locked reflète cet état ; Phaser lève l'événement 'unlocked' dès le premier tap/
     // clic sur la page (le menu de démarrage, toujours ouvert à ce stade, en fournit un immédiat).
-    this.bgMusic = this.sound.add('bgMusic', { loop: true, volume: 0.35 });
+    // Volume initial repris des réglages sauvegardés localement (voir loadSettings/buildSettingsMenu,
+    // demande utilisateur explicite : "curseur pour regler le volume dans les parametres... sauvegardé
+    // localement") -- 0.35 par défaut si jamais réglé (première partie).
+    this.musicVolume = this.loadSettings().musicVolume;
+    this.bgMusic = this.sound.add('bgMusic', { loop: true, volume: this.musicVolume });
     if (this.sound.locked) {
       this.sound.once('unlocked', () => this.bgMusic.play());
     } else {
@@ -575,7 +579,7 @@ class GameScene extends Phaser.Scene {
   // déjà pour les éléments du HUD classique.
   isModalOpen() {
     return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen
-      || this.laborRoutingOpen || this.startMenuOpen || this.devotionPanelOpen;
+      || this.laborRoutingOpen || this.startMenuOpen || this.devotionPanelOpen || this.settingsOpen;
   }
 
   // Vrai si le pointeur est actuellement au-dessus d'un élément du HUD (bandeau/colonne, pavé de
@@ -972,6 +976,7 @@ class GameScene extends Phaser.Scene {
     this.buildResourceRouting();
     this.buildLaborRoutingPanel();
     this.buildDevotionPanel();
+    this.buildSettingsMenu();
     this.buildStartMenu();
 
     // Boutons dédiés Entrepôt/Université/Maison/Dévotion (demande utilisateur explicite, voir
@@ -1179,6 +1184,7 @@ class GameScene extends Phaser.Scene {
       this.layoutResourceRouting();
       this.layoutLaborRoutingPanel();
       this.layoutDevotionPanel();
+      this.layoutSettingsMenu();
       this.layoutStartMenu();
       this.clampZoomAndCamera();
     };
@@ -1318,6 +1324,30 @@ class GameScene extends Phaser.Scene {
 
   saveSlotKey(slot) {
     return `cylindreCitySave_${slot}`;
+  }
+
+  // Réglages persistants (voir buildSettingsMenu, demande utilisateur explicite : le volume de la
+  // musique doit survenir d'une session à l'autre) -- localStorage comme les sauvegardes de partie
+  // ci-dessus (même préfixe "cylindreCity"), mais une clé DISTINCTE : ce ne sont pas des données de
+  // partie (ne dépendent d'aucune sauvegarde/partie en cours, voir GameState.serialize).
+  settingsKey() {
+    return 'cylindreCitySettings';
+  }
+
+  // Toujours un objet complet avec des valeurs par défaut (musicVolume 0.35, même valeur que
+  // l'ancien réglage fixe avant l'ajout de ce curseur) : un appelant n'a jamais besoin de vérifier
+  // si une clé existe -- ni au tout premier lancement (rien en localStorage), ni après un
+  // localStorage corrompu/vidé par le navigateur (JSON.parse échoue, capturé ci-dessous).
+  loadSettings() {
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(this.settingsKey())) || {};
+    } catch (e) { saved = {}; }
+    return { musicVolume: 0.35, ...saved };
+  }
+
+  saveSettings(settings) {
+    try { localStorage.setItem(this.settingsKey(), JSON.stringify(settings)); } catch (e) {}
   }
 
   saveToSlot(slot) {
@@ -1869,6 +1899,147 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // Panneau "Paramètres" (bouton du menu de démarrage, voir onStartMenuSettings, demande
+  // utilisateur explicite : "un curseur pour regler le volume... sauvegardé localement") -- même
+  // coquille que buildLaborRoutingPanel ci-dessus (overlay + panneau + titre + fermer), mais un
+  // SEUL curseur (pas de boucle sur une liste de catégories/consommateurs) : le volume de la
+  // musique de fond (voir this.bgMusic, GameScene.create). S'ouvre PAR-DESSUS le menu de démarrage
+  // (profondeurs 1040+, au-dessus de son 1030/1031) plutôt qu'à sa place -- c'est le seul point
+  // d'entrée actuel (voir onStartMenuSettings), toujours déjà en pause à ce stade, mais le même
+  // garde-fou pausedBySettings que les autres panneaux ci-dessus reste posé par cohérence/robustesse
+  // si un second point d'entrée s'ajoutait un jour en cours de partie.
+  buildSettingsMenu() {
+    this.settingsOpen = false;
+    this.activeVolumeSliderDrag = false;
+
+    this.settingsOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.75)
+      .setOrigin(0, 0).setDepth(1040).setVisible(false).setInteractive();
+    this.settingsOverlay.on('pointerup', () => this.toggleSettingsMenu(false));
+    this.uiElements.push(this.settingsOverlay);
+
+    this.settingsPanel = this.add.rectangle(0, 0, 10, 10, 0x14202b, 0.97)
+      .setOrigin(0, 0).setDepth(1041).setStrokeStyle(2, 0xffd23f).setVisible(false).setInteractive();
+    this.uiElements.push(this.settingsPanel);
+
+    this.settingsTitle = this.add.text(0, 0, 'Paramètres', {
+      font: 'bold 16px sans-serif', color: '#ffd23f',
+    }).setDepth(1042).setVisible(false);
+    this.uiElements.push(this.settingsTitle);
+
+    this.settingsClose = this.add.text(0, 0, '✕', {
+      font: 'bold 15px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 9, y: 6 },
+    }).setDepth(1042).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.settingsClose.on('pointerup', () => this.toggleSettingsMenu(false));
+    this.uiElements.push(this.settingsClose);
+
+    this.settingsVolumeLabel = this.add.text(0, 0, 'Volume musique', { font: '13px sans-serif', color: '#ffffff' })
+      .setDepth(1042).setVisible(false);
+    // Piste purement VISUELLE + zone cliquable bien plus haute (hitZone) : même correctif qu'ailleurs
+    // dans ce fichier (voir refreshResourceRoutingRows), un curseur de 10px de haut est une cible
+    // minuscule au doigt.
+    this.settingsVolumeTrack = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 1)
+      .setOrigin(0, 0.5).setStrokeStyle(1, 0x3a4a55).setDepth(1042).setVisible(false);
+    this.settingsVolumeFill = this.add.rectangle(0, 0, 10, 10, 0xffd23f, 1)
+      .setOrigin(0, 0.5).setDepth(1043).setVisible(false);
+    this.settingsVolumeHandle = this.add.rectangle(0, 0, 14, 20, 0xffffff, 1)
+      .setOrigin(0.5, 0.5).setStrokeStyle(1, 0x10151a).setDepth(1044).setVisible(false);
+    this.settingsVolumePercentText = this.add.text(0, 0, '', { font: 'bold 13px sans-serif', color: '#ffd23f' })
+      .setOrigin(0, 0.5).setDepth(1042).setVisible(false);
+    this.settingsVolumeHitZone = this.add.zone(0, 0, 10, 10).setOrigin(0, 0.5).setDepth(1045).setInteractive({ useHandCursor: true });
+    this.uiElements.push(
+      this.settingsVolumeLabel, this.settingsVolumeTrack, this.settingsVolumeFill,
+      this.settingsVolumeHandle, this.settingsVolumePercentText, this.settingsVolumeHitZone
+    );
+    this.settingsVolumeHitZone.on('pointerdown', (pointer) => {
+      this.activeVolumeSliderDrag = true;
+      this.updateVolumeSliderDrag(pointer);
+    });
+  }
+
+  // Même principe qu'updateSliderDrag/updateLaborSliderDrag ci-dessus, mais applique directement le
+  // volume à bgMusic (pas de redistribution entre plusieurs curseurs, il n'y en a qu'un) et
+  // persiste tout de suite (voir saveSettings, demande utilisateur explicite : "sauvegardé
+  // localement") -- à chaque déplacement, pas seulement au relâcher, pour ne rien perdre si l'appli
+  // est fermée en cours de glisser.
+  updateVolumeSliderDrag(pointer) {
+    if (!this.activeVolumeSliderDrag) return;
+    const bounds = this.settingsVolumeTrack.getBounds();
+    const percent = Math.max(0, Math.min(100, ((pointer.x - bounds.x) / bounds.width) * 100));
+    this.musicVolume = percent / 100;
+    this.bgMusic.setVolume(this.musicVolume);
+    this.saveSettings({ ...this.loadSettings(), musicVolume: this.musicVolume });
+    this.refreshSettingsMenu();
+  }
+
+  refreshSettingsMenu() {
+    const panel = this.settingsPanel;
+    const labelX = panel.x + 20;
+    const labelWidth = 140;
+    const percentWidth = 46;
+    const trackX = labelX + labelWidth;
+    const trackWidth = Math.max(60, panel.width - labelWidth - percentWidth - 40);
+    const trackHeight = 10;
+    const hitZoneHeight = 32;
+    const y = panel.y + 60;
+
+    this.settingsVolumeLabel.setPosition(labelX, y - 9);
+    this.positionResourceZone(this.settingsVolumeTrack, trackX, y, trackWidth, trackHeight);
+    this.positionResourceZone(this.settingsVolumeHitZone, trackX, y, trackWidth, hitZoneHeight);
+    this.settingsVolumeHitZone.setInteractive();
+    const percent = this.musicVolume * 100;
+    this.settingsVolumeFill.setPosition(trackX, y).setSize(Math.max(1, trackWidth * percent / 100), trackHeight);
+    this.settingsVolumeHandle.setPosition(trackX + trackWidth * percent / 100, y);
+    this.settingsVolumePercentText.setText(`${Math.round(percent)} %`).setPosition(trackX + trackWidth + 12, y);
+  }
+
+  layoutSettingsMenu() {
+    if (!this.settingsPanel) return; // pas encore construit (premier appel avant create)
+    const w = this.scale.width, h = this.scale.height;
+    this.settingsOverlay.setSize(w, h);
+
+    const panelWidth = Math.min(w - 32, 420);
+    const panelHeight = Math.min(h - 24, 160);
+    const px = (w - panelWidth) / 2;
+    const py = (h - panelHeight) / 2;
+    this.settingsPanel.setPosition(px, py).setSize(panelWidth, panelHeight);
+    this.settingsTitle.setPosition(px + 16, py + 12).setFontSize(this.mobileLayout ? 13 : 16);
+    this.settingsClose.setPosition(px + panelWidth - this.settingsClose.width - 10, py + 8);
+
+    if (this.settingsOpen) this.refreshSettingsMenu();
+  }
+
+  // Même principe que toggleLaborRoutingPanel/toggleResourceRouting ci-dessus (pause automatique
+  // tant que le panneau est ouvert, levée seulement si c'est CETTE ouverture qui l'a posée) --
+  // s'ouvre par-dessus le menu de démarrage, déjà en pause à ce stade (voir le commentaire sur
+  // buildSettingsMenu), ce garde-fou ne se déclenche donc pas en pratique aujourd'hui.
+  toggleSettingsMenu(forceState) {
+    this.settingsOpen = forceState !== undefined ? forceState : !this.settingsOpen;
+    const visible = this.settingsOpen;
+    this.settingsOverlay.setVisible(visible);
+    this.settingsPanel.setVisible(visible);
+    this.settingsTitle.setVisible(visible);
+    this.settingsClose.setVisible(visible);
+    this.settingsVolumeLabel.setVisible(visible);
+    this.settingsVolumeTrack.setVisible(visible);
+    this.settingsVolumeFill.setVisible(visible);
+    this.settingsVolumeHandle.setVisible(visible);
+    this.settingsVolumePercentText.setVisible(visible);
+    if (!visible) {
+      this.activeVolumeSliderDrag = false;
+      this.settingsVolumeHitZone.disableInteractive();
+    }
+
+    if (visible) {
+      this.pausedBySettings = !this.paused;
+      if (!this.paused) this.togglePause();
+      this.layoutSettingsMenu();
+      this.refreshSettingsMenu();
+    } else if (this.pausedBySettings) {
+      this.pausedBySettings = false;
+      if (this.paused) this.togglePause();
+    }
+  }
+
   // Menu de démarrage (demande utilisateur explicite, v0.4 : "un menu de demarrage au lancement
   // du jeu... quelque chose tres simple, avec juste des boutons Nouvelle partie/Charger/
   // Parametre/Quitter... la version doit etre affiché") -- plein écran, toujours ouvert dès la
@@ -2039,10 +2210,11 @@ class GameScene extends Phaser.Scene {
     this.toggleSaveMenu(true, true); // opaque : voir toggleSaveMenu
   }
 
-  // "Paramètres" : rien à régler pour l'instant (demande utilisateur explicite : "pour l'instant
-  // quelque chose tres simple") -- juste un accusé de réception, le menu reste ouvert.
+  // "Paramètres" : ouvre le panneau dédié (voir buildSettingsMenu/toggleSettingsMenu, demande
+  // utilisateur explicite : curseur de volume) par-dessus le menu de démarrage, qui reste ouvert
+  // dessous.
   onStartMenuSettings() {
-    this.showToast('Paramètres : à venir');
+    this.toggleSettingsMenu(true);
   }
 
   // "Quitter" : ferme vraiment l'appli sur Android (voir @capacitor/app, ajouté pour ce bouton --
@@ -4579,6 +4751,12 @@ class GameScene extends Phaser.Scene {
       if (this.activeLaborSliderDrag && pointer.isDown) this.updateLaborSliderDrag(pointer);
       return;
     }
+    // Même principe que resourceRoutingOpen/laborRoutingOpen ci-dessus, pour le curseur de volume
+    // (voir buildSettingsMenu/updateVolumeSliderDrag).
+    if (this.settingsOpen) {
+      if (this.activeVolumeSliderDrag && pointer.isDown) this.updateVolumeSliderDrag(pointer);
+      return;
+    }
     if (this.isModalOpen()) return;
     // Seul le mode Route fait suivre l'aperçu au pointeur (aperçu avant de peindre en glissant).
     // Pour les autres bâtiments, le fantôme reste sur la case sélectionnée par tap (voir
@@ -4624,6 +4802,10 @@ class GameScene extends Phaser.Scene {
     }
     if (this.resourceRoutingOpen) {
       this.activeSliderDrag = null;
+      return;
+    }
+    if (this.settingsOpen) {
+      this.activeVolumeSliderDrag = false;
       return;
     }
     if (this.isModalOpen()) return;
@@ -4930,6 +5112,7 @@ class GameScene extends Phaser.Scene {
       this.layoutResourceRouting();
       this.layoutLaborRoutingPanel();
       this.layoutDevotionPanel();
+      this.layoutSettingsMenu();
       this.layoutStartMenu();
     }
     // Même filet que ci-dessus, mais pour la visibilité des boutons Entrepôt/Université/Maison/
