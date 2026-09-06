@@ -27,6 +27,7 @@ Copy-Item "$root\manifest.json" $www
 Copy-Item "$root\sw.js" $www
 Copy-Item "$root\js" "$www\js" -Recurse
 Copy-Item "$root\icons" "$www\icons" -Recurse
+Copy-Item "$root\audio" "$www\audio" -Recurse
 
 Write-Host "2/3 Synchronisation du projet Android (Capacitor)..." -ForegroundColor Cyan
 Push-Location $root

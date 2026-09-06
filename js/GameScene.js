@@ -72,6 +72,16 @@ class GameScene extends Phaser.Scene {
     this.load.image('goblinIcon4', GameAssets.goblinIcon4);
     this.load.image('chiefIcon', GameAssets.chiefIcon);
     this.load.image('warlordIcon', GameAssets.warlordIcon);
+
+    // Musique de fond (demande utilisateur explicite) : fichier externe, PAS en base64 comme les
+    // images ci-dessus (voir js/assets.js) -- une piste audio de plusieurs Mo gonflerait ce fichier
+    // JS dans les mêmes proportions pour un bénéfice inverse (le navigateur ne peut plus la mettre
+    // en cache/la streamer comme un fichier normal), et rien n'exige plus la compatibilité "artifact
+    // en un seul fichier HTML" pour ce projet (index.html charge déjà tous ses .js séparément).
+    // Dossier "audio/" à la racine (PAS "assets/", entièrement ignoré par git -- voir .gitignore,
+    // réservé à l'art source déjà intégré en base64) : ce fichier doit vraiment être publié/embarqué
+    // tel quel dans l'APK, sinon la musique manquerait sur le site et l'appli une fois publiés.
+    this.load.audio('bgMusic', 'audio/miravale-medieval.mp3');
   }
 
   create() {
@@ -83,6 +93,17 @@ class GameScene extends Phaser.Scene {
     this.productionAccum = 0;
     this.infoPanelOverrideText = null;
     this.paused = false;
+
+    // Musique de fond en boucle (demande utilisateur explicite) : les navigateurs bloquent la
+    // lecture audio tant qu'aucune interaction utilisateur n'a eu lieu (politique d'autoplay) --
+    // this.sound.locked reflète cet état ; Phaser lève l'événement 'unlocked' dès le premier tap/
+    // clic sur la page (le menu de démarrage, toujours ouvert à ce stade, en fournit un immédiat).
+    this.bgMusic = this.sound.add('bgMusic', { loop: true, volume: 0.35 });
+    if (this.sound.locked) {
+      this.sound.once('unlocked', () => this.bgMusic.play());
+    } else {
+      this.bgMusic.play();
+    }
 
     // Largeur d'un tour complet du cylindre, et hauteur totale approximative du monde
     this.worldWidthPx = HexUtils.worldPixelWidth(this.cols, this.hexSize);
