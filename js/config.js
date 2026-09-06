@@ -606,15 +606,13 @@ const GameConfig = {
     // Donjon (demande utilisateur explicite -- nom repris du bâtiment de base d'avant son
     // renommage en "Fortin", id interne "keep" pour ne pas collisionner) : portée nettement
     // supérieure au Fortin -- amélioration "sniper", débloquée par Arc long (voir techTree.nodes.
-    // def_arcLong). fireInterval 2 -> 3 (demande utilisateur explicite) : sa valeur ne vient plus
-    // du débit brut (inchangé par rapport au Fortin dont il hérite sinon) mais de la portée, qui
-    // lui permet d'engager la horde bien plus tôt -- voir noWorker ci-dessous. noWorker: true
-    // (demande utilisateur explicite, "sans ouvrier") : fonctionne toujours à pleine efficacité
-    // sans aucun travailleur affecté, comme le Recycleur (voir buildings.recycler/allocateLabor/
-    // tickProduction section "Tours") -- ne consomme donc jamais de main-d'œuvre au pool commun.
+    // def_arcLong). fireInterval 2 -> 3 (demande utilisateur explicite) : sa valeur vient de sa
+    // portée (engage la horde bien plus tôt), pas d'un débit brut plus élevé -- même besoin en
+    // main-d'œuvre que les autres tours (demande utilisateur explicite : "toutes les tours ont le
+    // même besoin en ouvrier que les bâtiments classiques"), pas d'exemption façon Recycleur.
     keep: {
       name: 'Donjon', cost: { planks: 12, stoneBlocks: 12 }, color: 0x4a3a2a,
-      kind: 'tower', range: 10, fireInterval: 3, damage: 1, noWorker: true,
+      kind: 'tower', range: 10, fireInterval: 3, damage: 1,
       ruinLoot: { planks: 15, stoneBlocks: 10 },
     },
     // Tour de siège (demande utilisateur explicite) : cadence très lente (1 tir/8s, 4x plus lent

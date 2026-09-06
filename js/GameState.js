@@ -919,11 +919,12 @@ const GameState = {
         houses.push({ col, row, population: tile.population, remaining: tile.population });
       } else if (
         (def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower' || def.kind === 'shrine')
-        && tile.type !== 'recycler' && !def.noWorker
+        && tile.type !== 'recycler'
       ) {
-        // Recycleur et bâtiments def.noWorker (voir buildings.keep/tickProduction section "Tours")
-        // exclus : toujours à pleine efficacité sans main-d'œuvre, ça ne servirait qu'à détourner
-        // inutilement des habitants d'un bâtiment qui, lui, en profiterait vraiment.
+        // Recycleur exclu (voir buildings.recycler/tickProduction) : toujours à pleine efficacité
+        // sans main-d'œuvre, ça ne servirait qu'à détourner inutilement des habitants d'un
+        // bâtiment qui, lui, en profiterait vraiment. Le Donjon N'EST PAS dans ce cas (demande
+        // utilisateur explicite : toutes les tours ont le même besoin en ouvrier).
         const [col, row] = key.split(',').map(Number);
         // Apprentissage (voir techTree.nodes.ind_apprentissage) / Service militaire (voir
         // techTree.nodes.def_service, même principe pour les tours -- 2 habitants gratuits depuis
@@ -1616,9 +1617,7 @@ const GameState = {
       if (!this._hasAdjacentRoad(col, row)) continue;
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
-      // def.noWorker (Donjon, voir buildings.keep/allocateLabor) : toujours 100 %, même mécanique
-      // que le Recycleur.
-      const efficiency = def.noWorker ? 1 : this.efficiencyForWorkers(workers, def.capMultiplier || 1);
+      const efficiency = this.efficiencyForWorkers(workers, def.capMultiplier || 1);
 
       tile.fireCooldown -= dtSeconds * efficiency * (1 + tbd6DevotionBonus);
       if (tile.fireCooldown > 0) continue;

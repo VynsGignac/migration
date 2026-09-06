@@ -714,13 +714,7 @@ class GameScene extends Phaser.Scene {
       // explicite, sinon un joueur ne devinerait pas ces mécaniques rien qu'avec portée/dégâts.
       if (def.multiShot) lines.push(`Tire sur ${def.multiShot} ennemis différents à la fois.`);
       if (def.splashAllAdjacent) lines.push('Touche aussi tous les ennemis adjacents à sa cible.');
-      // def.noWorker (Donjon, voir buildings.keep/GameState.allocateLabor) : même message que le
-      // Recycleur (voir plus haut, buildingInfoText branche "extractor") -- pas de ligne main-
-      // d'œuvre, ça n'aurait aucun sens ici.
-      if (active) {
-        if (def.noWorker) lines.push('Fonctionne seul, sans main-d\'œuvre (toujours à pleine efficacité).');
-        else lines.push(this.laborStatusLine(col, row, def));
-      }
+      if (active) lines.push(this.laborStatusLine(col, row, def));
       if (tile.type === 'donjon') {
         if (tile.upgradeTo) {
           // Amélioration en cours (voir GameState.startFortinUpgrade) : le Fortin reste actif
