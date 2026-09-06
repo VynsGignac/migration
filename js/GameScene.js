@@ -1920,17 +1920,49 @@ class GameScene extends Phaser.Scene {
     const w = window.innerWidth, h = window.innerHeight;
     this.startMenuOverlay.setSize(w, h);
 
-    const titleFontSize = this.mobileLayout ? 26 : 36;
-    this.startMenuTitle.setFontSize(titleFontSize).setPosition(w / 2, h * 0.28);
-    this.startMenuVersion.setPosition(w / 2, h * 0.28 + titleFontSize * 0.9);
+    // Compact (même seuil que le pavé de construction mobile en paysage, voir layoutHud) : écran
+    // bas -- polices/marges réduites, ET tout le bloc (titre + version + boutons) est désormais
+    // CENTRÉ sur la hauteur réellement disponible (mesurée une fois les tailles de police fixées)
+    // plutôt que positionné à des pourcentages fixes (28 %/48 %) qui supposaient une hauteur
+    // d'écran confortable -- sur un téléphone en paysage assez bas, "Quitter" débordait sous le
+    // bas de l'écran (bug vécu pour de vrai, capture d'écran à l'appui).
+    const compact = h < 420;
+    const titleFontSize = compact ? 20 : (this.mobileLayout ? 26 : 36);
+    const versionFontSize = compact ? 11 : 14;
+    const btnFontSize = compact ? 12 : 16;
+    const btnPadX = compact ? 16 : 22;
+    const btnPadY = compact ? 7 : 12;
+    const btnGap = compact ? 6 : 14;
+    const titleToVersionGap = titleFontSize * 0.9;
+    const versionToButtonsGap = compact ? 12 : 28;
 
+    this.startMenuTitle.setFontSize(titleFontSize);
+    this.startMenuVersion.setFontSize(versionFontSize);
     const order = ['newGame', 'load', 'settings', 'quit'];
-    const btnGap = 14;
-    let y = h * 0.48;
+    for (const key of order) {
+      this.startMenuButtons[key].setFontSize(btnFontSize).setPadding(btnPadX, btnPadY, btnPadX, btnPadY);
+    }
+
+    const buttonsHeight = order.reduce((sum, key) => sum + this.startMenuButtons[key].height, 0)
+      + btnGap * (order.length - 1);
+    const totalHeight = this.startMenuTitle.height + titleToVersionGap + this.startMenuVersion.height
+      + versionToButtonsGap + buttonsHeight;
+    // Centré verticalement quand tout tient, sinon collé en haut avec une petite marge (jamais une
+    // position négative) -- s'adapte à toute hauteur d'écran au lieu de déborder dessous.
+    const margin = Math.min(20, h * 0.04);
+    let y = Math.max(margin, (h - totalHeight) / 2);
+
+    y += this.startMenuTitle.height / 2;
+    this.startMenuTitle.setPosition(w / 2, y);
+    y += this.startMenuTitle.height / 2 + titleToVersionGap + this.startMenuVersion.height / 2;
+    this.startMenuVersion.setPosition(w / 2, y);
+    y += this.startMenuVersion.height / 2 + versionToButtonsGap;
+
     for (const key of order) {
       const btn = this.startMenuButtons[key];
+      y += btn.height / 2;
       btn.setPosition(w / 2, y);
-      y += btn.height + btnGap;
+      y += btn.height / 2 + btnGap;
     }
   }
 
