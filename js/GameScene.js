@@ -93,6 +93,12 @@ class GameScene extends Phaser.Scene {
     this.productionAccum = 0;
     this.infoPanelOverrideText = null;
     this.paused = false;
+    // Toujours faux à une création de scène fraîche (premier lancement OU après un restartGame(),
+    // voir openInGameMenu/onStartMenuNewGame) : le menu de démarrage qui va suivre est alors le
+    // tout premier, rien à "continuer" -- sans cette remise à zéro explicite, this.startMenuInGame
+    // survivrait tel quel à un scene.restart() (propriété d'instance ordinaire, PAS réinitialisée
+    // par Phaser) et le menu neuf afficherait "Continuer" à tort.
+    this.startMenuInGame = false;
 
     // Musique de fond en boucle (demande utilisateur explicite) : les navigateurs bloquent la
     // lecture audio tant qu'aucune interaction utilisateur n'a eu lieu (politique d'autoplay) --
@@ -945,9 +951,9 @@ class GameScene extends Phaser.Scene {
     this.menuButton = this.add.text(0, 0, '☰', {
       font: 'bold 18px sans-serif', color: '#ffffff', backgroundColor: '#2e5339', padding: { x: 10, y: 8 },
     }).setDepth(1002).setInteractive({ useHandCursor: true });
-    this.menuButton.on('pointerup', () => this.toggleSaveMenu());
+    this.menuButton.on('pointerup', () => this.openInGameMenu());
     this.uiElements.push(this.menuButton);
-    this.attachHoverTooltip(this.menuButton, 'btn:menu', () => 'Menu (sauvegardes, options)', { tapToggle: false });
+    this.attachHoverTooltip(this.menuButton, 'btn:menu', () => 'Menu', { tapToggle: false });
 
     // Chrono : temps de jeu écoulé (this.elapsed, déjà en pause avec le reste de la simulation --
     // voir update(), incrémenté seulement dans le bloc "if (!this.paused)") -- juste besoin de
@@ -2066,7 +2072,13 @@ class GameScene extends Phaser.Scene {
     }).setOrigin(0.5, 0.5).setDepth(1031);
     this.uiElements.push(this.startMenuVersion);
 
+    // "Continuer" (demande utilisateur explicite : "un menu plus complet avec les memes options
+    // que le menu principal + un bouton continuer pour fermer le menu") -- en tête de liste, seul
+    // bouton propre au réemploi de ce menu en cours de partie (voir openInGameMenu/
+    // onInGameMenuContinue) : masqué juste après cette boucle pour le tout premier menu de
+    // démarrage (this.startMenuInGame pas encore vrai à ce stade, rien à "continuer").
     const buttonDefs = [
+      { key: 'continue', text: 'Continuer', action: () => this.onInGameMenuContinue() },
       { key: 'newGame', text: 'Nouvelle partie', action: () => this.onStartMenuNewGame() },
       { key: 'load', text: 'Charger', action: () => this.onStartMenuLoad() },
       { key: 'settings', text: 'Paramètres', action: () => this.onStartMenuSettings() },
@@ -2081,6 +2093,7 @@ class GameScene extends Phaser.Scene {
       this.startMenuButtons[key] = btn;
       this.uiElements.push(btn);
     }
+    this.startMenuButtons.continue.setVisible(false);
     // Pause posée par pauseForStartMenu(), PAS ici : buildMenuToggle/confirmButton/buildButtons
     // n'existent pas encore à ce stade de buildHud() (créés plus loin) -- setBuildButtonsEnabled()
     // y référence buildMenuToggle directement et plantait (TypeError: Cannot read properties of
@@ -2133,7 +2146,12 @@ class GameScene extends Phaser.Scene {
 
     this.startMenuTitle.setFontSize(titleFontSize);
     this.startMenuVersion.setFontSize(versionFontSize);
-    const order = ['newGame', 'load', 'settings', 'quit'];
+    // "Continuer" (voir buildStartMenu/openInGameMenu, demande utilisateur explicite) : seulement
+    // en cours de partie, en tête de liste (action la plus probable) -- absent du tout premier menu
+    // de démarrage (rien à reprendre à ce stade).
+    const order = this.startMenuInGame
+      ? ['continue', 'newGame', 'load', 'settings', 'quit']
+      : ['newGame', 'load', 'settings', 'quit'];
     for (const key of order) {
       this.startMenuButtons[key].setFontSize(btnFontSize).setPadding(btnPadX, btnPadY, btnPadX, btnPadY);
     }
@@ -2185,13 +2203,27 @@ class GameScene extends Phaser.Scene {
     for (const key in this.startMenuButtons) {
       this.startMenuButtons[key].setVisible(true).setInteractive({ useHandCursor: true });
     }
+    // "Continuer" (voir buildStartMenu/openInGameMenu) : seulement pertinent en cours de partie --
+    // masqué explicitement ici plutôt que dans la boucle générique ci-dessus, sinon il
+    // réapparaîtrait par erreur au tout premier menu de démarrage (rien à reprendre à ce stade).
+    if (!this.startMenuInGame) {
+      this.startMenuButtons.continue.setVisible(false).disableInteractive();
+    }
   }
 
-  // "Nouvelle partie" : le monde est déjà généré neuf (voir create(), qui pose l'Entrepôt de
-  // départ etc. AVANT que ce menu ne s'affiche par-dessus) -- il suffit donc de fermer le menu et
-  // de relever la pause posée par buildStartMenu(), sans repasser par togglePause() (même raison :
-  // pas de toast "Reprise du jeu" à l'entrée en jeu).
+  // "Nouvelle partie" : au tout premier menu de démarrage, le monde est déjà généré neuf (voir
+  // create(), qui pose l'Entrepôt de départ etc. AVANT que ce menu ne s'affiche par-dessus) -- il
+  // suffit donc de fermer le menu et de relever la pause posée par buildStartMenu(), sans repasser
+  // par togglePause() (même raison : pas de toast "Reprise du jeu" à l'entrée en jeu). Depuis le
+  // menu rouvert EN COURS DE PARTIE (voir openInGameMenu, this.startMenuInGame), agit au contraire
+  // comme un vrai redémarrage (demande utilisateur explicite : "le bouton nouvelle partie ferait
+  // office de redemarrer") -- voir restartGame, qui régénère tout et relance intégralement create()
+  // (remet donc lui-même startMenuInGame à sa valeur par défaut, false).
   onStartMenuNewGame() {
+    if (this.startMenuInGame) {
+      this.restartGame();
+      return;
+    }
     this.hideStartMenu();
     this.paused = false;
     this.pauseButton.setText('⏸');
@@ -2203,11 +2235,44 @@ class GameScene extends Phaser.Scene {
   // gère déjà tout (choix d'emplacement, désérialisation). startMenuPendingReturn : si ce panneau
   // se referme SANS qu'un chargement ait réussi (voir toggleSaveMenu/loadFromSlot), le menu de
   // démarrage revient plutôt que de laisser voir la partie neuve en pause en dessous (demande
-  // utilisateur explicite).
+  // utilisateur explicite). opaque SEULEMENT depuis le tout premier menu (this.startMenuInGame
+  // faux) : depuis le menu rouvert en cours de partie, la partie derrière est réelle et déjà en
+  // pause, translucide comme les autres panneaux modaux (voir toggleSaveMenu, même raisonnement
+  // inversé).
   onStartMenuLoad() {
     this.hideStartMenu();
     this.startMenuPendingReturn = true;
-    this.toggleSaveMenu(true, true); // opaque : voir toggleSaveMenu
+    this.toggleSaveMenu(true, !this.startMenuInGame);
+  }
+
+  // Bouton ☰ (voir menuButton, remplace l'ancien accès direct à toggleSaveMenu) : rouvre ce même
+  // menu de démarrage EN COURS DE PARTIE, avec les mêmes options (Nouvelle partie/Charger/
+  // Paramètres/Quitter) plus "Continuer" pour simplement refermer -- demande utilisateur explicite :
+  // "un menu plus complet avec les memes options que le menu principal + un bouton continuer...
+  // nouvelle partie ferait office de redemarrer". Toujours mis en pause à l'ouverture, comme les
+  // autres panneaux modaux de ce fichier (voir togglePause), mais avec le même garde-fou
+  // pausedByX que resourceRouting/laborRouting/settings : ne relève la pause à la fermeture
+  // (onInGameMenuContinue) QUE si c'est cette ouverture-ci qui l'a posée -- un joueur déjà en pause
+  // manuellement avant d'ouvrir ce menu le reste après l'avoir refermé.
+  openInGameMenu() {
+    if (this.gameOverOpen) return;
+    this.startMenuInGame = true;
+    this.pausedByInGameMenu = !this.paused;
+    if (!this.paused) this.togglePause();
+    this.showStartMenuAgain();
+    this.layoutStartMenu();
+  }
+
+  // "Continuer" (voir openInGameMenu ci-dessus) : referme ce menu et relève la pause SEULEMENT si
+  // cette ouverture précise l'avait posée (voir pausedByInGameMenu) -- fermer par un autre bouton
+  // (Paramètres, Nouvelle partie, Charger) laisse volontairement le jeu en pause, exactement comme
+  // toggleSaveMenu/les autres panneaux modaux de ce fichier.
+  onInGameMenuContinue() {
+    this.hideStartMenu();
+    if (this.pausedByInGameMenu) {
+      this.pausedByInGameMenu = false;
+      if (this.paused) this.togglePause();
+    }
   }
 
   // "Paramètres" : ouvre le panneau dédié (voir buildSettingsMenu/toggleSettingsMenu, demande
