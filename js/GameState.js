@@ -919,11 +919,11 @@ const GameState = {
         houses.push({ col, row, population: tile.population, remaining: tile.population });
       } else if (
         (def.kind === 'extractor' || def.kind === 'processor' || def.kind === 'tower' || def.kind === 'shrine')
-        && tile.type !== 'recycler'
+        && tile.type !== 'recycler' && !def.noWorker
       ) {
-        // Recycleur exclu (voir buildings.recycler/tickProduction) : toujours à pleine efficacité
-        // sans main-d'œuvre, ça ne servirait qu'à détourner inutilement des habitants d'un
-        // bâtiment qui, lui, en profiterait vraiment.
+        // Recycleur et bâtiments def.noWorker (voir buildings.keep/tickProduction section "Tours")
+        // exclus : toujours à pleine efficacité sans main-d'œuvre, ça ne servirait qu'à détourner
+        // inutilement des habitants d'un bâtiment qui, lui, en profiterait vraiment.
         const [col, row] = key.split(',').map(Number);
         // Apprentissage (voir techTree.nodes.ind_apprentissage) / Service militaire (voir
         // techTree.nodes.def_service, même principe pour les tours -- 2 habitants gratuits depuis
@@ -1616,7 +1616,9 @@ const GameState = {
       if (!this._hasAdjacentRoad(col, row)) continue;
 
       const workers = labor.get(key) ? labor.get(key).workers : 0;
-      const efficiency = this.efficiencyForWorkers(workers, def.capMultiplier || 1);
+      // def.noWorker (Donjon, voir buildings.keep/allocateLabor) : toujours 100 %, même mécanique
+      // que le Recycleur.
+      const efficiency = def.noWorker ? 1 : this.efficiencyForWorkers(workers, def.capMultiplier || 1);
 
       tile.fireCooldown -= dtSeconds * efficiency * (1 + tbd6DevotionBonus);
       if (tile.fireCooldown > 0) continue;
@@ -1902,29 +1904,35 @@ const GameState = {
   // rayon d'action d'une tour. La position d'un monstre étant continue (pixels), on la convertit
   // en colonne approximative pour la comparer à la zone (les mêmes cases que celles surlignées
   // par redrawActionZone).
-  _findMonsterInRange(col, row, range) {
-    const colWidth = GameConfig.hex.size * 1.5;
-    const cells = HexUtils.hexesInRange(col, row, range, this.cols, this.rows);
-    const cellSet = new Set(cells.map(c => c.col + ',' + c.row));
-
-    let closest = null;
-    let closestDist = Infinity;
-    for (const m of Monsters.list) {
-      if (!m.alive) continue;
-      const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
-      if (!cellSet.has(mCol + ',' + m.row)) continue;
-      const dist = Math.abs(m.row - row) + Math.abs(mCol - col);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = m;
-      }
-    }
-    return closest;
+  // Poids d'une cible selon sa distance en RANGÉE à la tour, PAS sa distance totale (demande
+  // utilisateur explicite : "plus un monstre est proche de la ligne de la tour (en face de la
+  // tour), plus il a de chance de se faire tirer dessus... qu'une tour nettoie globalement devant
+  // elle et ne se retrouve pas à tirer sur des gobelins qui ne menacent rien"). m.row ne change
+  // JAMAIS après Monsters.init (chaque monstre avance en ligne droite dans sa propre rangée) : un
+  // monstre de la même rangée que la tour repassera indéfiniment dans son couloir, donc une vraie
+  // menace récurrente pour CETTE tour précisément -- contrairement à un monstre juste de passage
+  // en portée grâce à une rangée voisine, qui ne repassera jamais par cette case. Décroissance
+  // harmonique simple (1, 1/2, 1/3, ...) : nette mais pas un tout-ou-rien.
+  _targetRowWeight(rowDist) {
+    return 1 / (1 + rowDist);
   },
 
-  // Comme _findMonsterInRange, mais renvoie jusqu'à maxCount monstres DISTINCTS (les plus proches
-  // d'abord) au lieu d'un seul -- voir Château/multiShot, tickProduction section "Tours".
-  _findMultipleMonstersInRange(col, row, range, maxCount) {
+  // Tire une cible au hasard parmi candidates ([{ m, weight }]), pondérée par weight -- remplace
+  // l'ancien choix déterministe "la plus proche" (qui donnait autant de poids à un monstre très
+  // excentré en rangée mais proche en colonne qu'à un monstre pile dans l'axe de la tour) par un
+  // choix probabiliste favorisant l'alignement de rangée (voir _targetRowWeight ci-dessus).
+  _pickWeightedMonster(candidates) {
+    if (candidates.length === 0) return null;
+    const totalWeight = candidates.reduce((sum, c) => sum + c.weight, 0);
+    let roll = Math.random() * totalWeight;
+    for (const c of candidates) {
+      roll -= c.weight;
+      if (roll <= 0) return c.m;
+    }
+    return candidates[candidates.length - 1].m;
+  },
+
+  _findMonsterInRange(col, row, range) {
     const colWidth = GameConfig.hex.size * 1.5;
     const cells = HexUtils.hexesInRange(col, row, range, this.cols, this.rows);
     const cellSet = new Set(cells.map(c => c.col + ',' + c.row));
@@ -1934,10 +1942,33 @@ const GameState = {
       if (!m.alive) continue;
       const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
       if (!cellSet.has(mCol + ',' + m.row)) continue;
-      candidates.push({ m, dist: Math.abs(m.row - row) + Math.abs(mCol - col) });
+      candidates.push({ m, weight: this._targetRowWeight(Math.abs(m.row - row)) });
     }
-    candidates.sort((a, b) => a.dist - b.dist);
-    return candidates.slice(0, maxCount).map((c) => c.m);
+    return this._pickWeightedMonster(candidates);
+  },
+
+  // Comme _findMonsterInRange, mais renvoie jusqu'à maxCount monstres DISTINCTS (tirage pondéré
+  // sans remise -- voir _pickWeightedMonster/_targetRowWeight) au lieu d'un seul -- voir Château/
+  // multiShot, tickProduction section "Tours".
+  _findMultipleMonstersInRange(col, row, range, maxCount) {
+    const colWidth = GameConfig.hex.size * 1.5;
+    const cells = HexUtils.hexesInRange(col, row, range, this.cols, this.rows);
+    const cellSet = new Set(cells.map(c => c.col + ',' + c.row));
+
+    const pool = [];
+    for (const m of Monsters.list) {
+      if (!m.alive) continue;
+      const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
+      if (!cellSet.has(mCol + ',' + m.row)) continue;
+      pool.push({ m, weight: this._targetRowWeight(Math.abs(m.row - row)) });
+    }
+    const picked = [];
+    for (let i = 0; i < maxCount && pool.length > 0; i++) {
+      const m = this._pickWeightedMonster(pool);
+      picked.push(m);
+      pool.splice(pool.findIndex((c) => c.m === m), 1);
+    }
+    return picked;
   },
 
   // Vrai si un monstre vivant occupe PRÉCISÉMENT cette case (voir _findMonsterInRange ci-dessus
