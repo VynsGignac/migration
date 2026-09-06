@@ -135,11 +135,23 @@ const GameConfig = {
   // openResourceRouting). "consumers" = les types de bâtiments listés dans cet onglet, dans
   // l'ordre d'affichage ; "defaults" = répartition de départ (bois/pierre : tout vers la chaîne
   // historique -- Scierie/Tailleur -- rien vers Armurier/Sculpteur tant que le joueur n'a pas
-  // réparti lui-même ; fer : 50/50, aucune chaîne "historique" entre Armurier et Sculpteur).
+  // réparti lui-même ; fer : Armurier/Sculpteur/Construction, voir 'construction' ci-dessous).
+  // 'construction' (fer uniquement, demande utilisateur explicite) : PAS un type de bâtiment --
+  // une part RÉSERVÉE aux chantiers en cours (Temple, coût ironIngot, voir buildings.temple) et à
+  // toute future amélioration en coûtant -- voir GameState._spawnWarehouseIronIngot, qui laisse ce
+  // lingot au stock central au lieu de l'envoyer à l'Armurier/au Sculpteur quand ce débouché est
+  // tiré au sort, pour que _spawnWarehouseConstructionDeliveries puisse ensuite s'en servir. Sans
+  // cette part réservée, un Sculpteur (ou un Armurier) à portée draine goulûment tout le fer
+  // disponible avant même qu'un chantier n'ait sa chance (bug vécu pour de vrai : aucun lingot
+  // n'arrivait jamais à un Temple en construction dès qu'un Sculpteur existait). Voir
+  // GameScene.refreshResourceRoutingRows pour son libellé (pas un nom de bâtiment à chercher).
   resourceRouting: {
     wood: { consumers: ['sawmill', 'armurier'], defaults: { sawmill: 100, armurier: 0 } },
     stone: { consumers: ['stonecutter', 'sculpteur'], defaults: { stonecutter: 100, sculpteur: 0 } },
-    ironIngot: { consumers: ['armurier', 'sculpteur'], defaults: { armurier: 50, sculpteur: 50 } },
+    ironIngot: {
+      consumers: ['armurier', 'sculpteur', 'construction'],
+      defaults: { armurier: 40, sculpteur: 40, construction: 20 },
+    },
   },
   // Répartition manuelle de la population par CATÉGORIE de bâtiments (demande utilisateur
   // explicite : menu ouvert en tapant le bouton Maison -- même principe que resourceRouting

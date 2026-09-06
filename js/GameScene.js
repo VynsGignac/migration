@@ -1599,7 +1599,10 @@ class GameScene extends Phaser.Scene {
       const y = rowY0 + i * rowGap;
       row.resource = res;
       row.buildingType = buildingType;
-      row.label.setText(GameConfig.buildings[buildingType].name).setPosition(labelX, y - 9).setVisible(true);
+      // 'construction' (fer uniquement, voir GameConfig.resourceRouting.ironIngot) : PAS un type de
+      // bâtiment, pas de nom à chercher dans GameConfig.buildings -- libellé fixe.
+      const label = buildingType === 'construction' ? 'Construction' : GameConfig.buildings[buildingType].name;
+      row.label.setText(label).setPosition(labelX, y - 9).setVisible(true);
       this.positionResourceZone(row.track, trackX, y, trackWidth, trackHeight);
       row.track.setVisible(true);
       this.positionResourceZone(row.hitZone, trackX, y, trackWidth, hitZoneHeight);

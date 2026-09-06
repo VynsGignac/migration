@@ -2164,14 +2164,23 @@ const GameState = {
       let orderedIronTypes = ironTargetTypes;
       const ironRouting = this.resourceRouting.ironIngot;
       if (ironRouting) {
-        const total = ironTargetTypes.reduce((s, t) => s + (ironRouting[t] || 0), 0);
+        // 'construction' (voir GameConfig.resourceRouting.ironIngot, demande utilisateur explicite)
+        // participe au même tirage pondéré que les bâtiments, mais n'est PAS un type de bâtiment :
+        // s'il est tiré, on laisse ce lingot au stock central pour CE tour (`continue`) plutôt que
+        // de l'expédier -- _spawnWarehouseConstructionDeliveries (appelée juste après dans
+        // tickProduction) pourra alors s'en servir pour un chantier qui en a besoin (Temple). Sans
+        // cette réserve, l'Armurier/le Sculpteur drainaient goulûment tout le fer disponible avant
+        // qu'un chantier n'ait la moindre chance d'en recevoir.
+        const allTypes = [...ironTargetTypes, 'construction'];
+        const total = allTypes.reduce((s, t) => s + (ironRouting[t] || 0), 0);
         if (total > 0) {
           let r = Math.random() * total;
-          let chosen = ironTargetTypes[0];
-          for (const t of ironTargetTypes) {
+          let chosen = allTypes[0];
+          for (const t of allTypes) {
             r -= (ironRouting[t] || 0);
             if (r <= 0) { chosen = t; break; }
           }
+          if (chosen === 'construction') continue;
           orderedIronTypes = [chosen, ...ironTargetTypes.filter((t) => t !== chosen)];
         }
       }
