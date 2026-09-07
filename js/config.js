@@ -649,13 +649,11 @@ const GameConfig = {
       // améliorations coûtent toutes le double d'armes du Fortin de base (10 -> 20).
       name: 'Château', cost: { planks: 3, stoneBlocks: 3, weapons: 20 }, color: 0x3a2a4a,
       kind: 'tower', range: 6, fireInterval: 2, damage: 1, multiShot: 2,
-      // Accueille 2x plus de travailleurs qu'un Fortin (8 au lieu de 4) -- voir GameState.
-      // efficiencyForWorkers, seul bâtiment dont l'efficacité peut dépasser 100 % (demande
-      // utilisateur explicite). Les 4 premiers travailleurs comptent comme pour un Fortin
-      // normal (0 -> 50 %, ..., 4 -> 100 %) ; les 4 suivants ajoutent le même gain marginal une
-      // seconde fois (5e travailleur = même gain que le 1er, etc.), jusqu'à 150 % à 8 travailleurs
-      // -- pas un simple x2 (qui aurait aussi doublé le socle de 50 % à 0 travailleur, absurde).
-      capMultiplier: 2,
+      // capMultiplier 2 -> retiré (demande utilisateur explicite : "le chateau peut accueillir 4
+      // habitants comme les autres batiments militaires") : accueillait 2x plus de travailleurs
+      // que les 3 autres tours (8 au lieu de 4) ; plafonné à 4 comme Fortin/Donjon/Tour de siège
+      // désormais, sans traitement spécial (efficiencyForWorkers reprend le comportement par
+      // défaut de tout le reste du jeu quand capMultiplier est absent).
       ruinLoot: { planks: 15, stoneBlocks: 10 },
     },
     // Donjon (demande utilisateur explicite -- nom repris du bâtiment de base d'avant son

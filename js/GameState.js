@@ -416,45 +416,39 @@ const GameState = {
   fortinUpgradeTargets: { castle: 'def_forgerie', keep: 'def_arcLong', siegeTower: 'def_ingenierie' },
 
   // Démarre l'amélioration d'un Fortin déjà posé vers l'une de ses 3 évolutions (voir
-  // fortinUpgradeTargets ci-dessus) -- remplace l'ancien upgradeToCastle (demande utilisateur
-  // explicite : "a transporter via entrepot"), qui payait tout instantanément. Ne change PAS le
-  // type tout de suite : le Fortin reste pleinement opérationnel (il continue de tirer, voir
-  // tickProduction section "Tours", qui ne regarde que tile.underConstruction, pas tile.upgradeTo)
-  // pendant que les matériaux sont livrés comme un chantier classique (voir
-  // _spawnWarehouseConstructionDeliveries/updateShipments, qui traitent maintenant aussi bien
-  // constructionNeeded/Delivered qu'upgradeNeeded/Delivered). La transformation réelle du type a
-  // lieu dans _completeFortinUpgrade, une fois tout livré.
+  // fortinUpgradeTargets ci-dessus). Bascule le type IMMÉDIATEMENT (demande utilisateur explicite :
+  // "le batiment ne doit pas etre considere comme 'un fortin en amelioration' mais... 'un chateau
+  // en construction'. Il n'est donc pas actif tant qu'il n'est pas construit, n'accueille pas de
+  // travailleur, et peut utiliser le bandeau 'classique' de construction") -- réutilise directement
+  // constructionNeeded/Delivered (voir placeBuilding/_completeConstruction, EXACTEMENT le même
+  // mécanisme qu'un chantier neuf) au lieu d'un système upgradeTo/Needed/Delivered séparé : plus
+  // besoin de _completeFortinUpgrade dédié, ni de cas spécial dans
+  // _spawnWarehouseConstructionDeliveries/updateShipments (tous génériques sur
+  // tile.underConstruction). fireCooldown effacé explicitement : ce champ n'a plus de sens pendant
+  // le chantier (la tour ne tire plus, voir tickProduction section "Tours" qui filtre déjà
+  // underConstruction), _completeConstruction le réinitialise proprement une fois terminé.
   startFortinUpgrade(col, row, targetType) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
     if (!tile || tile.type !== 'donjon' || tile.underConstruction) return { ok: false, reason: 'notDonjon' };
-    if (tile.upgradeTo) return { ok: false, reason: 'alreadyUpgrading' };
     const requiredTech = this.fortinUpgradeTargets[targetType];
     if (!requiredTech || !this.isTechUnlocked(requiredTech)) return { ok: false, reason: 'locked' };
     // effectiveBuildingCost (Déesse de la guerre, Apogée céleste) : voir son commentaire --
     // s'applique toujours, seul le MOMENT du paiement (livraison progressive plutôt qu'instantané)
     // a changé.
     const cost = this.effectiveBuildingCost(targetType, GameConfig.buildings[targetType].cost);
-    tile.upgradeTo = targetType;
-    tile.upgradeNeeded = { ...cost };
-    tile.upgradeDelivered = Object.fromEntries(Object.keys(cost).map((r) => [r, 0]));
+    delete tile.fireCooldown;
+    tile.type = targetType;
+    tile.underConstruction = true;
+    tile.constructionNeeded = { ...cost };
+    tile.constructionDelivered = Object.fromEntries(Object.keys(cost).map((r) => [r, 0]));
     this.dirty = true;
-    return { ok: true };
-  },
-
-  // Bascule un Fortin en son évolution choisie une fois tous les matériaux d'amélioration livrés
-  // (voir startFortinUpgrade/updateShipments) -- fireCooldown et l'appartenance à une route restent
-  // ceux du Fortin, aucune raison de les réinitialiser (l'amélioration est continue, pas un nouveau
-  // bâtiment).
-  _completeFortinUpgrade(tile) {
-    tile.type = tile.upgradeTo;
-    delete tile.upgradeTo;
-    delete tile.upgradeNeeded;
-    delete tile.upgradeDelivered;
-    this.dirty = true;
-    // buildingsDirty (pas juste dirty) : la portée (zone d'action/brouillard de guerre) change
-    // avec le nouveau type (Château/Donjon/Tour de siège n'ont pas la même portée que le Fortin).
+    // buildingsDirty (pas juste dirty) : la portée (zone d'action/brouillard de guerre) change avec
+    // le nouveau type (Château/Donjon/Tour de siège n'ont pas la même portée que le Fortin), et il
+    // n'est plus actif (perd sa route tant qu'il reste en chantier -- computeRevealedTiles etc. en
+    // tiennent déjà compte via underConstruction).
     this.buildingsDirty = true;
+    return { ok: true };
   },
 
   // Rayon de la "zone d'action" d'un bâtiment selon son type (même logique que GameScene.
@@ -2556,21 +2550,12 @@ const GameState = {
     const dispatchedThisCall = new Set();
 
     for (const [destKey, tile] of this.tiles) {
-      // Chantier neuf (constructionNeeded/Delivered) OU Fortin en cours d'amélioration vers l'une
-      // de ses 3 évolutions (upgradeNeeded/Delivered, voir startFortinUpgrade, demande utilisateur
-      // explicite : "a transporter via entrepot") -- même mécanique de livraison pour les deux,
-      // seuls les objets "needed"/"delivered" à lire diffèrent. Un Fortin en amélioration N'EST PAS
-      // underConstruction (il reste opérationnel), d'où ce second cas.
-      let needed, delivered;
-      if (tile.underConstruction) {
-        needed = tile.constructionNeeded;
-        delivered = tile.constructionDelivered;
-      } else if (tile.upgradeTo) {
-        needed = tile.upgradeNeeded;
-        delivered = tile.upgradeDelivered;
-      } else {
-        continue;
-      }
+      // Chantier neuf OU amélioration de Fortin en cours (voir startFortinUpgrade, qui bascule
+      // désormais le type immédiatement et réutilise EXACTEMENT ce même constructionNeeded/
+      // Delivered, demande utilisateur explicite -- plus de cas séparé upgradeTo/Needed/Delivered).
+      if (!tile.underConstruction) continue;
+      const needed = tile.constructionNeeded;
+      const delivered = tile.constructionDelivered;
       const [destCol, destRow] = destKey.split(',').map(Number);
 
       for (const res in needed) {
@@ -2667,20 +2652,6 @@ const GameState = {
           if (complete) {
             completedBuildings.push(GameConfig.buildings[destTile.type].name);
             this._completeConstruction(destTile);
-          }
-        } else if (s.forConstruction && destTile.upgradeTo) {
-          // Amélioration de Fortin en cours (voir startFortinUpgrade/_spawnWarehouseConstructionDeliveries,
-          // demande utilisateur explicite) : même principe que le chantier neuf ci-dessus, mais sur
-          // upgradeNeeded/Delivered -- le Fortin reste "donjon" (toujours opérationnel) jusqu'à
-          // livraison complète.
-          const needed = destTile.upgradeNeeded[s.resource];
-          destTile.upgradeDelivered[s.resource] = Math.min(needed, destTile.upgradeDelivered[s.resource] + amount);
-          const complete = Object.keys(destTile.upgradeNeeded).every(
-            (r) => destTile.upgradeDelivered[r] >= destTile.upgradeNeeded[r]
-          );
-          if (complete) {
-            completedBuildings.push(GameConfig.buildings[destTile.upgradeTo].name);
-            this._completeFortinUpgrade(destTile);
           }
         } else if (s.toType === 'warehouse') {
           const doubled = gestionStocksChance > 0 && Math.random() < gestionStocksChance;
