@@ -88,8 +88,9 @@ const GameConfig = {
     // buildings.recycler, 1 par cadavre) -- rares avant le premier tour de la horde, beaucoup moins
     // après (plus de combat = plus de cadavres). Ce tout petit coussin de départ suffit juste à
     // lancer Joaillerie (1 Gemme, voir techTree.researchCost) avant même le premier cadavre.
+    // planks/stoneBlocks : 100/30 -> 50/50 (demande utilisateur explicite).
     starting: {
-      wood: 0, planks: 100, stone: 0, stoneBlocks: 30, ore: 0, ironIngot: 0,
+      wood: 0, planks: 50, stone: 0, stoneBlocks: 50, ore: 0, ironIngot: 0,
       weapons: 0, statues: 0, devotion: 0, gemme: 5,
     },
   },

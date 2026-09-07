@@ -11,6 +11,17 @@
 // que le HUD reste à taille constante quel que soit le zoom du monde.
 // ============================================================
 
+// Indique à la PROCHAINE create() (après un scene.restart(), voir restartGame) de sauter le menu de
+// démarrage et de lancer la partie directement -- demande utilisateur explicite : "lorsque je clic
+// sur nouvelle partie depuis le menu in game, la partie se lance directement sans passer par le
+// menu de demarrage". Variable de MODULE (pas une propriété `this.xxx` de la scène) : create() la
+// remet à zéro sur `this.startMenuInGame` et d'autres propriétés d'instance ordinaires à chaque
+// (re)lancement, alors que ce drapeau doit au contraire survivre intact du restartGame() d'AVANT le
+// scene.restart() jusqu'au create() d'APRÈS -- même raisonnement que GameState/Monsters (objets
+// hors scène, voir le commentaire sur restartGame), mais un simple booléen ne mérite pas d'être
+// accroché à l'un ou l'autre.
+let skipStartMenuOnNextCreate = false;
+
 class GameScene extends Phaser.Scene {
 
   constructor() {
@@ -1176,6 +1187,16 @@ class GameScene extends Phaser.Scene {
     this.layoutDevotionPanel();
     this.layoutStartMenu();
     this.pauseForStartMenu();
+    // Consomme skipStartMenuOnNextCreate (voir le commentaire en tête de fichier/restartGame) :
+    // "Nouvelle partie" depuis le menu en cours de partie doit lancer la partie directement plutôt
+    // que de repasser par le menu de démarrage -- équivalent à un clic immédiat sur "Nouvelle
+    // partie" du (tout nouveau, this.startMenuInGame vient d'être remis à faux plus haut) menu
+    // pristine qu'on vient de construire. Remis à faux tout de suite : un restartGame() ULTÉRIEUR
+    // sans argument (voir gameOverRestartBtn) ne doit pas hériter de ce comportement par erreur.
+    if (skipStartMenuOnNextCreate) {
+      skipStartMenuOnNextCreate = false;
+      this.onStartMenuNewGame();
+    }
     // Nommée (pas une fléchée anonyme) + retirée au shutdown : this.scale (ScaleManager) est un
     // objet de NIVEAU JEU qui survit à un scene.restart() (voir restartGame), contrairement au
     // reste de la scène -- sans ce nettoyage, chaque "Recommencer" accumulerait un abonnement
@@ -2221,7 +2242,7 @@ class GameScene extends Phaser.Scene {
   // (remet donc lui-même startMenuInGame à sa valeur par défaut, false).
   onStartMenuNewGame() {
     if (this.startMenuInGame) {
-      this.restartGame();
+      this.restartGame(true);
       return;
     }
     this.hideStartMenu();
@@ -2399,12 +2420,17 @@ class GameScene extends Phaser.Scene {
     this.layoutGameOver();
   }
 
-  // Relance une partie neuve (voir gameOverRestartBtn) : ne réinitialise QUE GameState (Monsters
-  // l'est déjà par create(), voir plus bas) -- ni l'un ni l'autre n'est un objet de scène, ils
-  // survivraient tels quels à un scene.restart() sinon. Ensuite, laisser Phaser reconstruire toute
-  // la scène via create() est plus sûr que reproduire à la main chacune de ses étapes (Entrepôt de
-  // départ, routes, blobs de ressources, caméra, HUD...).
-  restartGame() {
+  // Relance une partie neuve (voir gameOverRestartBtn/onStartMenuNewGame) : ne réinitialise QUE
+  // GameState (Monsters l'est déjà par create(), voir plus bas) -- ni l'un ni l'autre n'est un
+  // objet de scène, ils survivraient tels quels à un scene.restart() sinon. Ensuite, laisser Phaser
+  // reconstruire toute la scène via create() est plus sûr que reproduire à la main chacune de ses
+  // étapes (Entrepôt de départ, routes, blobs de ressources, caméra, HUD...).
+  // skipStartMenu (demande utilisateur explicite, voir le commentaire sur skipStartMenuOnNextCreate
+  // en tête de fichier) : true UNIQUEMENT depuis "Nouvelle partie" du menu en cours de partie --
+  // faux par défaut, donc inchangé pour le bouton "Recommencer" de l'écran de défaite, qui doit
+  // continuer à repasser par le menu de démarrage comme avant.
+  restartGame(skipStartMenu = false) {
+    skipStartMenuOnNextCreate = skipStartMenu;
     GameState.reset();
     this.scene.restart();
   }
