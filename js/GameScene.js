@@ -389,7 +389,7 @@ class GameScene extends Phaser.Scene {
   // Les évolutions de Fortin (Château/Donjon/Tour de siège, voir GameState.fortinUpgradeTargets)
   // actuellement PROPOSABLES pour cette case précise : celle-ci doit être un Fortin opérationnel,
   // pas déjà en cours d'amélioration (une seule à la fois), et la techno correspondante débloquée.
-  // Utilisé à la fois par buildingInfoText (texte) et layoutHud/updateInfoPanel (boutons) -- une
+  // Utilisé à la fois par buildingInfoRows (texte) et layoutHud/updateInfoPanel (boutons) -- une
   // seule source de vérité pour la liste, dans l'ordre fixe ['castle','keep','siegeTower'].
   fortinUpgradeOptionsFor(tile) {
     if (!tile || tile.type !== 'donjon' || tile.underConstruction || tile.upgradeTo) return [];
@@ -709,9 +709,12 @@ class GameScene extends Phaser.Scene {
     return false;
   }
 
-  // "Main-d'œuvre : ..." : rappelle le nombre de travailleurs affectés à ce bâtiment et
-  // l'efficacité qui en résulte (voir GameState.efficiencyForWorkers, une courbe par palier,
-  // pas un tout-ou-rien).
+  // "X travailleur(s) affecté(s) (Y %)" : rappelle le nombre de travailleurs affectés à ce
+  // bâtiment et l'efficacité qui en résulte (voir GameState.efficiencyForWorkers, une courbe par
+  // palier, pas un tout-ou-rien). Pas de préfixe "Main-d'œuvre :" (contrairement à avant) : cette
+  // ligne est désormais toujours affichée à côté de missingWorkerIcon dans buildingInfoRows
+  // (demande utilisateur explicite : "l'icone qui est utilisee dans le menu... un personnage avec
+  // un point d'interrogation"), l'icône identifie déjà la ligne.
   laborStatusLine(col, row, def) {
     const workers = GameState.getAssignedWorkers(col, row);
     // Les bâtiments de Production (extracteurs ET processeurs) utilisent leur propre courbe --
@@ -724,159 +727,217 @@ class GameScene extends Phaser.Scene {
     const table = isProduction ? GameConfig.population.efficiencyByWorkersProduction : GameConfig.population.efficiencyByWorkers;
     const pct = Math.round(GameState.efficiencyForWorkers(workers, def.capMultiplier || 1, table) * 100);
     return workers > 0
-      ? `Main-d'œuvre : ${workers} travailleur(s) affecté(s) (${pct} %)`
-      : `Main-d'œuvre : aucun travailleur affecté (${pct} %)`;
+      ? `${workers} travailleur(s) affecté(s) (${pct} %)`
+      : `aucun travailleur affecté (${pct} %)`;
   }
 
-  // Construit le texte du panneau d'info pour le bâtiment sélectionné : ressource disponible
-  // à proximité (extracteurs), stock en entrée pas encore traité, stock en sortie pas encore expédié.
-  buildingInfoText(col, row, tile) {
+  // Positionne le pool de lignes à icône (voir infoRowIcons/infoRowTexts/infoRowsBg, créés dans
+  // create()) d'après `rows` ([{icon, text}], icon = clé de texture ou null/undefined pour une
+  // ligne texte seule) -- ancre reprise directement de infoPanelText (x/y/largeur de word-wrap déjà
+  // calculés par layoutHud pour PC/mobile, voir son commentaire) plutôt que dupliquée ici. Hauteur
+  // de CHAQUE ligne mesurée après avoir posé son texte (Text.height reflète le retour à la ligne
+  // réel, même principe déjà utilisé ailleurs dans ce fichier pour l'alignement du bandeau de
+  // ressources) : une ligne longue qui retombe sur 2-3 lignes pousse donc correctement la suivante,
+  // pas de chevauchement. infoRowsBg (fond unique partagé) est ensuite dimensionné autour du bloc
+  // entier, avec le même padding (8/6) que l'ancien fond intégré de infoPanelText.
+  renderInfoRows(rows) {
+    const startX = this.infoPanelText.x, startY = this.infoPanelText.y;
+    const wrapWidth = this.infoPanelText.style.wordWrapWidth || 200;
+    const iconSize = 16, iconGap = 6, rowGap = 4;
+    const padX = 8, padY = 6;
+
+    let cursorY = startY;
+    rows.forEach((row, i) => {
+      const iconObj = this.infoRowIcons[i];
+      const textObj = this.infoRowTexts[i];
+      if (row.icon) {
+        iconObj.setTexture(row.icon).setDisplaySize(iconSize, iconSize).setPosition(startX, cursorY).setVisible(true);
+        textObj.setWordWrapWidth(Math.max(20, wrapWidth - iconSize - iconGap));
+        textObj.setPosition(startX + iconSize + iconGap, cursorY);
+      } else {
+        iconObj.setVisible(false);
+        textObj.setWordWrapWidth(wrapWidth);
+        textObj.setPosition(startX, cursorY);
+      }
+      textObj.setText(row.text).setVisible(true);
+      const rowHeight = Math.max(row.icon ? iconSize : 0, textObj.height);
+      cursorY += rowHeight + rowGap;
+    });
+    for (let i = rows.length; i < this.infoRowIcons.length; i++) {
+      this.infoRowIcons[i].setVisible(false);
+      this.infoRowTexts[i].setVisible(false);
+    }
+
+    this.infoRowsBg
+      .setPosition(startX - padX, startY - padY)
+      .setSize(wrapWidth + padX * 2, (cursorY - rowGap - startY) + padY * 2)
+      .setVisible(true);
+    this.infoPanelText.setVisible(false);
+  }
+
+  // Cache le pool de lignes à icône (voir renderInfoRows) : appelé dès que le panneau d'info revient
+  // en mode texte simple (infoPanelText) -- aide de construction, pause seule, dernière case tapée...
+  hideInfoRows() {
+    this.infoRowsBg.setVisible(false);
+    for (const icon of this.infoRowIcons) icon.setVisible(false);
+    for (const txt of this.infoRowTexts) txt.setVisible(false);
+  }
+
+  // Construit les LIGNES (pas un texte brut, voir renderInfoRows) du panneau d'info pour le
+  // bâtiment sélectionné -- chaque ligne est { icon, text } (icon = clé de texture ou
+  // null/undefined pour une ligne texte seule). Épuré (demande utilisateur explicite, "il y a
+  // beaucoup de textes... tout n'est pas pertinent") : ressource disponible à proximité
+  // (extracteurs), stock en entrée pas encore traité -- le stock en SORTIE n'est plus affiché
+  // (l'utilisateur le juge peu pertinent), et les avertissements ne s'affichent QUE quand ils
+  // signalent un vrai problème (jamais de confirmation "tout va bien").
+  buildingInfoRows(col, row, tile) {
     const def = GameConfig.buildings[tile.type];
-    const lines = [def.name];
+    const rows = [{ text: def.name }];
 
     // En chantier (voir GameState.placeBuilding/_spawnWarehouseConstructionDeliveries) : ni
     // outputBuffer/inputBuffer ni le reste des champs "opérationnels" n'existent encore sur cette
-    // case, les branches par kind ci-dessous les supposent -- il faut sortir avant.
+    // case, les branches par kind ci-dessous les supposent -- il faut sortir avant. Icône de
+    // ressource (demande utilisateur explicite : "plutot que d'ecrire planche, pierre taillee...
+    // que tu utilises les icones") à la place du nom écrit -- resourceBarIconTextureKeys couvre
+    // déjà toutes les ressources utilisables comme coût (voir buildButtonCostIcons, même table).
     if (tile.underConstruction) {
-      lines.push('En construction :');
+      rows.push({ text: 'En construction :' });
       for (const res in tile.constructionNeeded) {
-        lines.push(`  ${GameConfig.resourceLabels[res].long} : ${Math.round(tile.constructionDelivered[res])}/${tile.constructionNeeded[res]}`);
+        rows.push({
+          icon: this.resourceBarIconTextureKeys[res],
+          text: `${Math.round(tile.constructionDelivered[res])}/${tile.constructionNeeded[res]}`,
+        });
       }
-      // Prévient le "pourquoi ça n'avance jamais" (demande utilisateur explicite) : soit ça livre
-      // normalement, soit AUCUN Entrepôt n'est à portée et ça ne bougera jamais tant que le réseau
-      // de routes n'est pas étendu (voir GameState.hasWarehouseInRange/_spawnWarehouseConstructionDeliveries).
-      lines.push(GameState.hasWarehouseInRange(col, row)
-        ? 'Livré depuis un Entrepôt à portée par la route.'
-        : 'Aucun Entrepôt à portée : ce chantier ne recevra rien tant qu\'un Entrepôt n\'est pas relié par la route.');
-      return lines.join('\n');
+      // Prévient le "pourquoi ça n'avance jamais" -- SEULEMENT si vraiment aucun Entrepôt à portée
+      // (demande utilisateur explicite : "je ne veux plus la phrase... si un entrepot est apporté
+      // qu'il n'y a pas de probleme particulier, alors cette phrase ne doit pas exister") : plus de
+      // confirmation "Livré depuis un Entrepôt..." quand tout va bien, seulement l'avertissement
+      // quand ça bloque réellement.
+      if (!GameState.hasWarehouseInRange(col, row)) {
+        rows.push({ text: 'Aucun Entrepôt à portée : ce chantier ne recevra rien tant qu\'un Entrepôt n\'est pas relié par la route.' });
+      }
+      return rows;
     }
 
     if (def.kind === 'extractor') {
-      // GameState.zoneRadiusFor (Expertise, voir GameConfig.techTree.nodes.ind_expertise -- et
-      // recyclerRadius/tbd1 pour le Recycleur) : rayon EFFECTIF, pas def.extractRadius brut.
-      const nearby = HexUtils.hexesInRange(col, row, GameState.zoneRadiusFor(tile.type), this.cols, this.rows)
-        .reduce((sum, p) => {
-          const res = GameState.getResourceTile(p.col, p.row);
-          return sum + (res && res.type === def.resource ? res.amount : 0);
-        }, 0);
-      lines.push(`Ressource à proximité : ${Math.round(nearby)}`);
       if (tile.type === 'recycler') {
-        // Pas d'outputBuffer significatif ici (voir GameState.tickProduction, cas spécial
-        // "recycler") : la Gemme est versée d'un coup dès qu'un cadavre est épuisé, rien à
-        // afficher comme stock en attente d'expédition.
-        lines.push('1 Gemme par cadavre recyclé.');
-        lines.push('Fonctionne seul, sans main-d\'œuvre (toujours à pleine efficacité).');
-        lines.push('Gemme versée directement au stock central (pas de livraison par la route).');
+        // Recycleur (demande utilisateur explicite, "finalement je veux garder le un gemme par
+        // cadavre, c'est tout pour le recycleur") : plus AUCUNE autre ligne (ni ressource à
+        // proximité, ni "sans main-d'œuvre", ni "versée directement").
+        rows.push({ text: '1 Gemme par cadavre recyclé.' });
       } else {
-        lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
+        // GameState.zoneRadiusFor (Expertise, voir GameConfig.techTree.nodes.ind_expertise) :
+        // rayon EFFECTIF, pas def.extractRadius brut. NOMBRE DE CASES (demande utilisateur
+        // explicite : "je ne veux pas la quantite de ressources, je veux le nombre de cases"), pas
+        // la quantité de ressource cumulée comme avant.
+        const nearbyTiles = HexUtils.hexesInRange(col, row, GameState.zoneRadiusFor(tile.type), this.cols, this.rows)
+          .reduce((count, p) => {
+            const res = GameState.getResourceTile(p.col, p.row);
+            return count + (res && res.type === def.resource ? 1 : 0);
+          }, 0);
+        rows.push({ text: `Ressource à proximité : ${nearbyTiles} case${nearbyTiles > 1 ? 's' : ''}` });
+        // Stock en sortie : supprimé (demande utilisateur explicite, jugé peu pertinent).
         if (!GameState.hasLinkTargetInRange(col, row, def)) {
-          lines.push('⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.');
+          rows.push({ text: '⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.' });
         }
-        // Vitesse de production (demande utilisateur explicite) : voir GameState.productionRateFor
-        // -- vitesse THÉORIQUE (main-d'œuvre + tous les bonus cumulés, y compris désormais le bonus
-        // de densité de ressource), pas le débit instantané réel qui peut retomber à 0 (buffer
-        // plein, ressource épuisée).
+        // Vitesse de production (demande utilisateur explicite, session précédente) : voir
+        // GameState.productionRateFor -- vitesse THÉORIQUE (main-d'œuvre + tous les bonus cumulés),
+        // pas le débit instantané réel qui peut retomber à 0 (buffer plein, ressource épuisée).
         const prodRate = GameState.productionRateFor(col, row);
         if (prodRate) {
-          lines.push(`Vitesse de production : ${prodRate.rate.toFixed(2)} ${GameConfig.resourceLabels[prodRate.resource].long}/s`);
+          rows.push({ text: `Vitesse de production : ${prodRate.rate.toFixed(2)} ${GameConfig.resourceLabels[prodRate.resource].long}/s` });
         }
-        lines.push(this.laborStatusLine(col, row, def));
+        rows.push({ icon: 'missingWorkerIcon', text: this.laborStatusLine(col, row, def) });
       }
     } else if (def.kind === 'processor') {
-      // inputResources (voir buildings.armurier/sculpteur, demande utilisateur explicite) : une
-      // ligne PAR ressource d'entrée plutôt qu'une seule (tile.inputBuffer n'existe même pas pour
-      // ces bâtiments-là, voir GameState._completeConstruction).
+      // inputResources (voir buildings.armurier/sculpteur) : une ligne PAR ressource d'entrée
+      // plutôt qu'une seule (tile.inputBuffer n'existe même pas pour ces bâtiments-là).
       if (def.inputResources) {
         for (const res of def.inputResources) {
-          lines.push(`En entrée (${GameConfig.resourceLabels[res].long}) : ${Math.round(tile.inputBuffers[res])}/${def.inputCap + GameState.capBonus()}`);
+          rows.push({ text: `En entrée (${GameConfig.resourceLabels[res].long}) : ${Math.round(tile.inputBuffers[res])}/${def.inputCap + GameState.capBonus()}` });
         }
       } else {
-        lines.push(`En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
+        rows.push({ text: `En entrée (à traiter) : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}` });
       }
-      lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
+      // Stock en sortie : supprimé (demande utilisateur explicite, jugé peu pertinent).
       if (!GameState.hasLinkTargetInRange(col, row, def)) {
-        lines.push('⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.');
+        rows.push({ text: '⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.' });
       }
-      // Vitesse de production (demande utilisateur explicite) : voir le commentaire équivalent dans
-      // la branche "extractor" ci-dessus (même mécanique, GameState.productionRateFor).
       const prodRate = GameState.productionRateFor(col, row);
       if (prodRate) {
-        lines.push(`Vitesse de production : ${prodRate.rate.toFixed(2)} ${GameConfig.resourceLabels[prodRate.resource].long}/s`);
+        rows.push({ text: `Vitesse de production : ${prodRate.rate.toFixed(2)} ${GameConfig.resourceLabels[prodRate.resource].long}/s` });
       }
-      lines.push(this.laborStatusLine(col, row, def));
+      rows.push({ icon: 'missingWorkerIcon', text: this.laborStatusLine(col, row, def) });
     } else if (def.kind === 'shrine') {
-      // Temple (voir buildings.temple/altar, demande utilisateur explicite) : Dévotion versée
-      // directement au stock central, proportionnelle au nombre d'Autels dans son rayon effectif
-      // (voir GameState.templeRadius, +2 avec tbd5) -- pas d'outputBuffer/inputBuffer à afficher,
-      // juste ce décompte.
+      // Temple (voir buildings.temple/altar) : Dévotion versée directement au stock central,
+      // proportionnelle au nombre d'Autels dans son rayon effectif (voir GameState.templeRadius,
+      // +2 avec tbd5). Icône de Temple à la place du libellé "Autels à portée" (demande
+      // utilisateur explicite).
       const altarCount = HexUtils.hexesInRange(col, row, GameState.templeRadius(), this.cols, this.rows)
         .reduce((sum, p) => {
           const t = GameState.tiles.get(GameState.key(p.col, p.row));
           return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
         }, 0);
-      lines.push(`Autels à portée : ${altarCount}`);
-      // "%/s" (pas juste un nombre) : la Dévotion est un pourcentage (0-100 %, voir GameConfig.
-      // devotion), pas un stock qui s'accumule sans limite comme les autres ressources. Le Temple
-      // ne produit RIEN par lui-même (demande utilisateur explicite) : tout vient des Autels à
-      // portée ci-dessus -- 0 Autel = 0 gain, quelle que soit la main-d'œuvre.
-      const shrineRate = def.devotionPerAltar * altarCount;
-      lines.push(`Dévotion/s à pleine main-d'œuvre : +${shrineRate.toFixed(2)} %`);
+      rows.push({ icon: 'templeIcon', text: `${altarCount}` });
+      // Taux RÉEL actuel (demande utilisateur explicite : "je veux la devotion par seconde
+      // actuelle", pas "à pleine main-d'œuvre" comme avant) -- voir GameState.
+      // shrineDevotionRateFor, qui tient compte de la main-d'œuvre VRAIMENT affectée ici.
+      const shrineRate = GameState.shrineDevotionRateFor(col, row);
+      rows.push({ text: `Dévotion/s : +${shrineRate.toFixed(2)} %` });
       // Baisse naturelle par TRANCHE de Dévotion actuelle (voir GameConfig.devotion.decayBands/
-      // GameState.devotionDecayRateFor, demande utilisateur explicite) -- affiche le taux courant
-      // (pas fixe comme avant), qui grimpe avec le niveau atteint.
+      // GameState.devotionDecayRateFor) -- affiche le taux courant, qui grimpe avec le niveau
+      // atteint.
       const decayRate = GameState.devotionDecayRateFor(GameState.resources.devotion);
-      lines.push(`Baisse naturelle actuelle : -${decayRate.toFixed(2)} %/s (voir bandeau du haut).`);
-      lines.push('Dévotion versée directement au stock central (pas de livraison par la route).');
-      lines.push(this.laborStatusLine(col, row, def));
+      rows.push({ text: `Baisse naturelle actuelle : -${decayRate.toFixed(2)} %/s (voir bandeau du haut).` });
+      // "Dévotion versée directement au stock central" : supprimée (demande utilisateur explicite).
+      rows.push({ icon: 'missingWorkerIcon', text: this.laborStatusLine(col, row, def) });
     } else if (def.kind === 'house') {
-      lines.push(`Habitants : ${tile.population}/${GameState.housePopulationCap(def)}`);
-      lines.push(`Pain en réserve : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}`);
-      lines.push(tile.hadDeficit ? 'Manque de pain : la population va baisser.' : 'Bien nourrie.');
-      // Indicateurs de VILLE (pas propres à cette Maison précise) -- MOBILE UNIQUEMENT (demande
-      // utilisateur explicite : "ces modifications ne sont a faire que sur le telephone", le PC
-      // garde son icône permanente dans le bandeau, voir laborStatIconImages/layoutHud) : sur
-      // téléphone, où cette icône n'existe plus, consultables ici en tapant une Maison à la place
-      // (demande utilisateur explicite : "afficher les informations sur les ouvriers manquants et
-      // les logements vides lorsque l'on clic sur une maison").
-      if (this.mobileLayout) {
-        lines.push(`Main-d'œuvre manquante (ville) : ${GameState.neededWorkers()}`);
-        lines.push(`Logements libres (ville) : ${GameState.availableHousing()}`);
-      }
+      rows.push({ text: `Habitants : ${tile.population}/${GameState.housePopulationCap(def)}` });
+      rows.push({ text: `Pain en réserve : ${Math.round(tile.inputBuffer)}/${def.inputCap + GameState.capBonus()}` });
+      rows.push({ text: tile.hadDeficit ? 'Manque de pain : la population va baisser.' : 'Bien nourrie.' });
+      // Indicateurs de VILLE mobile (main-d'œuvre manquante/logements libres) : supprimés (demande
+      // utilisateur explicite, "juste les trois premieres informations") -- restent consultables
+      // via l'icône permanente du bandeau sur PC, désormais nulle part sur mobile.
     } else if (def.kind === 'tower') {
       const active = GameState._hasAdjacentRoad(col, row);
-      lines.push(active ? 'Relié à une route : actif.' : 'Pas de route adjacente : inactif.');
-      // Vitesse d'attaque à la place des dégâts (demande utilisateur explicite) : tirs/s réels à
-      // CETTE position (dépend de la main-d'œuvre affectée et du bonus Dévotion, voir
-      // GameState.towerAttacksPerSecond) plutôt qu'un chiffre de dégâts qui ne varie jamais.
+      rows.push({ text: active ? 'Relié à une route : actif.' : 'Pas de route adjacente : inactif.' });
+      // Vitesse d'attaque à la place des dégâts : tirs/s réels à CETTE position (dépend de la
+      // main-d'œuvre affectée et du bonus Dévotion, voir GameState.towerAttacksPerSecond).
       const attacksPerSecond = GameState.towerAttacksPerSecond(col, row, def);
-      lines.push(`Portée : ${GameState.towerRange(def)}   Vitesse d'attaque : ${attacksPerSecond.toFixed(2)} tir/s`);
-      // multiShot (Château)/splashAllAdjacent (Tour de siège, voir GameConfig.buildings) : mention
-      // explicite, sinon un joueur ne devinerait pas ces mécaniques rien qu'avec portée/dégâts.
-      if (def.multiShot) lines.push(`Tire sur ${def.multiShot} ennemis différents à la fois.`);
-      if (def.splashAllAdjacent) lines.push('Touche aussi tous les ennemis adjacents à sa cible.');
-      if (active) lines.push(this.laborStatusLine(col, row, def));
+      rows.push({ text: `Portée : ${GameState.towerRange(def)}   Vitesse d'attaque : ${attacksPerSecond.toFixed(2)} tir/s` });
+      // Phrase spécifique par évolution (demande utilisateur explicite, remplace l'ancien texte
+      // générique) : Château = tir multiple, Tour de siège = dégâts de zone, Donjon = longue
+      // portée (pas de flag dédié en config pour celle-ci, juste sa portée déjà nettement plus
+      // grande que les 3 autres tours -- voir buildings.keep).
+      if (def.multiShot) rows.push({ text: 'Tire deux projectiles au lieu d\'un.' });
+      if (def.splashAllAdjacent) rows.push({ text: 'Dégâts de zone à l\'impact.' });
+      if (tile.type === 'keep') rows.push({ text: 'Longue portée.' });
+      if (active) rows.push({ icon: 'missingWorkerIcon', text: this.laborStatusLine(col, row, def) });
       if (tile.type === 'donjon') {
         if (tile.upgradeTo) {
           // Amélioration en cours (voir GameState.startFortinUpgrade) : le Fortin reste actif
           // (voir ci-dessus) pendant que les matériaux arrivent, comme un chantier classique.
-          lines.push(`Amélioration en cours vers ${GameConfig.buildings[tile.upgradeTo].name} :`);
+          rows.push({ text: `Amélioration en cours vers ${GameConfig.buildings[tile.upgradeTo].name} :` });
           for (const res in tile.upgradeNeeded) {
-            lines.push(`  ${GameConfig.resourceLabels[res].long} : ${Math.round(tile.upgradeDelivered[res])}/${tile.upgradeNeeded[res]}`);
+            rows.push({
+              icon: this.resourceBarIconTextureKeys[res],
+              text: `${Math.round(tile.upgradeDelivered[res])}/${tile.upgradeNeeded[res]}`,
+            });
           }
         } else {
           const options = this.fortinUpgradeOptionsFor(tile);
           if (options.length > 0) {
             const names = options.map((t) => GameConfig.buildings[t].name).join(', ');
-            lines.push(`Peut être amélioré en ${names} (voir bouton${options.length > 1 ? 's' : ''} ci-dessous).`);
+            rows.push({ text: `Peut être amélioré en ${names} (voir bouton${options.length > 1 ? 's' : ''} ci-dessous).` });
           }
         }
       }
     } else if (tile.type === 'warehouse') {
-      lines.push('Les livraisons reçues ici rejoignent le stock central.');
+      rows.push({ text: 'Les livraisons reçues ici rejoignent le stock central.' });
     } else if (tile.type === 'road') {
-      lines.push('Relie le réseau : laisse passer les chargements.');
+      rows.push({ text: 'Relie le réseau : laisse passer les chargements.' });
     }
-    return lines.join('\n');
+    return rows;
   }
 
   // --- HUD : panneau latéral (PC) ou bandeau haut + menu rétractable (mobile), messages flottants ---
@@ -905,7 +966,7 @@ class GameScene extends Phaser.Scene {
     // resourceValueTexts), avec juste 2 entrées fixes au lieu d'une par ressource.
     // PC UNIQUEMENT désormais (demande utilisateur explicite : "ces modifications ne sont a faire
     // que sur le telephone. L'UI sur PC ne change pas") -- voir layoutHud, plus affiché du tout côté
-    // mobile (consultable en tapant une Maison à la place, voir buildingInfoText, kind 'house').
+    // mobile (consultable via le panneau "Répartition de la population", voir openHouseQuickMenu).
     this.laborStatIconImages = {
       needed: this.add.image(0, 0, 'missingWorkerIcon').setOrigin(0, 0).setDepth(1000).setVisible(false),
       housing: this.add.image(0, 0, 'emptyHousingIcon').setOrigin(0, 0).setDepth(1000).setVisible(false),
@@ -1039,6 +1100,30 @@ class GameScene extends Phaser.Scene {
       lineSpacing: 3,
     }).setDepth(1000);
     this.uiElements.push(this.infoPanelText);
+
+    // Lignes à icône du panneau d'info (demande utilisateur explicite : icônes de ressource pour
+    // un chantier, icône de Temple pour "Autels à portée", icône de main-d'œuvre pour la ligne
+    // travailleurs -- voir buildingInfoRows/renderInfoRows) : PAS le même objet que infoPanelText
+    // ci-dessus (qui reste utilisé tel quel pour l'aide de construction/la pause/le texte de
+    // dernière case tapée, aucun de ces cas n'a besoin d'icônes) -- un pool de lignes réutilisables
+    // (icône + texte), assez large pour le pire cas (chantier de Temple, 4 ressources + la phrase
+    // Entrepôt). Fond unique partagé (infoRowsBg, PAS un fond par ligne comme le backgroundColor de
+    // infoPanelText : donnerait une pile de rectangles noirs disjoints au lieu d'un seul bandeau),
+    // dimensionné dynamiquement autour du contenu réel à chaque appel de renderInfoRows.
+    this.infoRowsBg = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.67).setOrigin(0, 0).setDepth(999).setVisible(false);
+    this.uiElements.push(this.infoRowsBg);
+    this.infoRowIcons = [];
+    this.infoRowTexts = [];
+    const infoRowPoolSize = 16;
+    for (let i = 0; i < infoRowPoolSize; i++) {
+      const icon = this.add.image(0, 0, 'missingWorkerIcon').setOrigin(0, 0).setDepth(1000).setVisible(false);
+      const txt = this.add.text(0, 0, '', {
+        font: '13px sans-serif', color: '#ffffff', lineSpacing: 3,
+      }).setOrigin(0, 0).setDepth(1000).setVisible(false);
+      this.uiElements.push(icon, txt);
+      this.infoRowIcons.push(icon);
+      this.infoRowTexts.push(txt);
+    }
 
     this.toastText = this.add.text(0, 0, '', {
       font: 'bold 15px sans-serif', color: '#ffffff', backgroundColor: '#000000cc', padding: { x: 10, y: 6 },
@@ -2796,7 +2881,8 @@ class GameScene extends Phaser.Scene {
 
   // Ouvre le panneau "Répartition de la population" (voir buildLaborRoutingPanel/
   // toggleLaborRoutingPanel), qui affiche le résumé ville entière (main-d'œuvre manquante/
-  // logements libres, déjà affiché en tapant une Maison sur mobile, voir buildingInfoText) EN
+  // logements libres, plus affiché du tout en tapant un bâtiment sur mobile depuis que ces lignes
+  // en ont été retirées, demande utilisateur explicite -- ce panneau en reste donc la SEULE source) EN
   // PLUS des curseurs par catégorie (demande utilisateur explicite : "en plus des informations
   // deja presente je voudrais une attribution de la population").
   openHouseQuickMenu() {
@@ -3489,7 +3575,8 @@ class GameScene extends Phaser.Scene {
 
     // Indicateurs travailleur manquant/logement libre : PC uniquement (voir plus haut, demande
     // utilisateur explicite : "ces modifications ne sont a faire que sur le telephone"), jamais
-    // affichés côté mobile (consultables en tapant une Maison à la place, voir buildingInfoText) --
+    // affichés côté mobile (consultables via le panneau "Répartition de la population", voir
+    // openHouseQuickMenu) --
     // masqués explicitement ici plutôt que simplement "jamais rendus visibles" : sans ça, un passage
     // PC -> mobile (fenêtre redimensionnée) les laisserait visibles à leur dernière position PC,
     // par-dessus la carte (bug potentiel évité, pas vécu).
@@ -3505,7 +3592,8 @@ class GameScene extends Phaser.Scene {
 
     // Bandeau ressources : icônes + valeurs sur une seule ligne (voir drawResourceBarIcon). Plus
     // d'indicateurs travailleur manquant/logement libre ici (demande utilisateur explicite :
-    // consultables désormais en tapant une Maison, voir buildingInfoText) -- seulement les 8
+    // consultables désormais via le panneau "Répartition de la population", voir openHouseQuickMenu)
+    // -- seulement les 8
     // ressources, à nouveau sur une seule rangée.
     // 18 -> 36 icône (x2, demande utilisateur explicite, gardée).
     // x0.8 (demande utilisateur explicite : "reduit la taille des icones du bandeau du haut de
@@ -3900,7 +3988,7 @@ class GameScene extends Phaser.Scene {
   // upgradeButtons/GameState.startFortinUpgrade) -- même esprit que confirmBuild ci-dessus, mais
   // sur un bâtiment déjà posé plutôt qu'un placement en cours. Le toast reflète le DÉBUT de
   // l'amélioration (pas sa fin : les matériaux arrivent progressivement via Entrepôt, voir
-  // buildingInfoText pour le suivi de livraison).
+  // buildingInfoRows pour le suivi de livraison).
   upgradeSelectedFortin(targetType) {
     if (this.paused || !this.selectedBuildingKey) return;
     const [col, row] = this.selectedBuildingKey.split(',').map(Number);
@@ -5298,6 +5386,11 @@ class GameScene extends Phaser.Scene {
   // prend de la place que quand il y a effectivement quelque chose à montrer.
   updateInfoPanel() {
     let text = null;
+    // Rempli UNIQUEMENT par la branche "bâtiment sélectionné" ci-dessous (voir buildingInfoRows/
+    // renderInfoRows, demande utilisateur explicite : icônes de ressource/Temple/main-d'œuvre dans
+    // ce panneau) -- tous les autres cas (aide de construction, dernière case tapée, invite par
+    // défaut) restent du texte simple sur infoPanelText, inchangés.
+    let rows = null;
     // Améliorations Fortin/Démolir (voir upgradeButtons/demolishButton) : recalculés chaque frame
     // (voir update() plus bas) pour réagir tout de suite à un changement de sélection, contrairement
     // à leur position/taille (fixées dans layoutHud -- qui subdivise aussi l'espace quand les DEUX
@@ -5333,7 +5426,7 @@ class GameScene extends Phaser.Scene {
       const tile = GameState.tiles.get(this.selectedBuildingKey);
       if (tile && tile.type !== 'ruin' && GameConfig.buildings[tile.type]) {
         const [col, row] = this.selectedBuildingKey.split(',').map(Number);
-        text = this.buildingInfoText(col, row, tile);
+        rows = this.buildingInfoRows(col, row, tile);
         upgradeOptions = this.fortinUpgradeOptionsFor(tile);
         showDemolish = true;
       } else {
@@ -5345,14 +5438,23 @@ class GameScene extends Phaser.Scene {
     }
 
     if (this.paused) {
-      text = '⏸ En pause\n' + (text || 'Tape une case pour voir ses infos.');
+      // rows (bâtiment sélectionné) garde son rendu à icônes même en pause -- ligne de pause
+      // ajoutée EN PLUS plutôt que de retomber sur le texte simple.
+      if (rows) rows = [{ text: '⏸ En pause' }, ...rows];
+      else text = '⏸ En pause\n' + (text || 'Tape une case pour voir ses infos.');
     }
 
-    if (this.mobileLayout) {
-      this.infoPanelText.setVisible(!!text);
-      if (text) this.infoPanelText.setText(text);
+    if (rows) {
+      // Masque infoPanelText lui-même (voir renderInfoRows) : pas besoin de le refaire ici.
+      this.renderInfoRows(rows);
     } else {
-      this.infoPanelText.setVisible(true).setText(text || 'Tape une case pour voir ses infos.');
+      this.hideInfoRows();
+      if (this.mobileLayout) {
+        this.infoPanelText.setVisible(!!text);
+        if (text) this.infoPanelText.setText(text);
+      } else {
+        this.infoPanelText.setVisible(true).setText(text || 'Tape une case pour voir ses infos.');
+      }
     }
 
     // Pas de vérification canAfford ici (contrairement à l'ancien upgradeCastleButton, qui payait

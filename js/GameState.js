@@ -2071,7 +2071,7 @@ const GameState = {
   },
 
   // Vitesse de tir EFFECTIVE (tirs/s) d'une tour à cette position, pour l'affichage (voir
-  // GameScene.buildingInfoText, demande utilisateur explicite : "à la place des dégâts, les
+  // GameScene.buildingInfoRows, demande utilisateur explicite : "à la place des dégâts, les
   // batiments de combat affiche leurs vitesses d'attaque") -- même formule que tickProduction
   // section "Tours" (tile.fireCooldown se vide à efficacité * (1 + bonus Dévotion tbd6) par
   // seconde, se réinitialise à def.fireInterval une fois atteint), mais exprimée en DÉBIT (tirs/s)
@@ -2083,6 +2083,33 @@ const GameState = {
     const efficiency = this.efficiencyForWorkers(workers, def.capMultiplier || 1);
     const tbd6DevotionBonus = this.isTechUnlocked('rec_tbd6') ? this.resources.devotion / 100 : 0;
     return (efficiency * (1 + tbd6DevotionBonus)) / def.fireInterval;
+  },
+
+  // Gain de Dévotion RÉEL actuel (%/s) d'un Temple à cette position, pour l'affichage (voir
+  // GameScene.buildingInfoRows, demande utilisateur explicite : "je veux la devotion par seconde
+  // actuelle", pas la valeur théorique "à pleine main-d'œuvre" affichée avant) -- même formule que
+  // tickProduction section "Temple", mais sans le multiplicateur dtSeconds (un DÉBIT, comme
+  // towerAttacksPerSecond/productionRateFor ci-dessus) : tient compte de la main-d'œuvre VRAIMENT
+  // affectée ici et de la Guilde, mais PAS de tbd6 (bonus de tir des tours, sans rapport).
+  shrineDevotionRateFor(col, row) {
+    const key = this.key(col, row);
+    const tile = this.tiles.get(key);
+    const def = tile && GameConfig.buildings[tile.type];
+    if (!tile || !def || def.kind !== 'shrine' || tile.underConstruction) return 0;
+
+    const altarCount = HexUtils.hexesInRange(col, row, this.templeRadius(), this.cols, this.rows)
+      .reduce((sum, p) => {
+        const t = this.tiles.get(this.key(p.col, p.row));
+        return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
+      }, 0);
+    if (altarCount === 0) return 0;
+
+    const workers = this.getAssignedWorkers(col, row);
+    const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
+    const guildLevel = this.techLevel('ind_guilde');
+    const guildBonusValue = guildLevel > 0 ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
+    const speedMultiplier = 1 + (this.guildZone.has(key) ? guildBonusValue : 0);
+    return def.devotionPerAltar * altarCount * efficiency * speedMultiplier;
   },
 
   // Applique les dégâts d'un tir de tour à un monstre (mort, régénération du Chef, décompte de
