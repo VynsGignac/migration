@@ -1168,9 +1168,12 @@ class GameScene extends Phaser.Scene {
       this.buildButtonIcons[id] = icon;
       this.uiElements.push(icon);
 
-      // 1 ou 2 ressources par coût (jamais plus, voir GameConfig.buildings) : une icône + un
-      // nombre par ressource. Toujours une vraie image (planks/stoneBlocks, les deux seules
-      // ressources jamais utilisées comme coût) -- pas besoin du dessin vectoriel de secours ici.
+      // Un nombre variable de ressources par coût (voir GameConfig.buildings -- jusqu'à 4 pour le
+      // Temple, 3 pour les bâtiments militaires depuis l'ajout d'un coût en Armes) : une icône + un
+      // nombre par ressource, toujours une vraie image (resourceBarIconTextureKeys couvre toutes
+      // les ressources affichées dans le bandeau du haut) -- pas besoin du dessin vectoriel de
+      // secours ici. positionBuildButtonContentsSquare rétrécit toute la ligne si elle ne tient
+      // plus dans le bouton.
       const cost = GameConfig.buildings[id].cost;
       this.buildButtonCostIcons[id] = Object.entries(cost).map(([resKey, amount]) => {
         const img = this.add.image(0, 0, this.resourceBarIconTextureKeys[resKey])

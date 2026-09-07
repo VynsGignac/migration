@@ -604,13 +604,16 @@ const GameConfig = {
     // que s'il touche une route (voir GameState._hasAdjacentRoad) : un Fortin posé isolé ne
     // tire pas, il faut le relier au réseau.
     donjon: {
-      // Coût 10/8 -> 6/4 (demande utilisateur explicite) -- portée 7 -> 4 cases (même demande,
-      // rééquilibrage à l'introduction des amél"Donjon"/"Tour de siège" ci-dessous, chacune avec
-      // sa propre portée bien plus grande que ce Fortin de base).
+      // Coût 10/8 -> 6/4 -> 3/3 + 10 armes (demande utilisateur explicite, dernier changement :
+      // "passer le cout de tout a 3 planches et 3 pierre taillés... le fortin coutera 10 armes")
+      // -- l'ajout d'un coût en Armes rattache la construction militaire à la chaîne Armurier/fer,
+      // jusque-là sans débouché de ce côté. Portée 7 -> 4 cases (rééquilibrage plus ancien, à
+      // l'introduction des amél"Donjon"/"Tour de siège" ci-dessous, chacune avec sa propre portée
+      // bien plus grande que ce Fortin de base).
       // Nom "Fortin" (demande utilisateur explicite, "aucun changement fonctionnel") -- id
       // "donjon" conservé (compatibilité des sauvegardes existantes), même principe que def_donjon/
       // Balistique.
-      name: 'Fortin', cost: { planks: 6, stoneBlocks: 4 }, color: 0x5a2a3a,
+      name: 'Fortin', cost: { planks: 3, stoneBlocks: 3, weapons: 10 }, color: 0x5a2a3a,
       kind: 'tower', range: 4, fireInterval: 2, damage: 1,
       ruinLoot: { planks: 10, stoneBlocks: 6 },
     },
@@ -642,7 +645,9 @@ const GameConfig = {
       // vitesse" -- désormais alignée sur le Fortin/le Donjon) : compensé par multiShot (2 flèches
       // sur 2 ennemis DIFFÉRENTS par salve, voir GameState tickProduction section "Tours") plutôt
       // qu'un dégât plus élevé sur une seule cible.
-      name: 'Château', cost: { planks: 12, stoneBlocks: 12 }, color: 0x3a2a4a,
+      // Coût 12/12 -> 3/3 + 20 armes (demande utilisateur explicite, voir buildings.donjon) : les 3
+      // améliorations coûtent toutes le double d'armes du Fortin de base (10 -> 20).
+      name: 'Château', cost: { planks: 3, stoneBlocks: 3, weapons: 20 }, color: 0x3a2a4a,
       kind: 'tower', range: 6, fireInterval: 2, damage: 1, multiShot: 2,
       // Accueille 2x plus de travailleurs qu'un Fortin (8 au lieu de 4) -- voir GameState.
       // efficiencyForWorkers, seul bâtiment dont l'efficacité peut dépasser 100 % (demande
@@ -661,7 +666,8 @@ const GameConfig = {
     // main-d'œuvre que les autres tours (demande utilisateur explicite : "toutes les tours ont le
     // même besoin en ouvrier que les bâtiments classiques"), pas d'exemption façon Recycleur.
     keep: {
-      name: 'Donjon', cost: { planks: 12, stoneBlocks: 12 }, color: 0x4a3a2a,
+      // Coût 12/12 -> 3/3 + 20 armes (demande utilisateur explicite, voir buildings.donjon/castle).
+      name: 'Donjon', cost: { planks: 3, stoneBlocks: 3, weapons: 20 }, color: 0x4a3a2a,
       kind: 'tower', range: 10, fireInterval: 3, damage: 1,
       ruinLoot: { planks: 15, stoneBlocks: 10 },
     },
@@ -671,7 +677,8 @@ const GameConfig = {
     // "Tours") -- contrairement à Artilleur (def_armee), qui n'a qu'une CHANCE de toucher un SEUL
     // adjacent choisi au hasard. Débloquée par Ingénierie (voir techTree.nodes.def_ingenierie).
     siegeTower: {
-      name: 'Tour de siège', cost: { planks: 12, stoneBlocks: 12 }, color: 0x6a5a3a,
+      // Coût 12/12 -> 3/3 + 20 armes (demande utilisateur explicite, voir buildings.donjon/castle).
+      name: 'Tour de siège', cost: { planks: 3, stoneBlocks: 3, weapons: 20 }, color: 0x6a5a3a,
       kind: 'tower', range: 5, fireInterval: 8, damage: 1, splashAllAdjacent: true,
       ruinLoot: { planks: 15, stoneBlocks: 10 },
     },
