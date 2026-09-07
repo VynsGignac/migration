@@ -3348,14 +3348,24 @@ class GameScene extends Phaser.Scene {
       }
       const upgradeAreaX = layoutBothActions ? 10 + halfW + desktopGap : 10;
       const upgradeAreaW = layoutBothActions ? halfW : (this.sidebarWidth - 20);
-      const upgradeMiniH = confirmRowHeight / Math.max(1, layoutUpgradeOptions.length);
+      // Hauteur FIXE par ligne (demande utilisateur explicite, capture d'écran à l'appui : "les
+      // boutons d'amélioration des fortins sont tous superposés les uns sur les autres" -- l'ancien
+      // upgradeMiniH divisait confirmRowHeight par le nombre d'évolutions proposables, ce qui
+      // pouvait réduire chaque bouton à une hauteur illisible/quasi nulle dès 2-3 options à la
+      // fois). Même correctif que la version mobile plus bas dans cette fonction (upgradeRowHeight)
+      // : le bloc grandit vers le HAUT (bas fixe à confirmY + confirmRowHeight, comme si un seul
+      // bouton était présent) plutôt que de rétrécir chaque ligne -- demolishButton juste en dessous
+      // n'a pas besoin de changer, son bas reste au même endroit qu'avant.
+      const upgradeRowHeight = confirmRowHeight;
+      const upgradeBlockBottom = confirmY + confirmRowHeight;
       this.upgradeButtonOrder.forEach((targetType) => {
         const idx = layoutUpgradeOptions.indexOf(targetType);
         if (idx === -1) return;
+        const count = layoutUpgradeOptions.length;
         this.upgradeButtons[targetType]
-          .setPosition(upgradeAreaX, confirmY + idx * upgradeMiniH)
-          .setFixedSize(upgradeAreaW, upgradeMiniH)
-          .setFontSize(layoutUpgradeOptions.length > 1 ? 9 : (layoutBothActions ? 10 : 13));
+          .setPosition(upgradeAreaX, upgradeBlockBottom - (count - idx) * upgradeRowHeight)
+          .setFixedSize(upgradeAreaW, upgradeRowHeight)
+          .setFontSize(layoutBothActions ? 10 : 13);
       });
 
       // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
