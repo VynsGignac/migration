@@ -10,7 +10,7 @@
 // toujours contre le réseau avec la stratégie ci-dessous) — vécu pour de vrai en développement,
 // où plusieurs mises à jour de suite sont restées invisibles sur le site tant que ce n'était pas
 // automatisé.
-const CACHE_NAME = 'migration-20260908001727';
+const CACHE_NAME = 'migration-20260908005415';
 const ASSETS = [
   './',
   './index.html',
