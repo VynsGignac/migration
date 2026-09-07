@@ -621,38 +621,54 @@ const GameState = {
     this.dirty = true;
   },
 
-  // Anti-softlock (demande utilisateur explicite) : garantit qu'au moins une case (ou une partie de
-  // blob, voir plus bas) de CHAQUE ressource en blob (bois, pierre, montagne) est dans un rayon FIXE
-  // de resourceNodes.startingVisibilityRadius cases autour de l'Entrepôt de départ dès le
-  // lancement (pas seulement visible dans le brouillard de guerre, un rayon qui ne garantit rien
-  // si aucun Camp posé là ne peut jamais expédier jusqu'à l'Entrepôt). Rayon FIXE (demande
-  // utilisateur explicite : initialement "10 cases", resserré ensuite à "8 cases", puis "6 cases"),
-  // volontairement PAS warehouseZoneRadius() (qui grandit avec
-  // la techno Aménagement urbain -- ce filet de sécurité doit rester constant, pas suivre les
-  // améliorations du joueur). Les blobs ci-dessus sont placés au hasard sur toute la carte -- rien
-  // ne garantissait qu'un joueur ait ne serait-ce qu'UNE case de chaque ressource exploitable sans
-  // déjà avoir étendu son réseau de routes au petit bonheur. Appelé après _spawnBlobs, donc ce
-  // filet de sécurité ne s'active que si le hasard n'a vraiment rien mis à portée. Le blob planté
-  // ici vise resourceNodes.startingVisibilityBlobSize cases (8, demande utilisateur explicite),
-  // volontairement plus gros que blobSizeMin (4, taille normale ailleurs sur la carte) -- c'est la
-  // SEULE garantie du joueur, donc plus généreuse qu'un blob semé au hasard.
+  // Anti-softlock (demande utilisateur explicite) : garantit qu'au moins resourceNodes.
+  // startingVisibilityBlobSize cases (8) de CHAQUE ressource en blob (bois, pierre, montagne) sont
+  // dans un rayon FIXE de resourceNodes.startingVisibilityRadius cases autour de l'Entrepôt de
+  // départ dès le lancement (pas seulement visible dans le brouillard de guerre, un rayon qui ne
+  // garantit rien si aucun Camp posé là ne peut jamais expédier jusqu'à l'Entrepôt). Rayon FIXE
+  // (demande utilisateur explicite : initialement "10 cases", resserré ensuite à "8 cases", puis "6
+  // cases"), volontairement PAS warehouseZoneRadius() (qui grandit avec la techno Aménagement
+  // urbain -- ce filet de sécurité doit rester constant, pas suivre les améliorations du joueur).
+  // Les blobs ci-dessus sont placés au hasard sur toute la carte, taille blobSizeMin/Max (4-9) : rien
+  // ne garantissait qu'un joueur ait ne serait-ce qu'UNE case de chaque ressource exploitable, ET un
+  // blob déjà présent par pur hasard pouvait retomber sous la taille garantie (capture d'écran à
+  // l'appui, demande utilisateur explicite : "les blobs initiaux ne font pas 6 cases, mais 4" -- ce
+  // qui a révélé que le SIMPLE test de présence d'avant ne suffisait pas). Compte donc désormais le
+  // total de cases de CE type dans l'anneau, qu'il vienne d'un seul blob ou de plusieurs, et
+  // complète (plante ou ÉTEND, voir _extendBlob) jusqu'à atteindre startingVisibilityBlobSize.
+  // Appelé après _spawnBlobs, donc ce filet de sécurité ne s'active que si le hasard n'a vraiment
+  // pas atteint la taille garantie.
   _ensureStartingVisibility(cfg) {
     const startCol = GameConfig.world.startCol;
     const startRow = Math.floor(this.rows / 2);
     const ring = HexUtils.hexesInRange(startCol, startRow, cfg.startingVisibilityRadius, this.cols, this.rows);
 
     for (const type of ['tree', 'stone', 'mountain']) {
-      const alreadyVisible = ring.some((c) => {
-        const t = this.resourceTiles.get(this.key(c.col, c.row));
-        return t && t.type === type;
-      });
-      if (alreadyVisible) continue;
+      const existingInRing = ring
+        .filter((c) => {
+          const t = this.resourceTiles.get(this.key(c.col, c.row));
+          return t && t.type === type;
+        })
+        .map((c) => ({ col: c.col, row: c.row }));
 
-      // Cherche une case libre dans cet anneau visible mais hors dégagement de départ (voir
-      // _withinStartClearance) : quelques tentatives avec une graine aléatoire à chaque fois,
-      // même principe que _spawnBlobs -- la zone est petite, ça suffit presque toujours à
-      // trouver une place pour ce blob (peut renvoyer moins de startingVisibilityBlobSize cases si
-      // la place manque vraiment, voir _growBlob).
+      const missing = cfg.startingVisibilityBlobSize - existingInRing.length;
+      if (missing <= 0) continue;
+
+      if (existingInRing.length > 0) {
+        // Étend le(s) blob(s) déjà présent(s) dans l'anneau plutôt que d'en planter un second
+        // séparé (voir commentaire ci-dessus) -- amorcé depuis TOUTES les cases déjà en place,
+        // qu'elles appartiennent à un seul blob ou plusieurs.
+        const newTiles = this._extendBlob(existingInRing, missing, cfg.startClearance);
+        for (const t of newTiles) {
+          this.resourceTiles.set(this.key(t.col, t.row), { type, amount: cfg[type].amount });
+        }
+        continue;
+      }
+
+      // Aucune case de ce type dans l'anneau : cherche une case libre pour y planter un nouveau
+      // blob, hors dégagement de départ (voir _withinStartClearance) -- quelques tentatives avec
+      // une graine aléatoire à chaque fois, même principe que _spawnBlobs. Peut renvoyer moins de
+      // startingVisibilityBlobSize cases si la place manque vraiment (voir _growBlob).
       for (let attempt = 0; attempt < 100; attempt++) {
         const cand = ring[Math.floor(Math.random() * ring.length)];
         if (this._withinStartClearance(cand.col, cfg.startClearance)) continue;
@@ -750,6 +766,40 @@ const GameState = {
       // Ne garde que les voisins PAS déjà visités : sans ce filtre, une case dont tous les
       // voisins sont déjà pris resterait indéfiniment en tête du front en mode compact (idx
       // toujours 0), gaspillant le budget `guard` au lieu de passer à la suivante.
+      const candidates = HexUtils.neighbors(cur.col, cur.row)
+        .filter(n => n.row >= 0 && n.row < this.rows)
+        .filter(n => !visited.has(this.key(HexUtils.wrapCol(n.col, this.cols), n.row)));
+      if (candidates.length === 0) { frontier.splice(idx, 1); continue; }
+
+      const n = candidates[Math.floor(Math.random() * candidates.length)];
+      const wrappedCol = HexUtils.wrapCol(n.col, this.cols);
+      const k = this.key(wrappedCol, n.row);
+      visited.add(k);
+      if (this._withinStartClearance(n.col, clearance)) continue;
+
+      if (this._tileIsFreeForResource(wrappedCol, n.row)) {
+        result.push({ col: wrappedCol, row: n.row });
+        frontier.push({ col: n.col, row: n.row });
+      }
+    }
+    return result;
+  },
+
+  // Étend un blob déjà existant (voir _ensureStartingVisibility) en ajoutant jusqu'à
+  // `additionalSize` nouvelles cases adjacentes -- même algorithme BFS/aléatoire que _growBlob
+  // (mode compact=false), mais amorcé depuis PLUSIEURS cases déjà en place (`existingTiles`)
+  // plutôt qu'une seule graine, et sans les recompter dans le résultat (elles existent déjà).
+  // Peut renvoyer moins de `additionalSize` cases si la place manque.
+  _extendBlob(existingTiles, additionalSize, clearance) {
+    const result = [];
+    const visited = new Set(existingTiles.map((t) => this.key(t.col, t.row)));
+    let frontier = existingTiles.map((t) => ({ col: t.col, row: t.row }));
+    let guard = 0;
+
+    while (result.length < additionalSize && frontier.length > 0 && guard < additionalSize * 20) {
+      guard++;
+      const idx = Math.floor(Math.random() * frontier.length);
+      const cur = frontier[idx];
       const candidates = HexUtils.neighbors(cur.col, cur.row)
         .filter(n => n.row >= 0 && n.row < this.rows)
         .filter(n => !visited.has(this.key(HexUtils.wrapCol(n.col, this.cols), n.row)));
