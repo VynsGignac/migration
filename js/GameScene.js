@@ -692,6 +692,14 @@ class GameScene extends Phaser.Scene {
         if (!GameState.hasLinkTargetInRange(col, row, def)) {
           lines.push('⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.');
         }
+        // Vitesse de production (demande utilisateur explicite) : voir GameState.productionRateFor
+        // -- vitesse THÉORIQUE (main-d'œuvre + tous les bonus cumulés, y compris désormais le bonus
+        // de densité de ressource), pas le débit instantané réel qui peut retomber à 0 (buffer
+        // plein, ressource épuisée).
+        const prodRate = GameState.productionRateFor(col, row);
+        if (prodRate) {
+          lines.push(`Vitesse de production : ${prodRate.rate.toFixed(2)} ${GameConfig.resourceLabels[prodRate.resource].long}/s`);
+        }
         lines.push(this.laborStatusLine(col, row, def));
       }
     } else if (def.kind === 'processor') {
@@ -708,6 +716,12 @@ class GameScene extends Phaser.Scene {
       lines.push(`En sortie (à expédier) : ${Math.round(tile.outputBuffer)}/${def.outputCap + GameState.capBonus()}`);
       if (!GameState.hasLinkTargetInRange(col, row, def)) {
         lines.push('⚠ Aucune route vers une destination valide : la production s\'accumule ici sans jamais partir.');
+      }
+      // Vitesse de production (demande utilisateur explicite) : voir le commentaire équivalent dans
+      // la branche "extractor" ci-dessus (même mécanique, GameState.productionRateFor).
+      const prodRate = GameState.productionRateFor(col, row);
+      if (prodRate) {
+        lines.push(`Vitesse de production : ${prodRate.rate.toFixed(2)} ${GameConfig.resourceLabels[prodRate.resource].long}/s`);
       }
       lines.push(this.laborStatusLine(col, row, def));
     } else if (def.kind === 'shrine') {

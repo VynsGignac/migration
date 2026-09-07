@@ -1203,6 +1203,96 @@ const GameState = {
     return total;
   },
 
+  // Vitesse de production ACTUELLE d'un extracteur/processeur opérationnel (voir GameScene.
+  // buildingInfoText, demande utilisateur explicite : afficher "X <ressource>/s" dans le panneau
+  // d'info) -- même formule que la section "Extraction"/"Transformation" de tickProduction
+  // (efficacité de main-d'œuvre × bonus de vitesse cumulés), recalculée à la demande pour CE
+  // bâtiment seul plutôt que partagée avec la boucle de simulation (même choix qu'
+  // estimateResourceRates un peu plus haut, qui a déjà sa propre copie indépendante de ces mêmes
+  // bonus) -- reste simple et sans risque de perturber le tick réel. C'est la vitesse THÉORIQUE
+  // (comme si l'apport en ressource/intrants était illimité), pas la vitesse instantanée réelle
+  // (qui peut retomber à 0 si le buffer de sortie est plein ou l'intrant manquant -- délibéré, voir
+  // demande utilisateur : la question porte sur "à quelle vitesse il travaille", pas sur son débit
+  // du moment). Renvoie { rate, resource } ou null si ce bâtiment n'a pas de vitesse de production
+  // pertinente à afficher (chantier, tour, maison, bâtiment sans kind, etc.).
+  productionRateFor(col, row) {
+    const key = this.key(col, row);
+    const tile = this.tiles.get(key);
+    const def = tile && GameConfig.buildings[tile.type];
+    if (!tile || !def || tile.underConstruction) return null;
+    if (def.kind !== 'extractor' && def.kind !== 'processor') return null;
+
+    const workers = this.getAssignedWorkers(col, row);
+    const efficiency = tile.type === 'recycler'
+      ? 1
+      : this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
+
+    // Érudition (voir techTree.nodes.rec_tbd3) : même calcul que tickProduction/estimateResourceRates.
+    const tbd3Level = this.techLevel('rec_tbd3');
+    const tbd3PerTech = tbd3Level > 0 ? GameConfig.techTree.nodes.rec_tbd3.bonusPerTechByLevel[tbd3Level - 1] : 0;
+    let totalResearchLevels = 0;
+    for (const lvl of this.unlockedTech.values()) totalResearchLevels += lvl;
+    const tbd3Bonus = tbd3PerTech * totalResearchLevels;
+
+    // Guilde : this.guildZone est un Set PERSISTANT (recalculé sur buildingsDirty, voir plus bas
+    // dans ce fichier), contrairement à quartierZone ci-dessous -- pas besoin de le reconstruire ici.
+    const guildLevel = this.techLevel('ind_guilde');
+    const guildBonusValue = guildLevel > 0 ? GameConfig.techTree.nodes.ind_guilde.productionBonusByLevel[guildLevel - 1] : 0;
+
+    // Vie de quartier : PAS un Set persistant (voir tickProduction/estimateResourceRates, qui le
+    // reconstruisent aussi à chaque appel) -- juste ce bâtiment nous intéresse ici, donc on
+    // s'arrête dès qu'une Maison pleine à portée est trouvée plutôt que de construire tout le Set.
+    let inQuartierZone = false;
+    if (this.isTechUnlocked('pop_mariage')) {
+      for (const [hKey, hTile] of this.tiles) {
+        const hDef = GameConfig.buildings[hTile.type];
+        if (!hDef || hDef.kind !== 'house' || hTile.underConstruction) continue;
+        if (hTile.population < this.housePopulationCap(hDef)) continue;
+        const [hCol, hRow] = hKey.split(',').map(Number);
+        if (HexUtils.hexesInRange(hCol, hRow, GameConfig.population.laborRadius, this.cols, this.rows)
+          .some((c) => c.col === col && c.row === row)) {
+          inQuartierZone = true;
+          break;
+        }
+      }
+    }
+    const quartierBonus = GameConfig.techTree.nodes.pop_mariage.productionBonus;
+
+    if (def.kind === 'extractor') {
+      // Bonus de densité (voir GameConfig.production.resourceDensityBonusByCount) : même calcul que
+      // tickProduction section "Extraction".
+      let densityBonus = 0;
+      if (tile.type !== 'recycler') {
+        const radius = this.extractorRadiusFor(tile.type);
+        const inRange = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
+        let matchingTiles = 0;
+        for (const pos of inRange) {
+          const rt = this.resourceTiles.get(this.key(pos.col, pos.row));
+          if (rt && rt.type === def.resource && rt.amount > 0) matchingTiles++;
+        }
+        const table = GameConfig.production.resourceDensityBonusByCount;
+        if (matchingTiles > 0) densityBonus = table[Math.min(matchingTiles, table.length) - 1];
+      }
+      const speedMultiplier = 1 + tbd3Bonus
+        + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (inQuartierZone ? quartierBonus : 0)
+        + (this.hasActiveBlessing('fertilite') ? 1 : 0)
+        + densityBonus;
+      return { rate: def.extractRate * efficiency * speedMultiplier, resource: def.outputResource };
+    }
+
+    // Processeur (voir tickProduction section "Transformation") : tbd4 dédié au Sculpteur, Dieu des
+    // artisans pour tous.
+    const tbd4Level = this.techLevel('rec_tbd4');
+    const sculpteurBonus = tbd4Level > 0 ? GameConfig.techTree.nodes.rec_tbd4.bonusByLevel[tbd4Level - 1] : 0;
+    const speedMultiplier = 1 + tbd3Bonus
+      + (this.guildZone.has(key) ? guildBonusValue : 0)
+      + (inQuartierZone ? quartierBonus : 0)
+      + (tile.type === 'sculpteur' ? sculpteurBonus : 0)
+      + (this.hasActiveBlessing('artisans') ? 1 : 0);
+    return { rate: def.rate * efficiency * speedMultiplier, resource: def.outputResource };
+  },
+
   tickProduction(dtSeconds) {
     // 0. Plantation (bâtiments avec plants: true, ex. la Ferme) : crée périodiquement de
     // nouvelles cases de sa ressource dans son rayon, tant qu'il reste de la place libre et
@@ -1324,21 +1414,42 @@ const GameState = {
       const efficiency = tile.type === 'recycler'
         ? 1
         : this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
+
+      // extractorRadiusFor (Expertise) / recyclerRadius (Expertise + tbd1, doublé) : voir leurs
+      // commentaires respectifs -- seul le Recycleur a un calcul dédié parmi les extracteurs. Calculé
+      // AVANT toExtract désormais (pas juste après comme avant) : le bonus de densité ci-dessous en a
+      // besoin pour compter les cases de ressource dans ce même rayon.
+      const radius = tile.type === 'recycler' ? this.recyclerRadius() : this.extractorRadiusFor(tile.type);
+      const inRange = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
+
+      // Bonus de densité (voir GameConfig.production.resourceDensityBonusByCount, demande
+      // utilisateur explicite) : plus il y a de cases de LA ressource récoltée par CE bâtiment (non
+      // épuisées) dans son propre rayon d'action, plus il travaille vite -- paliers dégressifs,
+      // plafonnés. PAS le Recycleur (cadavres rares/dispersés par nature, pas une mécanique de
+      // densité voulue ici, voir le commentaire sur ce tableau).
+      let densityBonus = 0;
+      if (tile.type !== 'recycler') {
+        let matchingTiles = 0;
+        for (const pos of inRange) {
+          const rt = this.resourceTiles.get(this.key(pos.col, pos.row));
+          if (rt && rt.type === def.resource && rt.amount > 0) matchingTiles++;
+        }
+        const densityTable = GameConfig.production.resourceDensityBonusByCount;
+        if (matchingTiles > 0) densityBonus = densityTable[Math.min(matchingTiles, densityTable.length) - 1];
+      }
+
       // Déesse de la fertilité (voir GameConfig.devotion.tiers, demande utilisateur explicite) :
       // "2 fois plus efficace" pour les bâtiments de ressource BRUTE, donc les extracteurs -- +1 au
       // multiplicateur (1 -> 2) plutôt qu'un facteur séparé, même mécanique que les autres bonus de
-      // vitesse déjà cumulés ici (tbd3/Guilde/Vie de quartier).
+      // vitesse déjà cumulés ici (tbd3/Guilde/Vie de quartier/densité).
       const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
         + (quartierZone && quartierZone.has(key) ? quartierBonus : 0)
-        + (this.hasActiveBlessing('fertilite') ? 1 : 0);
+        + (this.hasActiveBlessing('fertilite') ? 1 : 0)
+        + densityBonus;
       let toExtract = Math.min(def.extractRate * efficiency * speedMultiplier * dtSeconds, def.outputCap + this.capBonus() - tile.outputBuffer);
       if (toExtract <= 0) continue;
 
-      // extractorRadiusFor (Expertise) / recyclerRadius (Expertise + tbd1, doublé) : voir leurs
-      // commentaires respectifs -- seul le Recycleur a un calcul dédié parmi les extracteurs.
-      const radius = tile.type === 'recycler' ? this.recyclerRadius() : this.extractorRadiusFor(tile.type);
-      const inRange = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
       let extracted = 0;
 
       // Gisement (voir GameConfig.techTree.nodes.ind_mineInfinie, demande utilisateur

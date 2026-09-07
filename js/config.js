@@ -330,6 +330,20 @@ const GameConfig = {
     // (demande utilisateur explicite) -- mis à l'échelle avec world.cols comme les blobs ci-dessus.
     corpseCount: 9,
   },
+  // Bonus de vitesse d'extraction selon le nombre de cases de LA ressource récoltée présentes (et
+  // non épuisées) dans le rayon d'action du bâtiment (demande utilisateur explicite : "plus il y a
+  // de cases de ressources apportées... que le gain de chaque nouvelle case soit dégressif") --
+  // voir GameState.tickProduction section "Extraction", qui compte ces cases dans le MÊME rayon que
+  // la récolte elle-même (extractorRadiusFor, donc profite aussi du bonus Expertise). Concerne
+  // Camp de Bûcheron/de Mineur, Ferme et Mineur de Fer -- PAS le Recycleur de gemmes (mécanique
+  // déjà différente, cadavres rares et dispersés par nature, pas un bonus de densité voulu).
+  // Tableau indexé par nombre de cases (1 case = index 0, 7+ cases = dernier palier, plafond) plutôt
+  // qu'une formule continue (racine carrée/logarithme) : même esprit que population.
+  // efficiencyByWorkers, plus simple à lire et à réajuster palier par palier. Paliers dégressifs
+  // (+15, +12, +10, +8, +7, +6 à chaque case en plus) jusqu'à +58 % plafond à 7 cases ou plus.
+  production: {
+    resourceDensityBonusByCount: [0, 0.15, 0.27, 0.37, 0.45, 0.52, 0.58],
+  },
   // Regroupe les bâtiments par onglet dans le menu de construction (voir GameScene.layoutHud/
   // activeBuildCategory) : la liste à plat est devenue trop longue pour tenir sans scroller une
   // fois la Tour de Guet ajoutée (voir demande utilisateur). L'ordre des clés = l'ordre des
