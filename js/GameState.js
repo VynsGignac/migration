@@ -1203,6 +1203,16 @@ const GameState = {
     return total;
   },
 
+  // Formule du bonus de densité (voir GameConfig.production.resourceDensityDoubleAtCount) :
+  // partagée entre tickProduction (section "Extraction") et productionRateFor ci-dessous, pour ne
+  // jamais laisser les deux calculs diverger. Logarithme en base resourceDensityDoubleAtCount (8
+  // par défaut) : vaut exactement 0 à 1 case et 1 (donc +100 %) à ce nombre de cases pile, sans
+  // aucun plafond au-delà (voir le commentaire sur cette valeur dans config.js).
+  _resourceDensityBonus(matchingTiles) {
+    if (matchingTiles <= 0) return 0;
+    return Math.log(matchingTiles) / Math.log(GameConfig.production.resourceDensityDoubleAtCount);
+  },
+
   // Vitesse de production ACTUELLE d'un extracteur/processeur opérationnel (voir GameScene.
   // buildingInfoText, demande utilisateur explicite : afficher "X <ressource>/s" dans le panneau
   // d'info) -- même formule que la section "Extraction"/"Transformation" de tickProduction
@@ -1259,8 +1269,8 @@ const GameState = {
     const quartierBonus = GameConfig.techTree.nodes.pop_mariage.productionBonus;
 
     if (def.kind === 'extractor') {
-      // Bonus de densité (voir GameConfig.production.resourceDensityBonusByCount) : même calcul que
-      // tickProduction section "Extraction".
+      // Bonus de densité (voir _resourceDensityBonus/GameConfig.production.
+      // resourceDensityDoubleAtCount) : même calcul que tickProduction section "Extraction".
       let densityBonus = 0;
       if (tile.type !== 'recycler') {
         const radius = this.extractorRadiusFor(tile.type);
@@ -1270,8 +1280,7 @@ const GameState = {
           const rt = this.resourceTiles.get(this.key(pos.col, pos.row));
           if (rt && rt.type === def.resource && rt.amount > 0) matchingTiles++;
         }
-        const table = GameConfig.production.resourceDensityBonusByCount;
-        if (matchingTiles > 0) densityBonus = table[Math.min(matchingTiles, table.length) - 1];
+        densityBonus = this._resourceDensityBonus(matchingTiles);
       }
       const speedMultiplier = 1 + tbd3Bonus
         + (this.guildZone.has(key) ? guildBonusValue : 0)
@@ -1422,11 +1431,11 @@ const GameState = {
       const radius = tile.type === 'recycler' ? this.recyclerRadius() : this.extractorRadiusFor(tile.type);
       const inRange = HexUtils.hexesInRange(col, row, radius, this.cols, this.rows);
 
-      // Bonus de densité (voir GameConfig.production.resourceDensityBonusByCount, demande
-      // utilisateur explicite) : plus il y a de cases de LA ressource récoltée par CE bâtiment (non
-      // épuisées) dans son propre rayon d'action, plus il travaille vite -- paliers dégressifs,
-      // plafonnés. PAS le Recycleur (cadavres rares/dispersés par nature, pas une mécanique de
-      // densité voulue ici, voir le commentaire sur ce tableau).
+      // Bonus de densité (voir _resourceDensityBonus/GameConfig.production.
+      // resourceDensityDoubleAtCount, demande utilisateur explicite) : plus il y a de cases de LA
+      // ressource récoltée par CE bâtiment (non épuisées) dans son propre rayon d'action, plus il
+      // travaille vite -- dégressif, SANS plafond. PAS le Recycleur (cadavres rares/dispersés par
+      // nature, pas une mécanique de densité voulue ici, voir le commentaire sur cette formule).
       let densityBonus = 0;
       if (tile.type !== 'recycler') {
         let matchingTiles = 0;
@@ -1434,8 +1443,7 @@ const GameState = {
           const rt = this.resourceTiles.get(this.key(pos.col, pos.row));
           if (rt && rt.type === def.resource && rt.amount > 0) matchingTiles++;
         }
-        const densityTable = GameConfig.production.resourceDensityBonusByCount;
-        if (matchingTiles > 0) densityBonus = densityTable[Math.min(matchingTiles, densityTable.length) - 1];
+        densityBonus = this._resourceDensityBonus(matchingTiles);
       }
 
       // Déesse de la fertilité (voir GameConfig.devotion.tiers, demande utilisateur explicite) :

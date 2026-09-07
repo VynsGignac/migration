@@ -332,17 +332,20 @@ const GameConfig = {
   },
   // Bonus de vitesse d'extraction selon le nombre de cases de LA ressource récoltée présentes (et
   // non épuisées) dans le rayon d'action du bâtiment (demande utilisateur explicite : "plus il y a
-  // de cases de ressources apportées... que le gain de chaque nouvelle case soit dégressif") --
-  // voir GameState.tickProduction section "Extraction", qui compte ces cases dans le MÊME rayon que
-  // la récolte elle-même (extractorRadiusFor, donc profite aussi du bonus Expertise). Concerne
-  // Camp de Bûcheron/de Mineur, Ferme et Mineur de Fer -- PAS le Recycleur de gemmes (mécanique
-  // déjà différente, cadavres rares et dispersés par nature, pas un bonus de densité voulu).
-  // Tableau indexé par nombre de cases (1 case = index 0, 7+ cases = dernier palier, plafond) plutôt
-  // qu'une formule continue (racine carrée/logarithme) : même esprit que population.
-  // efficiencyByWorkers, plus simple à lire et à réajuster palier par palier. Paliers dégressifs
-  // (+15, +12, +10, +8, +7, +6 à chaque case en plus) jusqu'à +58 % plafond à 7 cases ou plus.
+  // de cases de ressources apportées... que le gain de chaque nouvelle case soit dégressif, pas de
+  // plafond, la production atteint 100 % de plus à 8 cases") -- voir GameState.tickProduction
+  // section "Extraction"/productionRateFor, qui comptent ces cases dans le MÊME rayon que la
+  // récolte elle-même (extractorRadiusFor, donc profite aussi du bonus Expertise). Concerne Camp de
+  // Bûcheron/de Mineur, Ferme et Mineur de Fer -- PAS le Recycleur de gemmes (mécanique déjà
+  // différente, cadavres rares et dispersés par nature, pas un bonus de densité voulu).
+  // Remplace le tableau à paliers plafonné d'origine (demande utilisateur explicite : "pas de
+  // plafond") par une formule continue -- logarithme en base `resourceDensityDoubleAtCount`, qui
+  // donne exactement +0 % à 1 case (log(1) = 0, la référence actuelle) et +100 % pile à ce nombre
+  // de cases (log_8(8) = 1 par définition d'un logarithme en base 8), tout en restant dégressif et
+  // NON plafonné au-delà (+133 % à 16 cases, +200 % à 64 cases, etc. -- chaque case supplémentaire
+  // apporte toujours moins que la précédente, un logarithme ne fait jamais que ralentir).
   production: {
-    resourceDensityBonusByCount: [0, 0.15, 0.27, 0.37, 0.45, 0.52, 0.58],
+    resourceDensityDoubleAtCount: 8,
   },
   // Regroupe les bâtiments par onglet dans le menu de construction (voir GameScene.layoutHud/
   // activeBuildCategory) : la liste à plat est devenue trop longue pour tenir sans scroller une
