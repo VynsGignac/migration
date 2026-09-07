@@ -302,9 +302,17 @@ const GameState = {
   // multiplicateurs plutôt qu'une somme de pourcentages.
   effectiveBuildingCost(buildingId, baseCost) {
     let mult = 1;
-    if (buildingId === 'donjon' && this.hasActiveBlessing('croisade')) mult *= 0.5;
+    // Croisade/Déesse de la guerre (demande utilisateur explicite : "toutes les améliorations qui
+    // concernent les châteaux et/ou les fortins impactent globalement tout les batiments
+    // militaires") -- ciblaient à l'origine UN SEUL bâtiment chacune (Fortin pour Croisade, Château
+    // pour Déesse de la guerre) ; élargies aux 4 bâtiments militaires (Fortin/Château/Donjon/Tour de
+    // siège, voir GameState.fortinUpgradeTargets pour les 3 dernières). Les deux peuvent désormais
+    // se cumuler (multiplicativement, comme le reste de cette fonction) sur un même bâtiment.
+    const isMilitaryBuilding = buildingId === 'donjon' || buildingId === 'castle'
+      || buildingId === 'keep' || buildingId === 'siegeTower';
+    if (isMilitaryBuilding && this.hasActiveBlessing('croisade')) mult *= 0.5;
     if (buildingId === 'altar' && this.hasActiveBlessing('culte')) mult *= 0.5;
-    if (buildingId === 'castle' && this.hasActiveBlessing('guerre')) mult *= 0.5;
+    if (isMilitaryBuilding && this.hasActiveBlessing('guerre')) mult *= 0.5;
     if (buildingId === 'road' && this.hasActiveBlessing('voyageurs')) mult = 0;
     if (this.hasActiveBlessing('apogee')) mult *= 0.5;
     // Réductions de coût par TECHNO (voir GameConfig.techTree.nodes.rec_tbd1/rec_tbd5, demande
@@ -2545,22 +2553,28 @@ const GameState = {
   },
 
   // Démolition VOLONTAIRE par le joueur (voir GameScene.demolishSelectedBuilding, bouton
-  // "Démolir") : contrairement à destroyTile (passage de la horde), pas de ruine laissée derrière
-  // -- demande utilisateur explicite : "je ne veux plus de ruine quand l'utilisateur supprime
-  // lui meme un batiment (recyclage automatique de ce qu'aurait rapporté une ruine)". Même butin
-  // que destroyTile (_ruinLootFor), mais ajouté directement aux ressources (comme harvestRuin) au
-  // lieu d'attendre un pillage manuel, et la case redevient vide plutôt que ruine.
+  // "Démolir") -- comportement d'origine (demande utilisateur explicite plus ancienne : "je ne
+  // veux plus de ruine quand l'utilisateur supprime lui meme un batiment") ASSOUPLI depuis (nouvelle
+  // demande utilisateur explicite : "1 chance sur 4 d'être transformé en ruine, sinon il
+  // disparaît tout simplement") : 1/4 du temps, comme destroyTile (passage de la horde), la case
+  // devient une ruine pillable plus tard (voir harvestRuin) ; les 3/4 restants, comportement
+  // d'origine inchangé -- butin (_ruinLootFor) recyclé immédiatement, case vide.
   demolishBuildingByPlayer(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
-    if (!tile || tile.type === 'ruin') return false;
+    if (!tile || tile.type === 'ruin') return { warehouseLost: false, becameRuin: false };
     const loot = this._ruinLootFor(tile);
-    for (const res in loot) this.resources[res] = (this.resources[res] || 0) + loot[res];
     const warehouseLost = tile.type === 'warehouse';
-    this.tiles.delete(key);
+    const becameRuin = Math.random() < 0.25;
+    if (becameRuin) {
+      this.tiles.set(key, { type: 'ruin', ruinLoot: loot });
+    } else {
+      for (const res in loot) this.resources[res] = (this.resources[res] || 0) + loot[res];
+      this.tiles.delete(key);
+    }
     this.dirty = true;
     this.buildingsDirty = true;
-    return warehouseLost;
+    return { warehouseLost, becameRuin };
   },
 
   // Vrai si au moins un Entrepôt tient encore debout (voir GameScene, condition de défaite : la

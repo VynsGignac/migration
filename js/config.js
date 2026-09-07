@@ -224,7 +224,10 @@ const GameConfig = {
         id: 'tier2', threshold: 40,
         options: [
           { id: 'culte', name: 'Culte organisé', desc: 'Coût en Statues de l\'Autel divisé par 2.' },
-          { id: 'croisade', name: 'Croisade', desc: 'Coût de construction du Fortin divisé par 2.' },
+          // Fortin uniquement -> tous les bâtiments militaires (demande utilisateur explicite :
+          // "toutes les améliorations qui concernent les châteaux et/ou les fortins impactent
+          // globalement tout les batiments militaires") -- voir GameState.effectiveBuildingCost.
+          { id: 'croisade', name: 'Croisade', desc: 'Coût de construction/amélioration des bâtiments militaires (Fortin, Château, Donjon, Tour de siège) divisé par 2.' },
         ],
       },
       {
@@ -238,7 +241,9 @@ const GameConfig = {
         id: 'tier4', threshold: 80,
         options: [
           { id: 'voyageurs', name: 'Dieu des voyageurs', desc: 'Les routes sont gratuites.' },
-          { id: 'guerre', name: 'Déesse de la guerre', desc: 'Coût de l\'amélioration en Château réduit de 50 %.' },
+          // Château uniquement -> tous les bâtiments militaires (voir le commentaire équivalent sur
+          // Croisade ci-dessus, même demande utilisateur).
+          { id: 'guerre', name: 'Déesse de la guerre', desc: 'Coût de construction/amélioration des bâtiments militaires (Fortin, Château, Donjon, Tour de siège) réduit de 50 %.' },
         ],
       },
       {
