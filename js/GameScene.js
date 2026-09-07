@@ -328,14 +328,15 @@ class GameScene extends Phaser.Scene {
     if (GameState.tiles.has(key)) return false;
     const resTile = GameState.resourceTiles.get(key);
     if (resTile) {
-      // Seule une Route peut être posée sur du bois/blé (détruit la ressource, voir demande
-      // utilisateur) -- la pierre reste bloquante, pas demandée. Même chose pour le Mineur de Fer
-      // sur une case de montagne (demande utilisateur explicite). Doit rester cohérent avec la
-      // même règle dans GameState.placeBuilding (vérification faite là-bas de toute façon, mais
-      // le fantôme doit déjà refléter la bonne réponse avant même de taper).
-      const roadClearsResource = this.buildMode === 'road' && (resTile.type === 'tree' || resTile.type === 'wheat');
+      // N'IMPORTE QUEL bâtiment peut être posé sur du bois/blé (détruit la ressource, demande
+      // utilisateur explicite -- élargi depuis la seule Route auparavant) -- la pierre reste
+      // bloquante (jamais demandé). Même chose pour le Mineur de Fer sur une case de montagne
+      // (demande utilisateur explicite). Doit rester cohérent avec la même règle dans GameState.
+      // placeBuilding (vérification faite là-bas de toute façon, mais le fantôme doit déjà
+      // refléter la bonne réponse avant même de taper).
+      const clearsWoodOrWheat = resTile.type === 'tree' || resTile.type === 'wheat';
       const ironMinerClearsResource = this.buildMode === 'ironMiner' && resTile.type === 'mountain';
-      if (!roadClearsResource && !ironMinerClearsResource) return false;
+      if (!clearsWoodOrWheat && !ironMinerClearsResource) return false;
     }
     if (this.buildMode === 'road') {
       if (!GameState._hasAdjacentRoad(col, row)) return false;

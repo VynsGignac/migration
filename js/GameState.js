@@ -159,13 +159,16 @@ const GameState = {
     if (this.tiles.has(key)) return { ok: false, reason: 'occupied' };
     const resTile = this.resourceTiles.get(key);
     if (resTile) {
-      // Seule une Route peut être posée sur du bois/blé, ce qui détruit la ressource (voir
-      // demande utilisateur) -- la pierre reste bloquante, pas demandée. Même principe pour le
-      // Mineur de Fer sur une case de montagne (demande utilisateur explicite : "peut être
-      // construit sur une case de montagne") -- reste cohérent avec GameScene.isValidBuildSpot.
-      const roadClearsResource = buildingId === 'road' && (resTile.type === 'tree' || resTile.type === 'wheat');
+      // N'IMPORTE QUEL bâtiment peut être posé sur du bois/blé, ce qui détruit la ressource
+      // (demande utilisateur explicite : "je voudrais que tous les batiments puissent etre
+      // construits sur le bois et sur les champs de ble" -- élargi depuis la seule Route
+      // auparavant). La pierre reste bloquante (jamais demandé). Même principe pour le Mineur de
+      // Fer sur une case de montagne (demande utilisateur explicite : "peut être construit sur une
+      // case de montagne"), cas séparé car limité à CE seul bâtiment -- reste cohérent avec
+      // GameScene.isValidBuildSpot.
+      const clearsWoodOrWheat = resTile.type === 'tree' || resTile.type === 'wheat';
       const ironMinerClearsResource = buildingId === 'ironMiner' && resTile.type === 'mountain';
-      if (!roadClearsResource && !ironMinerClearsResource) return { ok: false, reason: 'resource' };
+      if (!clearsWoodOrWheat && !ironMinerClearsResource) return { ok: false, reason: 'resource' };
     }
     // Une route ne peut s'étendre qu'à partir d'une route déjà posée (voir _hasAdjacentRoad,
     // partagé avec la condition d'activation des Tours/Universités) : empêche de semer des
@@ -592,6 +595,30 @@ const GameState = {
     this._spawnBlobs('mountain', cfg.blobCountMountain, cfg);
     this._spawnSingleTiles('corpse', cfg.corpseCount, cfg);
     this._ensureStartingVisibility(cfg);
+  },
+
+  // Régénération de fin de tour de horde (voir Monsters.update, demande utilisateur explicite :
+  // "il me semble qu'on avait dit que l'on remettait uniquement du bois et de la pierre") --
+  // contrairement à generateResourceBlobs() ci-dessus (génération initiale du monde, bois + pierre
+  // + montagne + cadavres), celle-ci ne touche QUE le bois et la pierre : jamais la montagne (qui
+  // ne se régénère de toute façon jamais, voir resourceNodes.mountain -- une montagne épuisée
+  // reste visible à 0) ni les cadavres (mécanique séparée, liée aux morts de monstres, pas à un
+  // tour de horde).
+  // EFFACE d'abord toutes les cases de bois/pierre déjà présentes (demande utilisateur explicite :
+  // "il faut à la fin de la horde aussi effacer le bois et la pierre qui étaient déjà présents...
+  // sinon les ressources finissent par s'accumuler sur la map et on ne peut plus construire") --
+  // _spawnBlobs (comme generateResourceBlobs) n'ajoute QUE sur des cases encore libres, sans cet
+  // effacement le total de bois/pierre grossirait donc indéfiniment à chaque tour plutôt que d'être
+  // simplement renouvelé. Une case déjà bâtie n'est jamais dans resourceTiles (voir placeBuilding,
+  // qui l'en retire à la construction) : cet effacement ne touche donc jamais un bâtiment existant.
+  regenerateLapResources() {
+    const cfg = GameConfig.resourceNodes;
+    for (const [key, rt] of this.resourceTiles) {
+      if (rt.type === 'tree' || rt.type === 'stone') this.resourceTiles.delete(key);
+    }
+    this._spawnBlobs('tree', cfg.blobCountTree, cfg);
+    this._spawnBlobs('stone', cfg.blobCountStone, cfg);
+    this.dirty = true;
   },
 
   // Anti-softlock (demande utilisateur explicite) : garantit qu'au moins une case (ou une partie de

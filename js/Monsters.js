@@ -180,18 +180,19 @@ const Monsters = {
 
     const messages = [];
 
-    // Régénère les blobs de ressources (bois/pierre/montagne) à CHAQUE tour complet de la horde
-    // (demande utilisateur explicite : "à la fin de la horde, les blobs de ressource sois
-    // regeneré, pas forcement exactement à la meme place que precedement") -- réutilise
-    // exactement generateResourceBlobs() (même génération aléatoire qu'au tout début de la
-    // partie, voir GameState), qui ne fait qu'AJOUTER de nouveaux blobs sur des cases encore
-    // libres (_tileIsFreeForResource) : les ressources restantes d'avant, elles, ne sont ni
-    // déplacées ni perdues. "lap" ci-dessus est calculé AVANT d'avancer (vitesse de CE tick) ; on
-    // compare avec le nouveau total pour détecter le franchissement.
+    // Régénère les blobs de bois/pierre (SEULEMENT, voir GameState.regenerateLapResources -- pas
+    // la montagne ni les cadavres, demande utilisateur explicite) à CHAQUE tour complet de la
+    // horde (demande utilisateur explicite d'une session précédente : "à la fin de la horde, les
+    // blobs de ressource sois regeneré, pas forcement exactement à la meme place que precedement").
+    // regenerateLapResources EFFACE d'abord le bois/la pierre déjà présents avant d'en resemer
+    // (demande utilisateur explicite : "sinon les ressources finissent par s'accumuler sur la map
+    // et on ne peut plus construire") -- remplace donc le stock plutôt que de l'empiler tour après
+    // tour. "lap" ci-dessus est calculé AVANT d'avancer (vitesse de CE tick) ; on compare avec le
+    // nouveau total pour détecter le franchissement.
     const lapAfter = Math.floor(this.totalDistancePx / worldWidthPx);
     if (lapAfter > lap) {
-      gameState.generateResourceBlobs();
-      messages.push('La horde a bouclé un tour : de nouvelles ressources sont apparues.');
+      gameState.regenerateLapResources();
+      messages.push('La horde a bouclé un tour : le bois et la pierre ont été renouvelés.');
     }
 
     // Fenêtres "sous le feu" (voir markGroupUnderAttack) : décrémentées une fois par frame ici,
