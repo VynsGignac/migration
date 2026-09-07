@@ -752,6 +752,13 @@ class GameScene extends Phaser.Scene {
     const padX = 8, padY = 6;
 
     let cursorY = startY;
+    // Largeur RÉELLE du contenu (demande utilisateur explicite : "la bande sombre fasse seulement
+    // la largeur du texte, pas toute la ligne") -- mesurée ligne par ligne (bord droit de l'icône/
+    // texte le plus large) plutôt que de toujours réserver toute la largeur de wordWrapWidth
+    // (l'ancien comportement, correct pour le retour à la ligne mais qui laissait un bandeau bien
+    // plus large que le texte réellement affiché dès qu'aucune ligne n'approchait cette limite --
+    // flagrant sur mobile, où wordWrapWidth couvre tout l'écran).
+    let maxContentRight = startX;
     rows.forEach((row, i) => {
       const labelObj = this.infoRowLabels[i];
       const iconObj = this.infoRowIcons[i];
@@ -778,6 +785,7 @@ class GameScene extends Phaser.Scene {
       textObj.setText(row.text).setVisible(true);
       const rowHeight = Math.max(row.icon ? iconSize : 0, textObj.height, row.label ? labelObj.height : 0);
       cursorY += rowHeight + rowGap;
+      maxContentRight = Math.max(maxContentRight, textObj.x + textObj.width);
     });
     for (let i = rows.length; i < this.infoRowIcons.length; i++) {
       this.infoRowLabels[i].setVisible(false);
@@ -785,9 +793,10 @@ class GameScene extends Phaser.Scene {
       this.infoRowTexts[i].setVisible(false);
     }
 
+    const contentWidth = Math.min(wrapWidth, maxContentRight - startX);
     this.infoRowsBg
       .setPosition(startX - padX, startY - padY)
-      .setSize(wrapWidth + padX * 2, (cursorY - rowGap - startY) + padY * 2)
+      .setSize(contentWidth + padX * 2, (cursorY - rowGap - startY) + padY * 2)
       .setVisible(true);
     this.infoPanelText.setVisible(false);
   }
