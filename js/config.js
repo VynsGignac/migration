@@ -333,10 +333,16 @@ const GameConfig = {
     // Anti-softlock (voir GameState._ensureStartingVisibility) : rayon (en cases, pas en colonnes,
     // contrairement à startClearance ci-dessus) dans lequel chaque ressource en blob doit avoir au
     // moins une case garantie autour de l'Entrepôt de départ -- valeur FIXE demandée explicitement
-    // par l'utilisateur (initialement "10 cases", resserré ensuite à "8 cases"), indépendante de
-    // warehouseZoneRadius() (portée réelle du jeu, qui grandit avec la techno Aménagement urbain --
-    // ce filet de sécurité ne doit pas en dépendre).
-    startingVisibilityRadius: 8,
+    // par l'utilisateur (initialement "10 cases", resserré ensuite à "8 cases", puis "6 cases"),
+    // indépendante de warehouseZoneRadius() (portée réelle du jeu, qui grandit avec la techno
+    // Aménagement urbain -- ce filet de sécurité ne doit pas en dépendre).
+    startingVisibilityRadius: 6,
+    // Taille MINIMALE du blob planté par ce filet de sécurité quand aucune case de la ressource
+    // concernée n'est déjà dans startingVisibilityRadius (demande utilisateur explicite : "garantis
+    // que les blobs concernés ont au moins 8 cases") -- distinct de blobSizeMin (4, taille normale
+    // des blobs semés partout sur la carte) : ce blob-ci est la seule garantie du joueur, donc
+    // volontairement plus généreux.
+    startingVisibilityBlobSize: 8,
     // Cadavre de monstre : PAS un blob (voir _spawnSingleTiles) -- une case isolée et rare,
     // dispersée sur toute la carte. Densité de base ~1 par écran plein à dézoom maximum (le
     // monde montre toujours ses 45 rangées en hauteur, voir GameScene.getEffectiveZoomMin ; sur

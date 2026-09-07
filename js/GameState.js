@@ -626,13 +626,16 @@ const GameState = {
   // de resourceNodes.startingVisibilityRadius cases autour de l'Entrepôt de départ dès le
   // lancement (pas seulement visible dans le brouillard de guerre, un rayon qui ne garantit rien
   // si aucun Camp posé là ne peut jamais expédier jusqu'à l'Entrepôt). Rayon FIXE (demande
-  // utilisateur explicite : initialement "10 cases", resserré ensuite à "8 cases"), volontairement
-  // PAS warehouseZoneRadius() (qui grandit avec
+  // utilisateur explicite : initialement "10 cases", resserré ensuite à "8 cases", puis "6 cases"),
+  // volontairement PAS warehouseZoneRadius() (qui grandit avec
   // la techno Aménagement urbain -- ce filet de sécurité doit rester constant, pas suivre les
   // améliorations du joueur). Les blobs ci-dessus sont placés au hasard sur toute la carte -- rien
   // ne garantissait qu'un joueur ait ne serait-ce qu'UNE case de chaque ressource exploitable sans
   // déjà avoir étendu son réseau de routes au petit bonheur. Appelé après _spawnBlobs, donc ce
-  // filet de sécurité ne s'active que si le hasard n'a vraiment rien mis à portée.
+  // filet de sécurité ne s'active que si le hasard n'a vraiment rien mis à portée. Le blob planté
+  // ici vise resourceNodes.startingVisibilityBlobSize cases (8, demande utilisateur explicite),
+  // volontairement plus gros que blobSizeMin (4, taille normale ailleurs sur la carte) -- c'est la
+  // SEULE garantie du joueur, donc plus généreuse qu'un blob semé au hasard.
   _ensureStartingVisibility(cfg) {
     const startCol = GameConfig.world.startCol;
     const startRow = Math.floor(this.rows / 2);
@@ -648,11 +651,12 @@ const GameState = {
       // Cherche une case libre dans cet anneau visible mais hors dégagement de départ (voir
       // _withinStartClearance) : quelques tentatives avec une graine aléatoire à chaque fois,
       // même principe que _spawnBlobs -- la zone est petite, ça suffit presque toujours à
-      // trouver une place pour un blob de taille minimale.
+      // trouver une place pour ce blob (peut renvoyer moins de startingVisibilityBlobSize cases si
+      // la place manque vraiment, voir _growBlob).
       for (let attempt = 0; attempt < 100; attempt++) {
         const cand = ring[Math.floor(Math.random() * ring.length)];
         if (this._withinStartClearance(cand.col, cfg.startClearance)) continue;
-        const blobTiles = this._growBlob(cand.col, cand.row, cfg.blobSizeMin, cfg.startClearance);
+        const blobTiles = this._growBlob(cand.col, cand.row, cfg.startingVisibilityBlobSize, cfg.startClearance);
         if (blobTiles.length === 0) continue;
         for (const t of blobTiles) {
           const amount = cfg[type].amount;
