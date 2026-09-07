@@ -2070,6 +2070,21 @@ const GameState = {
     return def.damage;
   },
 
+  // Vitesse de tir EFFECTIVE (tirs/s) d'une tour à cette position, pour l'affichage (voir
+  // GameScene.buildingInfoText, demande utilisateur explicite : "à la place des dégâts, les
+  // batiments de combat affiche leurs vitesses d'attaque") -- même formule que tickProduction
+  // section "Tours" (tile.fireCooldown se vide à efficacité * (1 + bonus Dévotion tbd6) par
+  // seconde, se réinitialise à def.fireInterval une fois atteint), mais exprimée en DÉBIT (tirs/s)
+  // plutôt qu'un montant sur un dtSeconds donné. 0 sans travailleur affecté (efficiencyByWorkers[0],
+  // pas 0 tir/s garanti -- une tour non alimentée continue de tirer, juste plus lentement, comme le
+  // reste du jeu).
+  towerAttacksPerSecond(col, row, def) {
+    const workers = this.getAssignedWorkers(col, row);
+    const efficiency = this.efficiencyForWorkers(workers, def.capMultiplier || 1);
+    const tbd6DevotionBonus = this.isTechUnlocked('rec_tbd6') ? this.resources.devotion / 100 : 0;
+    return (efficiency * (1 + tbd6DevotionBonus)) / def.fireInterval;
+  },
+
   // Applique les dégâts d'un tir de tour à un monstre (mort, régénération du Chef, décompte de
   // section "sous le feu" inclus) -- factorisé pour être appelé identiquement sur la cible
   // principale ET sur une éventuelle cible adjacente (voir Artilleur/def_armee, tickProduction

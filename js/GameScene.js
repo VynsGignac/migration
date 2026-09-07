@@ -766,7 +766,11 @@ class GameScene extends Phaser.Scene {
     } else if (def.kind === 'tower') {
       const active = GameState._hasAdjacentRoad(col, row);
       lines.push(active ? 'Relié à une route : actif.' : 'Pas de route adjacente : inactif.');
-      lines.push(`Portée : ${GameState.towerRange(def)}   Dégâts : ${GameState.towerDamage(def)}`);
+      // Vitesse d'attaque à la place des dégâts (demande utilisateur explicite) : tirs/s réels à
+      // CETTE position (dépend de la main-d'œuvre affectée et du bonus Dévotion, voir
+      // GameState.towerAttacksPerSecond) plutôt qu'un chiffre de dégâts qui ne varie jamais.
+      const attacksPerSecond = GameState.towerAttacksPerSecond(col, row, def);
+      lines.push(`Portée : ${GameState.towerRange(def)}   Vitesse d'attaque : ${attacksPerSecond.toFixed(2)} tir/s`);
       // multiShot (Château)/splashAllAdjacent (Tour de siège, voir GameConfig.buildings) : mention
       // explicite, sinon un joueur ne devinerait pas ces mécaniques rien qu'avec portée/dégâts.
       if (def.multiShot) lines.push(`Tire sur ${def.multiShot} ennemis différents à la fois.`);
