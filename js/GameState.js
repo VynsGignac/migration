@@ -1210,6 +1210,31 @@ const GameState = {
     // même ordre que la consommation de pain des Maisons ci-dessus, donc ne doit pas faire
     // apparaître un solde négatif alors que l'économie réelle est stable.
 
+    // Sorties (lingot de fer) : l'Armurier et le Sculpteur puisent le lingot de fer au stock central
+    // de l'Entrepôt le plus proche (voir _spawnWarehouseIronIngot, PAS un chantier -- fonctionnement
+    // normal et continu de ces bâtiments, donc bien une consommation au sens de la remarque
+    // ci-dessus). Recette 1:1:1 (voir buildings.armurier/sculpteur) : le lingot de fer est consommé
+    // exactement au même rythme que les armes/statues sont produites -- même formule que la boucle
+    // "Entrées" plus haut pour ces deux bâtiments, afin que les deux restent cohérents entre eux.
+    const ironConsumerTypes = { armurier: true, sculpteur: true };
+    for (const [key, tile] of this.tiles) {
+      if (!ironConsumerTypes[tile.type] || tile.underConstruction) continue;
+      const def = GameConfig.buildings[tile.type];
+      const [col, row] = key.split(',').map(Number);
+      const found = this.findBestPathToBuildingType(col, row, def.linkTargets, def.linkRange, () => 1);
+      if (!found) continue;
+      const travelTime = (found.path.length - 1) / shipSpeed;
+      const deliveryCapacity = batch / travelTime;
+      const workers = labor.get(key) ? labor.get(key).workers : 0;
+      const efficiency = this.efficiencyForWorkers(workers);
+      const speedMultiplier = 1 + tbd3Bonus
+        + (this.guildZone.has(key) ? guildBonusValue : 0)
+        + (quartierZone && quartierZone.has(key) ? quartierBonus : 0)
+        + (tile.type === 'sculpteur' ? sculpteurBonus : 0);
+      const consumptionRate = def.rate * efficiency * speedMultiplier;
+      perSecond.ironIngot -= Math.min(deliveryCapacity, consumptionRate);
+    }
+
     // Dévotion : même calcul que tickProduction (voir plus haut, Temple/Autel), MOINS le
     // multiplicateur dtSeconds -- comme les taux "producteur" ci-dessus, cette fonction calcule un
     // débit (unité/s) avant de le convertir en "par minute réelle" via toPerMinute plus bas.
@@ -1237,6 +1262,9 @@ const GameState = {
       planks: perSecond.planks * toPerMinute,
       stoneBlocks: perSecond.stoneBlocks * toPerMinute,
       bread: perSecond.bread * toPerMinute,
+      ironIngot: perSecond.ironIngot * toPerMinute,
+      weapons: perSecond.weapons * toPerMinute,
+      statues: perSecond.statues * toPerMinute,
       devotion: (devotionGainRate - devotionDrainRate) * toPerMinute,
     };
   },
