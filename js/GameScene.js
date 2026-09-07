@@ -2782,8 +2782,15 @@ class GameScene extends Phaser.Scene {
         btn.on('pointerup', () => {
           if (GameState.chooseDevotionTier(tierIndex, opt.id)) this.refreshDevotionPanel();
         });
-        this.uiElements.push(btn);
-        return { id: opt.id, btn };
+        // Description affichée SOUS le bouton de son option, dès le choix forcé (demande
+        // utilisateur explicite : "j'aimerais que lors du choix des benedictions, s'affiche en
+        // plus la description de le benediction") -- jusqu'ici, la description n'apparaissait
+        // qu'APRÈS coup dans la liste "déjà choisies" (voir row.effectText, mode normal ci-dessous),
+        // jamais au moment même du choix.
+        const descText = this.add.text(0, 0, opt.desc || '', { font: '11px sans-serif', color: '#c7ced3' })
+          .setDepth(1012).setVisible(false);
+        this.uiElements.push(btn, descText);
+        return { id: opt.id, btn, descText };
       });
       this.uiElements.push(label, statusText, effectText);
       return { label, statusText, effectText, optionButtons };
@@ -2830,16 +2837,26 @@ class GameScene extends Phaser.Scene {
         row.effectText.setVisible(false);
         if (!isPending) {
           row.label.setVisible(false);
-          for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+          for (const { btn, descText } of row.optionButtons) {
+            btn.setVisible(false).disableInteractive();
+            descText.setVisible(false);
+          }
           return;
         }
         row.label
           .setText(`Palier ${pendingIndex + 1} atteint (${tierCfg.threshold} %) — choisissez une bénédiction :`)
           .setPosition(labelX, rowY0).setVisible(true);
-        let bx = labelX;
-        for (const { btn } of row.optionButtons) {
-          btn.setPosition(bx, rowY0 + 26).setVisible(true).setInteractive({ useHandCursor: true });
-          bx += btn.width + 10;
+        // Empilées verticalement (bouton + description qui lui correspond, PAS côte à côte comme
+        // avant) : une description a besoin de bien plus de largeur qu'un simple nom de bouton pour
+        // rester lisible sans se chevaucher -- voir la largeur de retour à la ligne ci-dessous, qui
+        // utilise déjà toute la largeur du panneau.
+        const optionWordWrapWidth = panel.width - 32;
+        let by = rowY0 + 30;
+        for (const { btn, descText } of row.optionButtons) {
+          btn.setPosition(labelX, by).setVisible(true).setInteractive({ useHandCursor: true });
+          by += btn.height + 4;
+          descText.setPosition(labelX, by).setWordWrapWidth(optionWordWrapWidth).setVisible(true);
+          by += descText.height + 14;
         }
       });
       return;
@@ -2858,7 +2875,10 @@ class GameScene extends Phaser.Scene {
         row.label.setVisible(false);
         row.statusText.setVisible(false);
         row.effectText.setVisible(false);
-        for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+        for (const { btn, descText } of row.optionButtons) {
+          btn.setVisible(false).disableInteractive();
+          descText.setVisible(false);
+        }
         return;
       }
       const tierCfg = GameConfig.devotion.tiers[i];
@@ -2871,7 +2891,10 @@ class GameScene extends Phaser.Scene {
         .setColor(state.active ? '#7fd17f' : '#e07a7a')
         .setPosition(labelX, y + 20).setVisible(true);
       row.effectText.setText(chosen.desc || 'Effet à venir').setPosition(labelX, y + 38).setVisible(true);
-      for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+      for (const { btn, descText } of row.optionButtons) {
+        btn.setVisible(false).disableInteractive();
+        descText.setVisible(false);
+      }
     });
 
     this.devotionEmptyText.setPosition(labelX, rowY0).setVisible(chosenIndices.length === 0);
@@ -2912,7 +2935,10 @@ class GameScene extends Phaser.Scene {
         row.label.setVisible(false);
         row.statusText.setVisible(false);
         row.effectText.setVisible(false);
-        for (const { btn } of row.optionButtons) btn.setVisible(false).disableInteractive();
+        for (const { btn, descText } of row.optionButtons) {
+          btn.setVisible(false).disableInteractive();
+          descText.setVisible(false);
+        }
       }
     }
 
