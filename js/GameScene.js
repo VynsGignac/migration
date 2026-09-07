@@ -3930,9 +3930,9 @@ class GameScene extends Phaser.Scene {
     if (this.textures.exists('hexTerrainTile')) this.textures.remove('hexTerrainTile');
     this.textures.addCanvas('hexTerrainTile', canvas);
 
-    // worldWidthPx (1000 colonnes) et le padding vertical sont choisis multiples exacts de la
-    // tuile, pour que le pavage tombe pile sur col=0/row=0 et reste aligné avec les bâtiments/
-    // ressources (dessinés, eux, à leurs coordonnées exactes via HexUtils.offsetToPixel).
+    // worldWidthPx et le padding vertical sont choisis multiples exacts de la tuile, pour que le
+    // pavage tombe pile sur col=0/row=0 et reste aligné avec les bâtiments/ressources (dessinés,
+    // eux, à leurs coordonnées exactes via HexUtils.offsetToPixel).
     // Marge généreuse (pas seulement cosmétique) : sur mobile, clampCameraVertical() autorise à
     // remonter au-delà de la rangée 0 pour laisser le bandeau ressources (hudTopInset) au-dessus
     // du monde sans rien cacher de la carte — une marge trop courte laissait apparaître un bandeau
@@ -3940,16 +3940,27 @@ class GameScene extends Phaser.Scene {
     // rester généreuse même dans des contextes où la taille réelle du conteneur peut différer de
     // ce qui est mesuré en jeu (ex. intégré dans le cadre de partage d'un Artifact) : 20 rangées
     // de chaque côté couvrent large, jusqu'au garde-fou de zoom minimum absolu.
+    // Largeur en x3 (demande utilisateur explicite, capture d'écran à l'appui : "il y a un problème
+    // avec le fond de la carte au niveau de la frontière... disparait si mon écran va plus à
+    // droite") -- un ancien multiplicateur x1.2 (marge de seulement 10% de chaque côté, PAS le
+    // même motif "3 copies" que buildings/ressources/monstres/chargements ailleurs dans le fichier)
+    // suffisait pour un monde à 500-1000 colonnes, mais world.cols vaut maintenant 200 : dès que la
+    // largeur visible à l'écran (qui grandit au dézoom, voir getEffectiveZoomMin) dépasse cette
+    // marge de 10%, la portion hors couverture du TileSprite apparaît en noir près de la couture du
+    // cylindre (col 0/dernière colonne) -- alors que les autres couches (déjà en x3) restent
+    // visibles par-dessus, exactement le symptôme observé. x3 aligne ce TileSprite sur le même
+    // motif que le reste ET laisse une marge large (worldWidthPx entier de chaque côté) qui ne
+    // dépend plus du niveau de zoom.
     // ATTENTION taille du canvas : width*height de ce TileSprite reste soumis à la limite de
     // surface totale d'un canvas navigateur (~268 millions de pixels sur Chrome/Skia) — au-delà,
     // "getImageData" échoue en Out Of Memory et la scène entière ne se charge plus (vécu en
-    // testant une marge verticale trop généreuse). D'où des multiplicateurs mesurés (1.2x en
-    // largeur, pas 3x) qui laissent la place à une marge verticale confortable tout en restant
-    // nettement sous la limite (~227M de pixels ici, pour un budget sûr autour de 228M).
+    // testant une marge verticale trop généreuse, à l'époque d'un monde bien plus large qu'aujourd'hui).
+    // À cols=200, x3 ≈ 155M pixels (mesuré), nettement sous cette limite -- à réévaluer si
+    // world.cols remonte significativement.
     const paddingRows = 20;
-    const left = -this.worldWidthPx * 0.1;
+    const left = -this.worldWidthPx;
     const top = -paddingRows * tileHeight;
-    const width = this.worldWidthPx * 1.2;
+    const width = this.worldWidthPx * 3;
     const height = this.worldHeightPx + paddingRows * 2 * tileHeight;
 
     return this.add.tileSprite(left, top, width, height, 'hexTerrainTile').setOrigin(0, 0);
