@@ -901,7 +901,7 @@ class GameScene extends Phaser.Scene {
     // icône (juste le nombre signé, ex. "+12" -- pas de "Pl"/"PT"/"/min", l'icône juste à côté
     // identifie déjà la ressource, voir demande utilisateur), positionné juste après le nombre
     // principal (voir layoutHud, qui réserve un peu de largeur en plus pour CES 3 emplacements).
-    this.mainRateResources = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'weapons', 'statues'];
+    this.mainRateResources = ['planks', 'stoneBlocks', 'bread', 'ironIngot', 'weapons', 'statues', 'devotion'];
     this.resourceRateTexts = {};
     for (const res of this.mainRateResources) {
       const t = this.add.text(0, 0, '', {

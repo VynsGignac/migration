@@ -1203,27 +1203,41 @@ const GameState = {
       perSecond.bread -= tile.population * def.consumptionPerPerson * (1 - breadReduction);
     }
 
-    // Sorties (planches/pierre taillée) : capacité de livraison Entrepôt -> chantier le plus
-    // proche qui en a encore besoin (voir _spawnWarehouseConstructionDeliveries), même logique
-    // structurelle que les entrées ci-dessus.
+    // PAS de sortie pour la livraison Entrepôt -> chantier (planches/pierre taillée, ou toute autre
+    // ressource de coût de construction) : demande utilisateur explicite ("je voudrais que pour
+    // toutes les ressources, la construction ne comptent pas comme de la consommation dans ce
+    // calcul") -- un chantier est une dépense ponctuelle/discrétionnaire, pas un drain permanent du
+    // même ordre que la consommation de pain des Maisons ci-dessus, donc ne doit pas faire
+    // apparaître un solde négatif alors que l'économie réelle est stable.
+
+    // Dévotion : même calcul que tickProduction (voir plus haut, Temple/Autel), MOINS le
+    // multiplicateur dtSeconds -- comme les taux "producteur" ci-dessus, cette fonction calcule un
+    // débit (unité/s) avant de le convertir en "par minute réelle" via toPerMinute plus bas.
+    let devotionGainRate = 0;
     for (const [key, tile] of this.tiles) {
-      if (tile.type !== 'warehouse' || tile.underConstruction) continue;
+      const def = GameConfig.buildings[tile.type];
+      if (!def || def.kind !== 'shrine' || tile.underConstruction) continue;
       const [col, row] = key.split(',').map(Number);
-      for (const res of ['planks', 'stoneBlocks']) {
-        const found = this.findBestPath(col, row, (t) => {
-          return t.underConstruction && t.constructionNeeded[res] > t.constructionDelivered[res];
-        }, this.warehouseZoneRadius(), (t) => t.constructionNeeded[res] - t.constructionDelivered[res]);
-        if (!found) continue;
-        const travelTime = (found.path.length - 1) / shipSpeed;
-        perSecond[res] -= batch / travelTime;
-      }
+      const inRange = HexUtils.hexesInRange(col, row, this.templeRadius(), this.cols, this.rows);
+      const altarCount = inRange.reduce((sum, p) => {
+        const t = this.tiles.get(this.key(p.col, p.row));
+        return sum + (t && t.type === 'altar' && !t.underConstruction ? 1 : 0);
+      }, 0);
+      if (altarCount === 0) continue;
+      const workers = labor.get(key) ? labor.get(key).workers : 0;
+      const efficiency = this.efficiencyForWorkers(workers, 1, GameConfig.population.efficiencyByWorkersProduction);
+      const speedMultiplier = 1 + (this.guildZone.has(key) ? guildBonusValue : 0);
+      const baseRate = def.devotionPerAltar * altarCount;
+      devotionGainRate += baseRate * efficiency * speedMultiplier;
     }
+    const devotionDrainRate = this.devotionDecayRateFor(this.resources.devotion);
 
     const toPerMinute = 60 * GameConfig.simulation.speed;
     return {
       planks: perSecond.planks * toPerMinute,
       stoneBlocks: perSecond.stoneBlocks * toPerMinute,
       bread: perSecond.bread * toPerMinute,
+      devotion: (devotionGainRate - devotionDrainRate) * toPerMinute,
     };
   },
 
