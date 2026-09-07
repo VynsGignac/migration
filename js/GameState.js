@@ -137,6 +137,16 @@ const GameState = {
     for (const res in cost) this.resources[res] -= cost[res];
   },
 
+  // Ajoute "amount" au stock central d'UNE ressource, plafonné à GameConfig.resources.cap (demande
+  // utilisateur explicite : "fixer une limite globale de stockage pour chaque ressource") -- point
+  // d'entrée UNIQUE pour toute ressource qui rejoint this.resources (livraison, recyclage,
+  // bénédiction, pillage de ruine...), voir les appelants dans tout ce fichier, pour ne jamais
+  // dépasser ce plafond peu importe la source. amount peut être négatif sans problème (Math.min ne
+  // change rien dans ce cas), mais spend() ci-dessus reste la voie normale pour dépenser.
+  _addResource(res, amount) {
+    this.resources[res] = Math.min(GameConfig.resources.cap, (this.resources[res] || 0) + amount);
+  },
+
   // "Route" est le SEUL cas où l'appelant doit encore fournir un tile.type === 'road' déjà posé,
   // sinon buildingId identifie le chantier. Une Route reste instantanée (voir demande utilisateur
   // explicite) ; tout le reste passe par un chantier "underConstruction" tant que les ressources
@@ -1408,7 +1418,7 @@ const GameState = {
       this.joaillerieTimer += dtSeconds;
       if (this.joaillerieTimer >= 120) {
         this.joaillerieTimer -= 120;
-        this.resources.gemme += 1;
+        this._addResource('gemme', 1);
         this.dirty = true;
       }
     }
@@ -1518,7 +1528,7 @@ const GameState = {
             // chance de doublement liée à Imprimerie a disparu avec cette techno (supprimée de
             // l'arbre, demande utilisateur explicite).
             if (tile.type === 'recycler') {
-              this.resources.gemme += 1;
+              this._addResource('gemme', 1);
               this.dirty = true;
             }
           }
@@ -1542,7 +1552,7 @@ const GameState = {
       // (outputBuffer/linkTargets, voir buildings.minerCamp), le minerai "saute" donc l'étape
       // entrepôt plutôt que d'exiger tout un second circuit de livraison pour un simple bonus.
       if (extracted > 0 && tile.type === 'minerCamp' && tunnelierChance > 0 && Math.random() < tunnelierChance) {
-        this.resources.ore += extracted;
+        this._addResource('ore', extracted);
         this.dirty = true;
       }
     }
@@ -1657,7 +1667,7 @@ const GameState = {
         if (warehouseCount > 0) {
           const pool = ['wood', 'planks', 'stone', 'stoneBlocks', 'wheat', 'bread', 'ore', 'ironIngot', 'weapons', 'statues'];
           const res = pool[Math.floor(Math.random() * pool.length)];
-          this.resources[res] += this.resources[res] * 0.01 * warehouseCount;
+          this._addResource(res, this.resources[res] * 0.01 * warehouseCount);
           this.dirty = true;
         }
       }
@@ -1882,7 +1892,7 @@ const GameState = {
     // PONCTUEL versé une seule fois au moment même de la recherche, pas un bonus permanent comme
     // le reste de l'arbre -- maxLevel 1 (implicite) l'empêche de se redéclencher.
     if (id === 'rec_tbd2') {
-      this.resources.gemme += 4;
+      this._addResource('gemme', 4);
       this.dirty = true;
     }
     return true;
@@ -2197,8 +2207,12 @@ const GameState = {
       const destTile = this.tiles.get(destKey);
       const destDef = GameConfig.buildings[destTile.type];
 
+      // Plafond global (voir GameConfig.resources.cap/_addResource, demande utilisateur explicite) :
+      // un Entrepôt n'a plus une capacité infinie -- une fois le stock central de CETTE ressource au
+      // plafond, plus aucun chargement ne part vers lui (la production s'accumule dans le buffer
+      // local du producteur, comme elle le ferait déjà face à un bâtiment de transformation plein).
       const capacity = destTile.type === 'warehouse'
-        ? Infinity
+        ? Math.max(0, GameConfig.resources.cap - (this.resources[def.outputResource] || 0))
         : (destDef.inputCap + this.capBonus() - this._inputBufferOf(destTile, destDef, def.outputResource));
       const amount = Math.min(batch, tile.outputBuffer, capacity);
       if (amount <= 0) continue;
@@ -2501,7 +2515,7 @@ const GameState = {
           }
         } else if (s.toType === 'warehouse') {
           const doubled = gestionStocksChance > 0 && Math.random() < gestionStocksChance;
-          this.resources[s.resource] = (this.resources[s.resource] || 0) + (doubled ? amount * 2 : amount);
+          this._addResource(s.resource, doubled ? amount * 2 : amount);
         } else {
           const destDef = GameConfig.buildings[destTile.type];
           const cap = destDef.inputCap + this.capBonus();
@@ -2603,7 +2617,7 @@ const GameState = {
     if (!this.revealedTiles.has(key)) return null;
     if (this.hasMonsterOn(col, row)) return null;
     const loot = tile.ruinLoot || {};
-    for (const res in loot) this.resources[res] = (this.resources[res] || 0) + loot[res];
+    for (const res in loot) this._addResource(res, loot[res]);
     this.tiles.delete(key);
     this.dirty = true;
     this.buildingsDirty = true;

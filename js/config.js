@@ -93,6 +93,15 @@ const GameConfig = {
       wood: 0, planks: 50, stone: 0, stoneBlocks: 50, ore: 0, ironIngot: 0,
       weapons: 0, statues: 0, devotion: 0, gemme: 5,
     },
+    // Plafond global de stockage (demande utilisateur explicite : "fixer une limite globale de
+    // stockage pour chaque ressource... disons 500 de chaque dans un premier temps") -- s'applique
+    // au STOCK CENTRAL (this.resources, tout ce qu'un Entrepôt a reçu), PAS aux buffers locaux des
+    // bâtiments (outputCap/inputCap, bien plus petits -- ceux-là restent inchangés) ni à la Dévotion
+    // (mécanique à part, déjà plafonnée séparément à 100, voir devotion.cap). Toute ressource
+    // ajoutée au stock central passe par GameState._addResource plutôt que d'incrémenter
+    // this.resources directement, pour ne jamais dépasser ce plafond quel que soit le point
+    // d'entrée (livraison, recyclage, bénédiction, pillage de ruine...).
+    cap: 500,
   },
   // Nom affiché (long) et abrégé (pour les boutons), et couleur du petit jeton
   // qui voyage sur les routes, pour chaque ressource.
