@@ -2411,14 +2411,26 @@ class GameScene extends Phaser.Scene {
     };
   }
 
-  // Déclenché depuis update() dès qu'il ne reste plus aucun Entrepôt (voir GameState.
+  // Déclenché depuis update() soit à la mort du Seigneur de la horde (victory=true, voir
+  // Monsters.lord), soit dès qu'il ne reste plus aucun Entrepôt (victory=false, voir GameState.
   // hasAnyWarehouse, vérifié seulement sur buildingsDirty). Fige la partie comme une pause qu'on
   // ne peut plus lever soi-même (voir togglePause, qui refuse tant que gameOverOpen).
-  triggerGameOver() {
+  // victory (demande utilisateur explicite : "il faudrait afficher Victoire en cas de défaite du
+  // seigneur de la horde" -- les deux écrans étaient auparavant identiques, seul le message change
+  // maintenant) : titre/sous-titre/couleur du cadre adaptés, le reste (bilan, bouton Recommencer)
+  // est commun aux deux issues.
+  triggerGameOver(victory = false) {
     this.paused = true;
     this.gameOverOpen = true;
     this.setBuildMode(null);
     this.pauseButton.setText('▶');
+
+    const accentColor = victory ? '#7fd17f' : '#ff6b6b';
+    this.gameOverPanel.setStrokeStyle(2, victory ? 0x7fd17f : 0xff6b6b);
+    this.gameOverTitle.setText(victory ? 'Victoire !' : 'Partie perdue').setColor(accentColor);
+    this.gameOverSubtitle.setText(victory
+      ? 'Le Seigneur de la horde a été vaincu.'
+      : 'Tous les Entrepôts ont été détruits.');
 
     const stats = this.computeGameOverStats();
     this.gameOverStatsText.setText(
@@ -5384,11 +5396,11 @@ class GameScene extends Phaser.Scene {
       const monsterMessages = Monsters.update(dt, this.elapsed, GameState);
       for (const msg of monsterMessages) this.showToast(msg);
 
-      // Condition de VICTOIRE (demande utilisateur explicite) : affiche pour l'instant le même
-      // écran que la défaite (à distinguer plus tard) -- le Seigneur de la horde ne reçoit jamais
-      // de respawnTimer (voir GameState/Monsters.update), donc `alive` reste définitivement false
+      // Condition de VICTOIRE (demande utilisateur explicite, écran maintenant distinct de la
+      // défaite -- voir triggerGameOver) : le Seigneur de la horde ne reçoit jamais de
+      // respawnTimer (voir GameState/Monsters.update), donc `alive` reste définitivement false
       // une fois tué, contrairement aux Chefs/gobelins qui régénèrent.
-      if (!this.gameOverOpen && Monsters.lord && !Monsters.lord.alive) this.triggerGameOver();
+      if (!this.gameOverOpen && Monsters.lord && !Monsters.lord.alive) this.triggerGameOver(true);
     }
 
     if (GameState.buildingsDirty) {
