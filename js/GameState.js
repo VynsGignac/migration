@@ -2535,41 +2535,44 @@ const GameState = {
     return tile.underConstruction ? { ...tile.constructionDelivered } : (def ? def.ruinLoot : {});
   },
 
-  // Détruit une case (passage d'un monstre) et la transforme en ruine pillable.
-  // Renvoie true si c'était un Entrepôt (pour le message d'alerte).
-  // Route épargnée (demande utilisateur explicite : "les routes ne sont pas detruite par la
-  // horde") : seul appelant restant de cette méthode, voir Monsters.js -- une route détruite
-  // coupait le réseau logistique sur son passage, bien plus pénalisant qu'un simple bâtiment isolé.
+  // Détruit une case (passage d'un monstre OU démolition volontaire par le joueur, voir
+  // demolishBuildingByPlayer juste en dessous, qui partage cette même mécanique) : 1 chance sur 4
+  // de laisser une ruine pillable plus tard (voir harvestRuin), sinon (3/4) perte totale -- la case
+  // redevient vide, RIEN n'est récupérable (demande utilisateur explicite : "Non je ne veux pas de
+  // recyclage... un bâtiment détruit [...] a 3/4 chance d'être juste détruit (tout est perdu) et 1
+  // chance sur 4 de laisser une ruine" -- remplace un ancien recyclage automatique du butin dans ce
+  // cas, rejeté explicitement). Renvoie { warehouseLost, becameRuin } (warehouseLost pour le
+  // message d'alerte). Route épargnée (demande utilisateur explicite : "les routes ne sont pas
+  // detruite par la horde") -- jamais transformée, ni en ruine ni en perte totale.
   destroyTile(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
-    if (!tile || tile.type === 'ruin' || tile.type === 'road') return false;
-    const ruinLoot = this._ruinLootFor(tile);
+    if (!tile || tile.type === 'ruin' || tile.type === 'road') return { warehouseLost: false, becameRuin: false };
     const warehouseLost = tile.type === 'warehouse';
-    this.tiles.set(key, { type: 'ruin', ruinLoot });
+    const becameRuin = Math.random() < 0.25;
+    if (becameRuin) {
+      this.tiles.set(key, { type: 'ruin', ruinLoot: this._ruinLootFor(tile) });
+    } else {
+      this.tiles.delete(key);
+    }
     this.dirty = true;
     this.buildingsDirty = true;
-    return warehouseLost;
+    return { warehouseLost, becameRuin };
   },
 
   // Démolition VOLONTAIRE par le joueur (voir GameScene.demolishSelectedBuilding, bouton
-  // "Démolir") -- comportement d'origine (demande utilisateur explicite plus ancienne : "je ne
-  // veux plus de ruine quand l'utilisateur supprime lui meme un batiment") ASSOUPLI depuis (nouvelle
-  // demande utilisateur explicite : "1 chance sur 4 d'être transformé en ruine, sinon il
-  // disparaît tout simplement") : 1/4 du temps, comme destroyTile (passage de la horde), la case
-  // devient une ruine pillable plus tard (voir harvestRuin) ; les 3/4 restants, comportement
-  // d'origine inchangé -- butin (_ruinLootFor) recyclé immédiatement, case vide.
+  // "Démolir") -- même mécanique que destroyTile ci-dessus (1/4 ruine, 3/4 perte totale sans aucun
+  // recyclage, demande utilisateur explicite), seule différence : une Route se démolit normalement
+  // ici (destroyTile l'épargne, mais ça, c'est spécifique au passage de la horde).
   demolishBuildingByPlayer(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
     if (!tile || tile.type === 'ruin') return { warehouseLost: false, becameRuin: false };
-    const loot = this._ruinLootFor(tile);
     const warehouseLost = tile.type === 'warehouse';
     const becameRuin = Math.random() < 0.25;
     if (becameRuin) {
-      this.tiles.set(key, { type: 'ruin', ruinLoot: loot });
+      this.tiles.set(key, { type: 'ruin', ruinLoot: this._ruinLootFor(tile) });
     } else {
-      for (const res in loot) this.resources[res] = (this.resources[res] || 0) + loot[res];
       this.tiles.delete(key);
     }
     this.dirty = true;

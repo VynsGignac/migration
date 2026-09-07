@@ -228,8 +228,8 @@ const Monsters = {
       if (m.alive) {
         for (let c = prevCol + 1; c <= newCol; c++) {
           const wrappedCol = HexUtils.wrapCol(c, gameState.cols);
-          const warehouseLost = gameState.destroyTile(wrappedCol, m.row);
-          if (warehouseLost) messages.push('Un Entrepôt a été englouti par les monstres !');
+          const destroyResult = gameState.destroyTile(wrappedCol, m.row);
+          if (destroyResult.warehouseLost) messages.push('Un Entrepôt a été englouti par les monstres !');
         }
       } else if (m.respawnTimer != null) {
         // Décompte en temps RÉEL, comme le déplacement de la horde (dt non modifié par
