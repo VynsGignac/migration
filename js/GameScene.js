@@ -3008,12 +3008,20 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  layoutQuickMenuButtons(rightAnchorX, bottomAnchorY, btnSize) {
+  // growRight (demande utilisateur explicite : "passer toutes ces sous-menus en bas à gauche" --
+  // le bouton Détruire se retrouvait caché SOUS ce rang de boutons sur mobile, voir layoutHud
+  // mobile, qui ancrait les deux rangées près de buildMenuToggle sans tenir compte l'une de
+  // l'autre) : anchorX devient alors le bord GAUCHE de la rangée (pas la droite), qui s'étend
+  // ensuite vers la droite plutôt que vers la gauche -- PC inchangé (pas concerné par cette
+  // collision, sa colonne latérale n'a rien en bas à droite), toujours ancré à droite.
+  layoutQuickMenuButtons(anchorX, bottomAnchorY, btnSize, growRight = false) {
     const visible = !this.isModalOpen() && !this.buildMode && !this.buildMenuOpen;
     const gap = 6;
     const ids = ['warehouse', 'university', 'house', 'devotion'];
     ids.forEach((id, i) => {
-      const bx = rightAnchorX - (i + 1) * btnSize - i * gap;
+      const bx = growRight
+        ? anchorX + i * (btnSize + gap)
+        : anchorX - (i + 1) * btnSize - i * gap;
       const by = bottomAnchorY - btnSize;
       const btn = this.quickMenuButtons[id], icon = this.quickMenuButtonIcons[id];
       btn.setPosition(bx, by).setSize(btnSize, btnSize).setVisible(visible);
@@ -3528,7 +3536,7 @@ class GameScene extends Phaser.Scene {
       closingMenu ? menuTop - gap - this.buildMenuToggle.height - 4 : h - this.buildMenuToggle.height - 8
     ).setVisible(true);
 
-    this.layoutQuickMenuButtons(this.buildMenuToggle.x - 6, h - 8, 40);
+    this.layoutQuickMenuButtons(10, h - 8, 40, true);
 
     this.confirmButton.setFontSize(compact ? 12 : 13);
     this.confirmButton
@@ -3543,18 +3551,22 @@ class GameScene extends Phaser.Scene {
     const upgradeBtnWidth = compact ? 150 : 180;
     const upgradeBtnHeight = compact ? 34 : 38;
     const upgradeX = w - this.buildMenuToggle.width - upgradeBtnWidth - 14;
-    // Bande totale ancrée en bas (même hauteur qu'avant, upgradeBtnHeight) subdivisée EN HAUTEUR
-    // par le nombre d'évolutions actuellement proposables (voir le commentaire équivalent côté PC,
-    // layoutHud) -- jusqu'à 3 mini-boutons empilés au lieu d'un seul "Améliorer en Château".
-    const upgradeMiniH = upgradeBtnHeight / Math.max(1, layoutUpgradeOptions.length);
+    // Hauteur par ligne quand plusieurs évolutions se partagent la même zone (demande utilisateur
+    // explicite : "les boutons sont superposés" -- l'ancienne version divisait upgradeBtnHeight par
+    // N, ce qui rendait le texte totalement illisible dès 2-3 options à la fois). Hauteur MINIMALE
+    // lisible FIXE (pas de division) : le bloc grandit vers le HAUT avec le nombre d'options plutôt
+    // que de rétrécir chaque ligne -- l'espace juste au-dessus (la carte) est toujours libre ici,
+    // contrairement à en dessous (bord d'écran) ou à droite (buildMenuToggle).
+    const upgradeRowHeight = upgradeBtnHeight;
+    const upgradeTotalHeight = upgradeRowHeight * Math.max(1, layoutUpgradeOptions.length);
     this.upgradeButtonOrder.forEach((targetType) => {
       const idx = layoutUpgradeOptions.indexOf(targetType);
       if (idx === -1) return;
       this.upgradeButtons[targetType]
-        .setFontSize(layoutUpgradeOptions.length > 1 ? (compact ? 8 : 9) : (compact ? 10 : 11))
-        .setFixedSize(upgradeBtnWidth, upgradeMiniH)
+        .setFontSize(compact ? 10 : 11)
+        .setFixedSize(upgradeBtnWidth, upgradeRowHeight)
         .setWordWrapWidth(upgradeBtnWidth - 16)
-        .setPosition(upgradeX, h - upgradeBtnHeight - 8 + idx * upgradeMiniH);
+        .setPosition(upgradeX, h - upgradeTotalHeight - 8 + idx * upgradeRowHeight);
     });
 
     // Démolir : même emplacement que "Améliorer" quand lui seul s'applique, sinon poussé à sa
@@ -5182,8 +5194,15 @@ class GameScene extends Phaser.Scene {
       btn.setVisible(show);
       if (show) {
         const cost = GameState.effectiveBuildingCost(targetType, GameConfig.buildings[targetType].cost);
-        btn.setText(`Améliorer en ${GameConfig.buildings[targetType].name} — ${this.formatResources(cost, true)}`)
-          .setAlpha(this.paused ? 0.4 : 1);
+        // Texte raccourci (sans "Améliorer en") dès que plusieurs options se partagent la même
+        // zone -- demande utilisateur explicite ("boutons superposés" sur mobile à 2-3 évolutions
+        // proposables) : la phrase complète ne tenait plus à la hauteur alors disponible par
+        // bouton, texte devenu illisible (voir layoutHud, qui garde maintenant une hauteur MINIMALE
+        // lisible par ligne plutôt que de toujours diviser la même bande en N).
+        const label = upgradeOptions.length > 1
+          ? `${GameConfig.buildings[targetType].name} — ${this.formatResources(cost, true)}`
+          : `Améliorer en ${GameConfig.buildings[targetType].name} — ${this.formatResources(cost, true)}`;
+        btn.setText(label).setAlpha(this.paused ? 0.4 : 1);
       }
     });
 
