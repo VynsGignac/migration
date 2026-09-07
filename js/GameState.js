@@ -1891,10 +1891,10 @@ const GameState = {
       if (def.splashAllAdjacent) {
         const target = this._findMonsterInRange(col, row, this.towerRange(def));
         if (target) {
-          this._fireTowerShot(col, row, target, def, artilleurSplashChance);
+          this._fireTowerShot(col, row, target, def, artilleurSplashChance, tile.type);
           for (const adjacent of this._findAllAdjacentMonsters(target)) {
             this._applyTowerDamage(adjacent, def);
-            this.shots.push({ fromCol: col, fromRow: row, toX: adjacent.x, toRow: adjacent.row, ttl: 0.15 });
+            this.shots.push({ fromCol: col, fromRow: row, toX: adjacent.x, toRow: adjacent.row, ttl: 0.15, towerType: tile.type });
           }
         }
         continue;
@@ -1905,14 +1905,14 @@ const GameState = {
       // même d'Artilleur indépendamment (voir _fireTowerShot).
       if (def.multiShot) {
         const targets = this._findMultipleMonstersInRange(col, row, this.towerRange(def), def.multiShot);
-        for (const target of targets) this._fireTowerShot(col, row, target, def, artilleurSplashChance);
+        for (const target of targets) this._fireTowerShot(col, row, target, def, artilleurSplashChance, tile.type);
         continue;
       }
 
       // Fortin / Donjon : un seul tir normal sur la cible la plus proche, avec la chance d'Artilleur
       // habituelle.
       const target = this._findMonsterInRange(col, row, this.towerRange(def));
-      if (target) this._fireTowerShot(col, row, target, def, artilleurSplashChance);
+      if (target) this._fireTowerShot(col, row, target, def, artilleurSplashChance, tile.type);
     }
 
     this._spawnShipments();
@@ -2120,14 +2120,18 @@ const GameState = {
   // Château (jusqu'à multiShot tirs, un par cible), et la cible PRINCIPALE de la Tour de siège
   // (dont les adjacents garantis passent eux directement par _applyTowerDamage, voir tickProduction
   // section "Tours" -- pas de double-mécanique de zone sur les mêmes coups).
-  _fireTowerShot(col, row, target, def, artilleurSplashChance) {
+  // towerType (id du bâtiment, ex. 'donjon'/'castle'/'keep'/'siegeTower') : porté par chaque tir
+  // pour que GameScene.redrawShots sache quelle image de projectile utiliser (demande utilisateur
+  // explicite : "Fortin et chateau tire des fleches, donjon des fleche de baliste, et tour de
+  // siege des projectiles de catapulte").
+  _fireTowerShot(col, row, target, def, artilleurSplashChance, towerType) {
     this._applyTowerDamage(target, def);
-    this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15 });
+    this.shots.push({ fromCol: col, fromRow: row, toX: target.x, toRow: target.row, ttl: 0.15, towerType });
     if (artilleurSplashChance > 0 && Math.random() < artilleurSplashChance) {
       const adjacent = this._findAdjacentMonster(target);
       if (adjacent) {
         this._applyTowerDamage(adjacent, def);
-        this.shots.push({ fromCol: col, fromRow: row, toX: adjacent.x, toRow: adjacent.row, ttl: 0.15 });
+        this.shots.push({ fromCol: col, fromRow: row, toX: adjacent.x, toRow: adjacent.row, ttl: 0.15, towerType });
       }
     }
   },

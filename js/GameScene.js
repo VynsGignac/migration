@@ -68,7 +68,15 @@ class GameScene extends Phaser.Scene {
     this.load.image('sawmillIcon', GameAssets.sawmillIcon);
     this.load.image('universityIcon', GameAssets.universityIcon);
     this.load.image('bakeryIcon', GameAssets.bakeryIcon);
+    // Temple (demande utilisateur explicite, image fournie -- remplace le dessin vectoriel de
+    // secours utilisé jusque-là, aucune image dédiée n'existait pour ce bâtiment).
+    this.load.image('templeIcon', GameAssets.templeIcon);
     this.load.image('castleIcon', GameAssets.castleIcon);
+    // Donjon (évolution "keep") / Tour de siège (demande utilisateur explicite, images fournies --
+    // voir buildingIconKeys) : keepIcon reprend l'ancienne image de castleIcon (tourelle + baliste),
+    // désormais libérée par le nouveau visuel de castleIcon ci-dessus.
+    this.load.image('keepIcon', GameAssets.keepIcon);
+    this.load.image('siegeTowerIcon', GameAssets.siegeTowerIcon);
     this.load.image('donjonIcon', GameAssets.donjonIcon);
     this.load.image('houseIcon', GameAssets.houseIcon);
     this.load.image('minerCampIcon', GameAssets.minerCampIcon);
@@ -77,6 +85,12 @@ class GameScene extends Phaser.Scene {
     this.load.image('foundryIcon', GameAssets.foundryIcon);
     this.load.image('watchtowerIcon', GameAssets.watchtowerIcon);
     this.load.image('farmIcon', GameAssets.farmIcon);
+    // Projectiles des tours (demande utilisateur explicite, images fournies -- voir redrawShots) :
+    // Fortin/Château tirent des flèches, Donjon des carreaux de baliste, Tour de siège des boulets
+    // de catapulte.
+    this.load.image('arrowShotIcon', GameAssets.arrowShotIcon);
+    this.load.image('ballistaBoltShotIcon', GameAssets.ballistaBoltShotIcon);
+    this.load.image('catapultBoulderShotIcon', GameAssets.catapultBoulderShotIcon);
     this.load.image('goblinIcon', GameAssets.goblinIcon);
     this.load.image('goblinIcon2', GameAssets.goblinIcon2);
     this.load.image('goblinIcon3', GameAssets.goblinIcon3);
@@ -93,6 +107,51 @@ class GameScene extends Phaser.Scene {
     // réservé à l'art source déjà intégré en base64) : ce fichier doit vraiment être publié/embarqué
     // tel quel dans l'APK, sinon la musique manquerait sur le site et l'appli une fois publiés.
     this.load.audio('bgMusic', 'audio/miravale-medieval.mp3');
+  }
+
+  // Crée l'icône + la ligne de coût (icône+nombre par ressource) d'un bâtiment dans
+  // buildButtonIcons[id]/buildButtonCostIcons[id] -- extrait de la boucle de création du menu de
+  // construction pour être réutilisé par les 3 évolutions de Fortin (castle/keep/siegeTower), qui
+  // partagent ce même système d'affichage (positionBuildButtonContents/
+  // positionBuildButtonContentsSquare) sans figurer elles-mêmes dans ce menu (voir
+  // isBuildingUnlocked) -- demande utilisateur explicite : "utilises les icones sur PC et sur
+  // mobile" pour les boutons d'amélioration, qui n'affichaient jusque-là que du texte (superposé
+  // dès 2-3 évolutions à la fois, voir upgradeButtons).
+  createBuildIconAndCost(id) {
+    // Même icône que sur la carte (voir buildingIconKeys/redrawTileArt, demande utilisateur
+    // explicite) quand une image dédiée existe ; repli sur le dessin vectoriel (drawBuildingIcon)
+    // sinon (Recycleur, aucune image fournie). Un Image (voir positionBuildButtonContents,
+    // setDisplaySize) se comporte comme le Graphics qu'il remplace pour tout le reste du code
+    // (setPosition/setAlpha/setVisible, utilisés génériquement ailleurs sans distinguer les deux).
+    const iconKey = this.buildingIconKeys[id];
+    let icon;
+    if (iconKey) {
+      icon = this.add.image(0, 0, iconKey).setDepth(1001).setVisible(false);
+    } else {
+      // Dessinée UNE fois à l'origine locale (0,0) -- repositionnée ensuite via setPosition à
+      // chaque layoutHud(), jamais redessinée (même trick que resourceBarIconImages).
+      icon = this.add.graphics().setDepth(1001).setVisible(false);
+      this.drawBuildingIcon(icon, id, 0, 0, 30);
+    }
+    this.buildButtonIcons[id] = icon;
+    this.uiElements.push(icon);
+
+    // Un nombre variable de ressources par coût (voir GameConfig.buildings -- jusqu'à 4 pour le
+    // Temple, 3 pour les bâtiments militaires depuis l'ajout d'un coût en Armes) : une icône + un
+    // nombre par ressource, toujours une vraie image (resourceBarIconTextureKeys couvre toutes
+    // les ressources affichées dans le bandeau du haut) -- pas besoin du dessin vectoriel de
+    // secours ici. positionBuildButtonContentsSquare rétrécit toute la ligne si elle ne tient
+    // plus dans le bouton.
+    const cost = GameConfig.buildings[id].cost;
+    this.buildButtonCostIcons[id] = Object.entries(cost).map(([resKey, amount]) => {
+      const img = this.add.image(0, 0, this.resourceBarIconTextureKeys[resKey])
+        .setOrigin(0, 0.5).setDepth(1001).setVisible(false);
+      const txt = this.add.text(0, 0, String(Math.round(amount)), {
+        font: 'bold 11px sans-serif', color: '#ffd23f',
+      }).setOrigin(0, 0.5).setDepth(1001).setVisible(false);
+      this.uiElements.push(img, txt);
+      return { img, txt };
+    });
   }
 
   create() {
@@ -147,9 +206,26 @@ class GameScene extends Phaser.Scene {
     // tileArtTexture (voir createTileArtLayer) via la uiCamera — un objet monde (Graphics) rendu
     // par la caméra principale se retrouverait TOUJOURS sous elle, quel que soit son depth (deux
     // passes de caméra distinctes, jamais entrelacées). Voir redrawShipments/redrawMonsters, qui
-    // dessinent donc eux aussi sur tileArtTexture, juste après les routes/ressources.
-    this.shotGraphics = this.add.graphics().setDepth(920);
+    // dessinent donc eux aussi sur tileArtTexture, juste après les routes/ressources -- et
+    // maintenant redrawShots aussi (voir plus bas, this.shotVisualByTowerType), pour la même
+    // raison : un ancien shotGraphics (Graphics du monde) aurait masqué les flèches derrière les
+    // gobelins visés au lieu de les montrer par-dessus.
     this.selectedBuildingKey = null;
+
+    // Image de projectile par type de tour (demande utilisateur explicite, images fournies -- voir
+    // buildings.donjon/castle/keep/siegeTower, redrawShots) : Fortin/Château tirent des flèches,
+    // Donjon des carreaux de baliste, Tour de siège des boulets de catapulte. defaultAngleDeg :
+    // orientation de repos de l'image source (0 = pointe vers la droite, +X) -- carreau de baliste
+    // et boulet sont déjà horizontaux/ronds, mais la flèche (projectile_fleche.png) est dessinée en
+    // diagonale (pointe en haut à droite, mesuré empiriquement à -45°) ; ratio = hauteur/largeur de
+    // l'image source (le carreau de baliste n'est PAS carré, 887x1774 -- l'étirer dans un carré le
+    // déformerait).
+    this.shotVisualByTowerType = {
+      donjon: { key: 'arrowShotIcon', defaultAngleDeg: -45, ratio: 1, lengthFactor: 0.85 },
+      castle: { key: 'arrowShotIcon', defaultAngleDeg: -45, ratio: 1, lengthFactor: 0.85 },
+      keep: { key: 'ballistaBoltShotIcon', defaultAngleDeg: 0, ratio: 150 / 300, lengthFactor: 0.95 },
+      siegeTower: { key: 'catapultBoulderShotIcon', defaultAngleDeg: 0, ratio: 1, lengthFactor: 0.55 },
+    };
 
     // Surlignage de la case sélectionnée (redessiné à chaque sélection)
     this.selectionGraphics = this.add.graphics();
@@ -164,7 +240,7 @@ class GameScene extends Phaser.Scene {
 
     this.worldElements = [
       this.terrainSprite, this.resourceGraphics, this.fogGraphics, this.buildingsGraphics,
-      this.shotGraphics, this.selectionGraphics, this.ghostGraphics, this.zoneGraphics,
+      this.selectionGraphics, this.ghostGraphics, this.zoneGraphics,
     ];
 
     // Route : seul type gardant sa propre illustration COMPLÈTE (pas d'icône dédiée fournie,
@@ -184,7 +260,10 @@ class GameScene extends Phaser.Scene {
       sawmill: 'sawmillIcon',
       university: 'universityIcon',
       bakery: 'bakeryIcon',
+      temple: 'templeIcon',
       castle: 'castleIcon',
+      keep: 'keepIcon',
+      siegeTower: 'siegeTowerIcon',
       donjon: 'donjonIcon',
       house: 'houseIcon',
       minerCamp: 'minerCampIcon',
@@ -1075,15 +1154,34 @@ class GameScene extends Phaser.Scene {
     // isBuildingUnlocked, juste au-dessus) décide lesquels sont proposables pour la case
     // sélectionnée. Même style que confirmButton, mais une action sur un bâtiment déjà posé plutôt
     // que sur un placement en cours.
+    // buildButtonIcons/buildButtonCostIcons initialisés ICI (pas juste avant buildIds plus bas) :
+    // createBuildIconAndCost(castle/keep/siegeTower) ci-dessous les remplit AVANT que buildIds ne
+    // fasse de même pour le menu de construction -- une seule initialisation, sinon la seconde
+    // écraserait les 3 entrées ajoutées ici.
+    this.buildButtons = {};
+    this.buildButtonIcons = {};
+    this.buildButtonCostIcons = {};
+
     this.upgradeButtonOrder = ['castle', 'keep', 'siegeTower'];
     this.upgradeButtons = {};
     for (const targetType of this.upgradeButtonOrder) {
-      const btn = this.add.text(0, 0, '', {
-        font: 'bold 13px sans-serif', color: '#10151a', backgroundColor: '#c9971f', padding: { x: 12, y: 9 },
-      }).setDepth(1000).setInteractive({ useHandCursor: true }).setVisible(false);
+      // Icône + coût plutôt que texte (demande utilisateur explicite : "les boutons d'amélioration
+      // des fortins sont tous superposés... Utilises plutot les icones... sur PC et sur mobile") --
+      // même système que le menu de construction (voir createBuildIconAndCost/
+      // positionBuildButtonContents/positionBuildButtonContentsSquare), qui n'a besoin d'aucune
+      // division de hauteur par le nombre d'options proposables (contrairement au texte d'avant),
+      // réglant le chevauchement à la racine plutôt qu'en rétrécissant la police.
+      const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339, 0).setOrigin(0, 0)
+        .setStrokeStyle(2, GameConfig.colors.buildingBorder, 0.85)
+        .setVisible(false).setDepth(1000).setInteractive({ useHandCursor: true });
       btn.on('pointerup', () => this.upgradeSelectedFortin(targetType));
       this.uiElements.push(btn);
       this.upgradeButtons[targetType] = btn;
+      // Nom de l'évolution au survol (voir attachHoverTooltip, même principe que les boutons du
+      // menu de construction juste en dessous) : tapToggle:false, le tap a déjà sa propre action
+      // (démarrer l'amélioration).
+      this.attachHoverTooltip(btn, `upgrade:${targetType}`, () => GameConfig.buildings[targetType].name, { tapToggle: false });
+      this.createBuildIconAndCost(targetType);
     }
 
     // Visible dès qu'un bâtiment/route est sélectionné (voir updateInfoPanel) : partage la même
@@ -1118,9 +1216,6 @@ class GameScene extends Phaser.Scene {
       'ironMiner', 'foundry', 'house', 'warehouse', 'temple', 'altar', 'donjon', 'watchtower',
       'recycler', 'armurier', 'university', 'sculpteur',
     ];
-    this.buildButtons = {};
-    this.buildButtonIcons = {};
-    this.buildButtonCostIcons = {};
     buildIds.forEach((id) => {
       // Pas de fond coloré derrière une icône-image (voir buildingIconKeys) tant qu'elle n'est
       // pas le mode de construction actif (demande utilisateur explicite, "sans arrière-plan") --
@@ -1150,40 +1245,7 @@ class GameScene extends Phaser.Scene {
       // interférer avec cette sélection.
       this.attachHoverTooltip(btn, `build:${id}`, () => GameConfig.buildings[id].name, { tapToggle: false });
 
-      // Même icône que sur la carte (voir buildingIconKeys/redrawTileArt, demande utilisateur
-      // explicite) quand une image dédiée existe ; repli sur le dessin vectoriel (drawBuildingIcon)
-      // sinon (Recycleur, aucune image fournie). Un Image (voir positionBuildButtonContents,
-      // setDisplaySize) se comporte comme le Graphics qu'il remplace pour tout le reste du code
-      // (setPosition/setAlpha/setVisible, utilisés génériquement ailleurs sans distinguer les deux).
-      const iconKey = this.buildingIconKeys[id];
-      let icon;
-      if (iconKey) {
-        icon = this.add.image(0, 0, iconKey).setDepth(1001).setVisible(false);
-      } else {
-        // Dessinée UNE fois à l'origine locale (0,0) -- repositionnée ensuite via setPosition à
-        // chaque layoutHud(), jamais redessinée (même trick que resourceBarIconImages).
-        icon = this.add.graphics().setDepth(1001).setVisible(false);
-        this.drawBuildingIcon(icon, id, 0, 0, 30);
-      }
-      this.buildButtonIcons[id] = icon;
-      this.uiElements.push(icon);
-
-      // Un nombre variable de ressources par coût (voir GameConfig.buildings -- jusqu'à 4 pour le
-      // Temple, 3 pour les bâtiments militaires depuis l'ajout d'un coût en Armes) : une icône + un
-      // nombre par ressource, toujours une vraie image (resourceBarIconTextureKeys couvre toutes
-      // les ressources affichées dans le bandeau du haut) -- pas besoin du dessin vectoriel de
-      // secours ici. positionBuildButtonContentsSquare rétrécit toute la ligne si elle ne tient
-      // plus dans le bouton.
-      const cost = GameConfig.buildings[id].cost;
-      this.buildButtonCostIcons[id] = Object.entries(cost).map(([resKey, amount]) => {
-        const img = this.add.image(0, 0, this.resourceBarIconTextureKeys[resKey])
-          .setOrigin(0, 0.5).setDepth(1001).setVisible(false);
-        const txt = this.add.text(0, 0, String(Math.round(amount)), {
-          font: 'bold 11px sans-serif', color: '#ffd23f',
-        }).setOrigin(0, 0.5).setDepth(1001).setVisible(false);
-        this.uiElements.push(img, txt);
-        return { img, txt };
-      });
+      this.createBuildIconAndCost(id);
     });
 
     // Onglets de catégorie (voir GameConfig.buildingCategories/activeBuildCategory) : au-dessus de
@@ -3348,24 +3410,22 @@ class GameScene extends Phaser.Scene {
       }
       const upgradeAreaX = layoutBothActions ? 10 + halfW + desktopGap : 10;
       const upgradeAreaW = layoutBothActions ? halfW : (this.sidebarWidth - 20);
-      // Hauteur FIXE par ligne (demande utilisateur explicite, capture d'écran à l'appui : "les
-      // boutons d'amélioration des fortins sont tous superposés les uns sur les autres" -- l'ancien
-      // upgradeMiniH divisait confirmRowHeight par le nombre d'évolutions proposables, ce qui
-      // pouvait réduire chaque bouton à une hauteur illisible/quasi nulle dès 2-3 options à la
-      // fois). Même correctif que la version mobile plus bas dans cette fonction (upgradeRowHeight)
-      // : le bloc grandit vers le HAUT (bas fixe à confirmY + confirmRowHeight, comme si un seul
-      // bouton était présent) plutôt que de rétrécir chaque ligne -- demolishButton juste en dessous
-      // n'a pas besoin de changer, son bas reste au même endroit qu'avant.
-      const upgradeRowHeight = confirmRowHeight;
-      const upgradeBlockBottom = confirmY + confirmRowHeight;
+      // Rangée d'icônes plutôt qu'empilement de texte (demande utilisateur explicite, capture
+      // d'écran à l'appui : "les boutons d'amélioration des fortins sont tous superposés... utilise
+      // plutôt les icônes... sur PC et sur mobile") -- même système que le menu de construction
+      // (createBuildIconAndCost/positionBuildButtonContentsSquare, qui reproportionne déjà tout
+      // automatiquement si la place manque, voir son commentaire). La LARGEUR de chaque bouton se
+      // divise par le nombre d'options au lieu que la HAUTEUR se divise (source du chevauchement
+      // précédent) : une icône reste lisible même rétrécie en largeur, contrairement à du texte.
+      const upgradeGap = 4;
       this.upgradeButtonOrder.forEach((targetType) => {
         const idx = layoutUpgradeOptions.indexOf(targetType);
         if (idx === -1) return;
         const count = layoutUpgradeOptions.length;
-        this.upgradeButtons[targetType]
-          .setPosition(upgradeAreaX, upgradeBlockBottom - (count - idx) * upgradeRowHeight)
-          .setFixedSize(upgradeAreaW, upgradeRowHeight)
-          .setFontSize(layoutBothActions ? 10 : 13);
+        const btnW = (upgradeAreaW - upgradeGap * (count - 1)) / count;
+        const bx = upgradeAreaX + idx * (btnW + upgradeGap);
+        this.upgradeButtons[targetType].setPosition(bx, confirmY).setSize(btnW, confirmRowHeight);
+        this.positionBuildButtonContentsSquare(targetType, bx, confirmY, btnW, confirmRowHeight);
       });
 
       // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
@@ -3607,22 +3667,22 @@ class GameScene extends Phaser.Scene {
     const upgradeBtnWidth = compact ? 150 : 180;
     const upgradeBtnHeight = compact ? 34 : 38;
     const upgradeX = w - this.buildMenuToggle.width - upgradeBtnWidth - 14;
-    // Hauteur par ligne quand plusieurs évolutions se partagent la même zone (demande utilisateur
-    // explicite : "les boutons sont superposés" -- l'ancienne version divisait upgradeBtnHeight par
-    // N, ce qui rendait le texte totalement illisible dès 2-3 options à la fois). Hauteur MINIMALE
-    // lisible FIXE (pas de division) : le bloc grandit vers le HAUT avec le nombre d'options plutôt
-    // que de rétrécir chaque ligne -- l'espace juste au-dessus (la carte) est toujours libre ici,
-    // contrairement à en dessous (bord d'écran) ou à droite (buildMenuToggle).
-    const upgradeRowHeight = upgradeBtnHeight;
-    const upgradeTotalHeight = upgradeRowHeight * Math.max(1, layoutUpgradeOptions.length);
+    // Rangée d'icônes plutôt qu'empilement de texte (demande utilisateur explicite : "les boutons
+    // sont superposés... utilise plutôt les icônes... sur PC et sur mobile") -- même système que le
+    // menu de construction (createBuildIconAndCost/positionBuildButtonContentsSquare, qui
+    // reproportionne déjà tout automatiquement si la place manque). upgradeBtnWidth SE DIVISE par
+    // le nombre d'options au lieu que la hauteur se divise (source du chevauchement précédent) :
+    // tient donc dans la même rangée que Démolir, plus besoin de faire grandir le bloc vers le haut.
+    const upgradeGap = 4;
     this.upgradeButtonOrder.forEach((targetType) => {
       const idx = layoutUpgradeOptions.indexOf(targetType);
       if (idx === -1) return;
-      this.upgradeButtons[targetType]
-        .setFontSize(compact ? 10 : 11)
-        .setFixedSize(upgradeBtnWidth, upgradeRowHeight)
-        .setWordWrapWidth(upgradeBtnWidth - 16)
-        .setPosition(upgradeX, h - upgradeTotalHeight - 8 + idx * upgradeRowHeight);
+      const count = layoutUpgradeOptions.length;
+      const btnW = (upgradeBtnWidth - upgradeGap * (count - 1)) / count;
+      const bx = upgradeX + idx * (btnW + upgradeGap);
+      const by = h - upgradeBtnHeight - 8;
+      this.upgradeButtons[targetType].setPosition(bx, by).setSize(btnW, upgradeBtnHeight);
+      this.positionBuildButtonContentsSquare(targetType, bx, by, btnW, upgradeBtnHeight);
     });
 
     // Démolir : même emplacement que "Améliorer" quand lui seul s'applique, sinon poussé à sa
@@ -4839,21 +4899,48 @@ class GameScene extends Phaser.Scene {
   // avec le temps (GameState.shots, purement visuel — les dégâts sont déjà appliqués au tir,
   // voir GameState.tickProduction). Même position Y "en ligne droite" que redrawMonsters pour
   // que le trait touche visuellement le carré du monstre visé.
+  // Dessine les projectiles (voir this.shotVisualByTowerType, initialisé dans create()) sur
+  // tileArtTexture -- PAS shotGraphics (voir le commentaire sur ce dernier dans create()) : un
+  // objet du MONDE (Graphics rendu par cameras.main) se retrouverait toujours SOUS ce canvas (rendu
+  // par uiCamera, qui passe en second), ce qui masquerait les flèches derrière les gobelins visés
+  // au lieu de les montrer par-dessus -- même raison qui a déjà fait migrer chargements/monstres/
+  // bâtiments sur ce canvas.
   redrawShots() {
-    const g = this.shotGraphics;
-    g.clear();
+    const ctx = this.tileArtTexture.context;
+    const { worldToScreen, zoom } = this.getWorldToScreen();
+    const rowHeight = HexUtils.rowHeight(this.hexSize);
 
     for (const s of GameState.shots) {
       const alpha = Phaser.Math.Clamp(s.ttl / 0.15, 0, 1);
+      const visual = this.shotVisualByTowerType[s.towerType] || this.shotVisualByTowerType.donjon;
+      const img = this.textures.exists(visual.key) ? this.textures.get(visual.key).getSourceImage() : null;
       const from = HexUtils.offsetToPixel(s.fromCol, s.fromRow, this.hexSize);
-      const toY = HexUtils.rowHeight(this.hexSize) * (s.toRow + 0.25);
-      g.lineStyle(this.hexSize * 0.1, 0xffd23f, alpha);
+      const toY = rowHeight * (s.toRow + 0.25);
+      const length = this.hexSize * zoom * visual.lengthFactor;
+
       for (let copy = -1; copy <= 1; copy++) {
         const offsetX = copy * this.worldWidthPx;
-        g.beginPath();
-        g.moveTo(from.x + offsetX, from.y);
-        g.lineTo(s.toX + offsetX, toY);
-        g.strokePath();
+        const p1 = worldToScreen(from.x + offsetX, from.y);
+        const p2 = worldToScreen(s.toX + offsetX, toY);
+        if (img) {
+          const travelAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(p2.x, p2.y);
+          ctx.rotate(travelAngle - visual.defaultAngleDeg * Math.PI / 180);
+          ctx.drawImage(img, -length / 2, -length * visual.ratio / 2, length, length * visual.ratio);
+          ctx.restore();
+        } else {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = '#ffd23f';
+          ctx.lineWidth = this.hexSize * 0.1 * zoom;
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     }
   }
@@ -5275,19 +5362,28 @@ class GameScene extends Phaser.Scene {
     // de Dévotion).
     this.upgradeButtonOrder.forEach((targetType) => {
       const btn = this.upgradeButtons[targetType];
+      const icon = this.buildButtonIcons[targetType];
+      const costIcons = this.buildButtonCostIcons[targetType];
       const show = upgradeOptions.includes(targetType);
+      // Icône + coût plutôt que texte (voir buildHud/createBuildIconAndCost, demande utilisateur
+      // explicite) : btn n'est plus qu'un simple rectangle de fond/zone de clic, comme les boutons
+      // du menu de construction -- son nom reste consultable au survol (voir attachHoverTooltip
+      // dans buildHud). icon/costIcons doivent être cachés/affichés indépendamment (positionnés une
+      // fois par layoutHud, voir plus haut, mais leur VISIBILITÉ/le montant affiché sont à jour ici
+      // à chaque frame, comme pour n'importe quel bouton du menu de construction).
       btn.setVisible(show);
+      icon.setVisible(show);
+      for (const { img, txt } of costIcons) { img.setVisible(show); txt.setVisible(show); }
       if (show) {
+        const alpha = this.paused ? 0.4 : 1;
+        btn.setAlpha(alpha);
+        icon.setAlpha(alpha);
         const cost = GameState.effectiveBuildingCost(targetType, GameConfig.buildings[targetType].cost);
-        // Texte raccourci (sans "Améliorer en") dès que plusieurs options se partagent la même
-        // zone -- demande utilisateur explicite ("boutons superposés" sur mobile à 2-3 évolutions
-        // proposables) : la phrase complète ne tenait plus à la hauteur alors disponible par
-        // bouton, texte devenu illisible (voir layoutHud, qui garde maintenant une hauteur MINIMALE
-        // lisible par ligne plutôt que de toujours diviser la même bande en N).
-        const label = upgradeOptions.length > 1
-          ? `${GameConfig.buildings[targetType].name} — ${this.formatResources(cost, true)}`
-          : `Améliorer en ${GameConfig.buildings[targetType].name} — ${this.formatResources(cost, true)}`;
-        btn.setText(label).setAlpha(this.paused ? 0.4 : 1);
+        const amounts = Object.values(cost);
+        costIcons.forEach(({ img, txt }, i) => {
+          txt.setText(String(Math.round(amounts[i] || 0))).setAlpha(alpha);
+          img.setAlpha(alpha);
+        });
       }
     });
 
@@ -5432,17 +5528,17 @@ class GameScene extends Phaser.Scene {
     }
     this.redrawFog();
 
-    // Ordre important : ce sont 3 étapes d'un même dessin (routes/ressources, puis chargements,
-    // puis monstres par-dessus), sur le même canvas tileArtTexture — voir le commentaire sur
-    // shotGraphics dans create() pour pourquoi elles ne peuvent pas rester des Graphics normaux.
-    // Un seul refresh() à la fin, pas un par étape.
+    // Ordre important : ce sont 4 étapes d'un même dessin (routes/ressources, puis chargements,
+    // puis monstres, puis les projectiles des tours par-dessus tout le reste), sur le même canvas
+    // tileArtTexture — voir le commentaire sur shotGraphics/this.shotVisualByTowerType dans create()
+    // pour pourquoi elles ne peuvent pas rester des Graphics normaux. Un seul refresh() à la fin,
+    // pas un par étape.
     this.redrawTileArt();
     this.redrawWarehouseZoneOverlay();
     this.redrawShipments();
     this.redrawMonsters();
-    this.tileArtTexture.refresh();
-
     this.redrawShots();
+    this.tileArtTexture.refresh();
 
     if (GameState.dirty) {
       this.redrawBuildings();
