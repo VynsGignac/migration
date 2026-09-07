@@ -4624,27 +4624,43 @@ class GameScene extends Phaser.Scene {
       const b = s.path[nextIdx];
       const pa = HexUtils.offsetToPixel(a.col, a.row, this.hexSize);
       const pb = HexUtils.offsetToPixel(b.col, b.row, this.hexSize);
-      const wx = pa.x + (pb.x - pa.x) * frac;
+      // Chemin le plus court autour du cylindre (bug vécu pour de vrai, demande utilisateur
+      // explicite : "des ressources qui se déplaçaient extrêmement rapidement... de la droite vers
+      // la gauche") : a.col/b.col sont toujours ramenés dans [0, this.cols) par wrapCol (voir
+      // HexUtils.hexesInRange/wrapCol, utilisés par le calcul du chemin) -- deux cases RÉELLEMENT
+      // adjacentes de part et d'autre de la colonne 0/cols-1 ont donc des x bruts qui diffèrent de
+      // presque toute la largeur du monde. Sans ce correctif, l'interpolation ci-dessous traversait
+      // TOUTE la carte en un seul segment (le temps de parcourir une seule case, donc très vite) au
+      // lieu de faire le pas court qu'elle représente réellement.
+      let dx = pb.x - pa.x;
+      if (dx > this.worldWidthPx / 2) dx -= this.worldWidthPx;
+      else if (dx < -this.worldWidthPx / 2) dx += this.worldWidthPx;
+      const wx = pa.x + dx * frac;
       const wy = pa.y + (pb.y - pa.y) * frac;
-      const { x, y } = worldToScreen(wx, wy);
 
       const textureKey = iconKeyByResource[s.resource];
       const size = this.hexSize * 0.84 * zoom; // 2x la taille précédente (voir demande utilisateur)
-      if (textureKey) {
-        const img = this.textures.get(textureKey).getSourceImage();
-        const aspect = img.width / img.height;
-        const w = aspect >= 1 ? size : size * aspect;
-        const h = aspect >= 1 ? size / aspect : size;
-        ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
-      } else {
-        const r = size / 2;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = '#' + GameConfig.resourceLabels[s.resource].color.toString(16).padStart(6, '0');
-        ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(16, 21, 26, 0.8)';
-        ctx.stroke();
+      const img = textureKey ? this.textures.get(textureKey).getSourceImage() : null;
+      // 3 copies (comme redrawShots/redrawSelection juste plus bas, même raison) : la caméra peut
+      // avoir tourné plusieurs fois autour du cylindre, wx seul (toujours proche de [0,
+      // worldWidthPx)) ne serait alors plus dans la vue actuelle -- une des 3 copies l'est toujours.
+      for (let copy = -1; copy <= 1; copy++) {
+        const { x, y } = worldToScreen(wx + copy * this.worldWidthPx, wy);
+        if (img) {
+          const aspect = img.width / img.height;
+          const w = aspect >= 1 ? size : size * aspect;
+          const h = aspect >= 1 ? size / aspect : size;
+          ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
+        } else {
+          const r = size / 2;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fillStyle = '#' + GameConfig.resourceLabels[s.resource].color.toString(16).padStart(6, '0');
+          ctx.fill();
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(16, 21, 26, 0.8)';
+          ctx.stroke();
+        }
       }
     }
   }
