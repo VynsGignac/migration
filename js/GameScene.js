@@ -3380,12 +3380,29 @@ class GameScene extends Phaser.Scene {
     // infoPanelText, inchangées. PC uniquement (demande utilisateur explicite : "ces modifications
     // ne sont a faire que sur le telephone. L'UI sur PC ne change pas").
     const desktopLaborIconSize = 48;
+    // Calculés ICI (avant desktopInfoPanelReserve, qui en a besoin juste en dessous) plutôt qu'à
+    // leur ancien emplacement plus bas dans cette fonction (pas juste dans updateInfoPanel) : parce
+    // que layoutHud a en plus besoin de savoir si Démolir/Améliorer s'appliquent pour dimensionner
+    // la réserve du panneau d'info -- recalculé à chaque appel de layoutHud, déclenché explicitement
+    // à chaque changement de sélection (voir handleTap), pour rester à jour sans attendre un resize.
+    // La VISIBILITÉ/le TEXTE réels restent gérés dans updateInfoPanel (chaque frame), pas ici.
+    const layoutSelectedTile = this.selectedBuildingKey ? GameState.tiles.get(this.selectedBuildingKey) : null;
+    const layoutUpgradeOptions = this.fortinUpgradeOptionsFor(layoutSelectedTile);
+    const layoutShowUpgrade = layoutUpgradeOptions.length > 0;
+    const layoutShowDemolish = !!layoutSelectedTile;
+
     // 160 -> 200 (testé pour de vrai avec le cas le plus long -- chantier Armurier hors de portée
     // d'Entrepôt -- toujours tronqué par le bouton Démolir à 160 depuis que la police du panneau
     // d'info n'a plus autant de place relative après les agrandissements successifs du bandeau de
     // ressources au-dessus, voir pcIconSize/desktopLaborIconSize) : les boutons de construction
     // rétrécissent dynamiquement (voir plus bas) plutôt que de risquer ce chevauchement.
-    const desktopInfoPanelReserve = 200;
+    // +75 quand des boutons d'amélioration seront affichés (demande utilisateur explicite : "il
+    // faut mettre ces icones juste en dessous de l'encadré d'information") : ces boutons (voir
+    // updateInfoPanel) ont maintenant besoin de leur PROPRE espace SOUS le texte, à l'intérieur de
+    // cette réserve (56px de hauteur + marges) -- 200px seul suffisait pour le texte le plus long
+    // connu mais pas pour texte + rangée de boutons en plus, d'où le chevauchement observé sans ce
+    // supplément (capture d'écran à l'appui).
+    const desktopInfoPanelReserve = 200 + (layoutShowUpgrade ? 75 : 0);
     const catBlockY = 10 + desktopIconGridHeight + 6 + desktopLaborIconSize + 12 + desktopInfoPanelReserve;
     // Hauteur de bouton DYNAMIQUE plutôt qu'un seuil qui bascule tout le panneau en mode mobile
     // (demande utilisateur explicite : "le PC a la meme UI que le telephone... c'etait mieux avant
@@ -3426,17 +3443,10 @@ class GameScene extends Phaser.Scene {
     const desktopBtnWidth = Math.max(26, desktopColWidthBudget);
     const desktopBtnHeight = Math.max(26, Math.min(170, desktopRowHeightBudget));
     const showConfirm = !!(this.buildMode && this.buildMode !== 'road' && this.buildGhostHex);
-    // Démolir/Améliorer en Château partagent le même emplacement que confirmButton (mutuellement
-    // exclusif avec showConfirm, voir updateInfoPanel). Calculés ICI (pas juste dans
-    // updateInfoPanel) parce que layoutHud a en plus besoin de savoir si les DEUX s'appliquent à
-    // la fois (Fortin sélectionné + Féodalité) pour diviser la rangée en deux -- recalculé à chaque
-    // appel de layoutHud, et un appel est déclenché explicitement à chaque changement de sélection
-    // (voir handleTap) pour que ça reste à jour sans attendre un resize. La VISIBILITÉ/le TEXTE
-    // réels restent gérés dans updateInfoPanel (chaque frame), pas ici.
-    const layoutSelectedTile = this.selectedBuildingKey ? GameState.tiles.get(this.selectedBuildingKey) : null;
-    const layoutUpgradeOptions = this.fortinUpgradeOptionsFor(layoutSelectedTile);
-    const layoutShowUpgrade = layoutUpgradeOptions.length > 0;
-    const layoutShowDemolish = !!layoutSelectedTile;
+    // layoutSelectedTile/layoutUpgradeOptions/layoutShowUpgrade/layoutShowDemolish : déplacés plus
+    // haut (voir avant desktopInfoPanelReserve/catBlockY), désormais nécessaires plus tôt pour
+    // agrandir la réserve du panneau d'info quand des boutons d'amélioration doivent y trouver leur
+    // place (voir le commentaire là-bas).
 
     // this.mobileLayout calculé tout en haut de layoutHud() désormais (voir le commentaire là-bas :
     // 500 reste un vrai garde-fou, pas un seuil courant -- en dessous, même le pavé mobile serait
@@ -3514,8 +3524,11 @@ class GameScene extends Phaser.Scene {
       }
 
       // catBlockY calculé plus haut (voir le commentaire là-bas). Le panneau d'info dispose
-      // toujours de tout l'espace entre les ressources et cette ligne pour respirer.
+      // toujours de tout l'espace entre les ressources et cette ligne pour respirer. Stocké sur
+      // `this` (voir updateInfoPanel) : les boutons d'amélioration, repositionnés chaque frame sous
+      // l'encadré d'info (voir plus bas), doivent pouvoir se limiter pour ne jamais empiéter dessus.
       const confirmY = catBlockY - desktopGap - confirmRowHeight;
+      this.confirmY = confirmY;
 
       // 34 -> 6 + desktopLaborIconSize + 12 (même formule que catBlockY plus haut, voir le
       // commentaire là-bas) : suit la vraie hauteur de la rangée travailleur/logement au lieu d'un
@@ -3525,39 +3538,15 @@ class GameScene extends Phaser.Scene {
       this.confirmButton
         .setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight)
         .setFontSize(14).setVisible(showConfirm);
-      // Démolir/Améliorer partagent la même rangée que Valider (jamais en même temps que
-      // showConfirm, voir updateInfoPanel) : divisée en deux quand un Fortin sélectionné rend les
-      // DEUX possibles à la fois, sinon celui qui s'applique prend toute la largeur. La portion
-      // "Améliorer" est ensuite subdivisée EN HAUTEUR par layoutUpgradeOptions.length (jusqu'à 3
-      // évolutions proposables en même temps, voir upgradeButtonOrder/buildHud) -- empile de mini-
-      // boutons plutôt qu'une refonte du système de rangées, pour ne pas risquer cette mise en page
-      // déjà finement calée.
-      const layoutBothActions = layoutShowDemolish && layoutShowUpgrade;
-      const halfW = (this.sidebarWidth - 20 - desktopGap) / 2;
-      if (layoutBothActions) {
-        this.demolishButton.setPosition(10, confirmY).setFixedSize(halfW, confirmRowHeight).setFontSize(11);
-      } else {
-        this.demolishButton.setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight).setFontSize(13);
-      }
-      const upgradeAreaX = layoutBothActions ? 10 + halfW + desktopGap : 10;
-      const upgradeAreaW = layoutBothActions ? halfW : (this.sidebarWidth - 20);
-      // Rangée d'icônes plutôt qu'empilement de texte (demande utilisateur explicite, capture
-      // d'écran à l'appui : "les boutons d'amélioration des fortins sont tous superposés... utilise
-      // plutôt les icônes... sur PC et sur mobile") -- même système que le menu de construction
-      // (createBuildIconAndCost/positionBuildButtonContentsSquare, qui reproportionne déjà tout
-      // automatiquement si la place manque, voir son commentaire). La LARGEUR de chaque bouton se
-      // divise par le nombre d'options au lieu que la HAUTEUR se divise (source du chevauchement
-      // précédent) : une icône reste lisible même rétrécie en largeur, contrairement à du texte.
-      const upgradeGap = 4;
-      this.upgradeButtonOrder.forEach((targetType) => {
-        const idx = layoutUpgradeOptions.indexOf(targetType);
-        if (idx === -1) return;
-        const count = layoutUpgradeOptions.length;
-        const btnW = (upgradeAreaW - upgradeGap * (count - 1)) / count;
-        const bx = upgradeAreaX + idx * (btnW + upgradeGap);
-        this.upgradeButtons[targetType].setPosition(bx, confirmY).setSize(btnW, confirmRowHeight);
-        this.positionBuildButtonContentsSquare(targetType, bx, confirmY, btnW, confirmRowHeight);
-      });
+      // Démolir : occupe TOUJOURS toute la largeur (plus de partage avec Améliorer, voir
+      // updateInfoPanel -- demande utilisateur explicite, capture à l'appui : "il faut mettre ces
+      // icones juste en dessous de l'encadré d'information", les boutons d'amélioration quittent
+      // donc cette rangée pour leur propre ligne, redonnant sa pleine largeur à Démolir).
+      this.demolishButton.setPosition(10, confirmY).setFixedSize(this.sidebarWidth - 20, confirmRowHeight).setFontSize(13);
+      // Boutons d'amélioration (icône + coût par ressource, voir createBuildIconAndCost) : plus
+      // positionnés ici. Repositionnés chaque frame dans updateInfoPanel, juste sous l'encadré
+      // d'info (voir le commentaire là-bas) -- leur position Y dépend de la hauteur RÉELLE du
+      // panneau, connue seulement une fois celui-ci rendu.
 
       // Onglets de catégorie : grille 2x2 (pas une seule rangée de 4, trop étroite pour des
       // libellés comme "Production" dans les 220px de la colonne PC -- voir categoryButtons).
@@ -5500,6 +5489,33 @@ class GameScene extends Phaser.Scene {
       } else {
         this.infoPanelText.setVisible(true).setText(text || 'Tape une case pour voir ses infos.');
       }
+    }
+
+    // Position des boutons d'amélioration (PC uniquement -- mobile garde l'ancienne rangée partagée
+    // avec Démolir, voir layoutHud) : JUSTE SOUS l'encadré d'info plutôt que dans la rangée
+    // Démolir/Valider (demande utilisateur explicite, capture à l'appui du chevauchement des coûts
+    // sur 3 boutons trop étroits : "il faut mettre ces icones juste en dessous de l'encadré
+    // d'information"). Recalculée chaque frame (comme costIcons/amounts juste en dessous) plutôt
+    // que dans layoutHud : la hauteur réelle du panneau (rows ou texte) n'est connue qu'une fois
+    // celui-ci rendu ci-dessus, et varie selon le bâtiment sélectionné. this.confirmY (voir
+    // layoutHud) borne le bas pour ne jamais chevaucher la rangée Démolir/Valider en dessous, même
+    // si le panneau d'info devenait anormalement long.
+    if (!this.mobileLayout && upgradeOptions.length > 0) {
+      const panelBottomY = rows
+        ? this.infoRowsBg.y + this.infoRowsBg.height
+        : this.infoPanelText.y + this.infoPanelText.height;
+      const upgradeRowHeight = 56;
+      const upgradeY = Math.min(panelBottomY + 10, this.confirmY - upgradeRowHeight - 8);
+      const upgradeAreaX = 10, upgradeAreaW = this.sidebarWidth - 20, upgradeGap = 4;
+      const count = upgradeOptions.length;
+      const btnW = (upgradeAreaW - upgradeGap * (count - 1)) / count;
+      this.upgradeButtonOrder.forEach((targetType) => {
+        const idx = upgradeOptions.indexOf(targetType);
+        if (idx === -1) return;
+        const bx = upgradeAreaX + idx * (btnW + upgradeGap);
+        this.upgradeButtons[targetType].setPosition(bx, upgradeY).setSize(btnW, upgradeRowHeight);
+        this.positionBuildButtonContentsSquare(targetType, bx, upgradeY, btnW, upgradeRowHeight);
+      });
     }
 
     // Pas de vérification canAfford ici (contrairement à l'ancien upgradeCastleButton, qui payait
