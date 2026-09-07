@@ -2713,23 +2713,30 @@ const GameState = {
   },
 
   // Démolition VOLONTAIRE par le joueur (voir GameScene.demolishSelectedBuilding, bouton
-  // "Démolir") -- même mécanique que destroyTile ci-dessus (1/4 ruine, 3/4 perte totale sans aucun
-  // recyclage, demande utilisateur explicite), seule différence : une Route se démolit normalement
-  // ici (destroyTile l'épargne, mais ça, c'est spécifique au passage de la horde).
+  // "Démolir") -- désormais DISTINCTE de destroyTile ci-dessus (demande utilisateur explicite,
+  // message détaillé donnant les deux cas séparément) : JAMAIS de ruine ici (contrairement à
+  // destroyTile, où 1/4 des destructions par la horde en laissent une) :
+  // - Route : remboursée INSTANTANÉMENT de son coût actuel (voir effectiveBuildingCost -- suit les
+  //   bénédictions/technos de réduction de coût en vigueur au moment de la démolition, pas celles
+  //   qui étaient actives à sa construction, dont rien n'est gardé en mémoire une fois le chantier
+  //   terminé), sans passer par l'étape ruine.
+  // - N'importe quel autre bâtiment : PAS de remboursement, PAS de ruine -- perte totale et
+  //   systématique (alors que destroyTile ne perd tout que 3/4 du temps).
   demolishBuildingByPlayer(col, row) {
     const key = this.key(col, row);
     const tile = this.tiles.get(key);
-    if (!tile || tile.type === 'ruin') return { warehouseLost: false, becameRuin: false };
+    if (!tile || tile.type === 'ruin') return { warehouseLost: false, refunded: false };
     const warehouseLost = tile.type === 'warehouse';
-    const becameRuin = Math.random() < 0.25;
-    if (becameRuin) {
-      this.tiles.set(key, { type: 'ruin', ruinLoot: this._ruinLootFor(tile) });
-    } else {
-      this.tiles.delete(key);
+    let refunded = false;
+    if (tile.type === 'road') {
+      const refund = this.effectiveBuildingCost('road', GameConfig.buildings.road.cost);
+      for (const res in refund) this._addResource(res, refund[res]);
+      refunded = true;
     }
+    this.tiles.delete(key);
     this.dirty = true;
     this.buildingsDirty = true;
-    return { warehouseLost, becameRuin };
+    return { warehouseLost, refunded };
   },
 
   // Vrai si au moins un Entrepôt tient encore debout (voir GameScene, condition de défaite : la

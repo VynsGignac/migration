@@ -3842,9 +3842,10 @@ class GameScene extends Phaser.Scene {
   }
 
   // Démolit le bâtiment/route actuellement sélectionné (voir demolishButton) : GameState.
-  // demolishBuildingByPlayer, PAS destroyTile (celle-ci reste réservée au passage de la horde) --
-  // 1 chance sur 4 de laisser une ruine pillable plus tard (demande utilisateur explicite), sinon
-  // recyclage immédiat comme avant (butin ruinLoot ajouté directement au stock, case vide). Même
+  // demolishBuildingByPlayer, PAS destroyTile (celle-ci reste réservée au passage de la horde,
+  // avec sa propre mécanique de ruine 1/4 -- demande utilisateur explicite, message détaillé
+  // distinguant les deux cas) -- une Route démolie ici est remboursée instantanément de son coût,
+  // n'importe quel autre bâtiment est une perte totale sans remboursement ni ruine. Même
   // vérification de défaite si c'était le dernier Entrepôt (voir update(), sur buildingsDirty).
   demolishSelectedBuilding() {
     if (this.paused || !this.selectedBuildingKey) return;
@@ -3854,7 +3855,10 @@ class GameScene extends Phaser.Scene {
     const result = GameState.demolishBuildingByPlayer(col, row);
     this.selectedBuildingKey = null;
     this.redrawActionZone();
-    this.showToast(result.becameRuin ? `${name} démoli → transformé en ruine` : `${name} démoli`);
+    // Route remboursée instantanément (demande utilisateur explicite), tout le reste est une perte
+    // totale sans ruine (voir GameState.demolishBuildingByPlayer -- contrairement à destroyTile,
+    // qui gère encore le cas "ruine" pour la horde).
+    this.showToast(result.refunded ? `${name} démoli, coût remboursé` : `${name} démoli`);
     this.layoutHud();
   }
 
