@@ -2022,35 +2022,20 @@ const GameState = {
   // rayon d'action d'une tour. La position d'un monstre étant continue (pixels), on la convertit
   // en colonne approximative pour la comparer à la zone (les mêmes cases que celles surlignées
   // par redrawActionZone).
-  // Poids d'une cible selon sa distance en RANGÉE à la tour, PAS sa distance totale (demande
-  // utilisateur explicite : "plus un monstre est proche de la ligne de la tour (en face de la
-  // tour), plus il a de chance de se faire tirer dessus... qu'une tour nettoie globalement devant
-  // elle et ne se retrouve pas à tirer sur des gobelins qui ne menacent rien"). m.row ne change
-  // JAMAIS après Monsters.init (chaque monstre avance en ligne droite dans sa propre rangée) : un
-  // monstre de la même rangée que la tour repassera indéfiniment dans son couloir, donc une vraie
-  // menace récurrente pour CETTE tour précisément -- contrairement à un monstre juste de passage
-  // en portée grâce à une rangée voisine, qui ne repassera jamais par cette case. Décroissance
-  // harmonique simple (1, 1/2, 1/3, ...) : nette mais pas un tout-ou-rien.
-  _targetRowWeight(rowDist) {
-    return 1 / (1 + rowDist);
-  },
-
-  // Tire une cible au hasard parmi candidates ([{ m, weight }]), pondérée par weight -- remplace
-  // l'ancien choix déterministe "la plus proche" (qui donnait autant de poids à un monstre très
-  // excentré en rangée mais proche en colonne qu'à un monstre pile dans l'axe de la tour) par un
-  // choix probabiliste favorisant l'alignement de rangée (voir _targetRowWeight ci-dessus).
-  _pickWeightedMonster(candidates) {
-    if (candidates.length === 0) return null;
-    const totalWeight = candidates.reduce((sum, c) => sum + c.weight, 0);
-    let roll = Math.random() * totalWeight;
-    for (const c of candidates) {
-      roll -= c.weight;
-      if (roll <= 0) return c.m;
-    }
-    return candidates[candidates.length - 1].m;
-  },
-
-  _findMonsterInRange(col, row, range) {
+  // Ciblage (demande utilisateur explicite, remplace le système précédent "poids par alignement de
+  // rangée seul", jugé pas assez proche de la cible réelle la plus menaçante) : la distance TOTALE
+  // (colonne + rangée, même métrique que le reste du fichier) est le facteur PRINCIPAL -- un pas de
+  // colonne et un pas de rangée comptent à ÉGALITÉ dans cette distance ("la distance et la ligne
+  // sont de même poids"), donc la cible la plus proche l'emporte toujours, alignée ou non ; ça
+  // garantit mécaniquement qu'une cible pile en face (rangée 0) qui est aussi la plus proche est
+  // TOUJOURS choisie (rien ne peut avoir une distance totale plus petite que la sienne). En cas
+  // d'égalité EXACTE de distance totale entre plusieurs cibles, tirage au hasard parmi elles (voir
+  // _pickClosestMonsters ci-dessous, factorisé pour les deux fonctions qui suivent).
+  // Cône à 45° (demande utilisateur explicite, "une tour ne peut pas tirer sur une cible à plus de
+  // 45° de sa ligne") : exclut toute cible dont l'écart de rangée dépasse son écart de colonne --
+  // une cible tout juste "sur le côté" (même colonne, rangée différente) est donc hors d'atteinte
+  // même si elle tombe dans le rayon (range, vérifié séparément juste avant).
+  _closestMonsterCandidates(col, row, range) {
     const colWidth = GameConfig.hex.size * 1.5;
     const cells = HexUtils.hexesInRange(col, row, range, this.cols, this.rows);
     const cellSet = new Set(cells.map(c => c.col + ',' + c.row));
@@ -2060,33 +2045,47 @@ const GameState = {
       if (!m.alive) continue;
       const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
       if (!cellSet.has(mCol + ',' + m.row)) continue;
-      candidates.push({ m, weight: this._targetRowWeight(Math.abs(m.row - row)) });
+      const rawColDist = Math.abs(mCol - col);
+      const colDist = Math.min(rawColDist, this.cols - rawColDist);
+      const rowDist = Math.abs(m.row - row);
+      if (rowDist > colDist) continue; // hors du cône à 45°
+      candidates.push({ m, dist: colDist + rowDist });
     }
-    return this._pickWeightedMonster(candidates);
+    return candidates;
   },
 
-  // Comme _findMonsterInRange, mais renvoie jusqu'à maxCount monstres DISTINCTS (tirage pondéré
-  // sans remise -- voir _pickWeightedMonster/_targetRowWeight) au lieu d'un seul -- voir Château/
-  // multiShot, tickProduction section "Tours".
-  _findMultipleMonstersInRange(col, row, range, maxCount) {
-    const colWidth = GameConfig.hex.size * 1.5;
-    const cells = HexUtils.hexesInRange(col, row, range, this.cols, this.rows);
-    const cellSet = new Set(cells.map(c => c.col + ',' + c.row));
-
-    const pool = [];
-    for (const m of Monsters.list) {
-      if (!m.alive) continue;
-      const mCol = HexUtils.wrapCol(Math.floor(m.x / colWidth), this.cols);
-      if (!cellSet.has(mCol + ',' + m.row)) continue;
-      pool.push({ m, weight: this._targetRowWeight(Math.abs(m.row - row)) });
-    }
+  // Choisit jusqu'à maxCount cibles DISTINCTES parmi candidates ([{ m, dist }]) : la/les plus
+  // proche(s) d'abord, tirage au hasard pour départager une distance totale ex-æquo, répété SANS
+  // REMISE (une cible déjà choisie ne peut pas l'être une seconde fois) -- partagé par
+  // _findMonsterInRange (maxCount 1) et _findMultipleMonstersInRange (Château/multiShot) pour ne
+  // jamais laisser les deux mécaniques diverger.
+  _pickClosestMonsters(candidates, maxCount) {
+    const pool = candidates.slice();
     const picked = [];
-    for (let i = 0; i < maxCount && pool.length > 0; i++) {
-      const m = this._pickWeightedMonster(pool);
-      picked.push(m);
-      pool.splice(pool.findIndex((c) => c.m === m), 1);
+    while (picked.length < maxCount && pool.length > 0) {
+      let bestDist = Infinity;
+      for (const c of pool) if (c.dist < bestDist) bestDist = c.dist;
+      const tiedIndexes = [];
+      pool.forEach((c, i) => { if (c.dist === bestDist) tiedIndexes.push(i); });
+      const chosenIndex = tiedIndexes[Math.floor(Math.random() * tiedIndexes.length)];
+      picked.push(pool[chosenIndex].m);
+      pool.splice(chosenIndex, 1);
     }
     return picked;
+  },
+
+  _findMonsterInRange(col, row, range) {
+    const candidates = this._closestMonsterCandidates(col, row, range);
+    const picked = this._pickClosestMonsters(candidates, 1);
+    return picked.length > 0 ? picked[0] : null;
+  },
+
+  // Comme _findMonsterInRange, mais renvoie jusqu'à maxCount monstres DISTINCTS (les plus proches
+  // d'abord, voir _pickClosestMonsters) au lieu d'un seul -- voir Château/multiShot, tickProduction
+  // section "Tours".
+  _findMultipleMonstersInRange(col, row, range, maxCount) {
+    const candidates = this._closestMonsterCandidates(col, row, range);
+    return this._pickClosestMonsters(candidates, maxCount);
   },
 
   // Vrai si un monstre vivant occupe PRÉCISÉMENT cette case (voir _findMonsterInRange ci-dessus
