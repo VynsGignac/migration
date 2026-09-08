@@ -1014,10 +1014,11 @@ const GameConfig = {
     rowCount: 90,
     // Taille de chaque bloc de la grille de FORMATION (rowCount x depthCount, voir Monsters.init)
     // -- 15 : un Chef de guerre au centre de CHAQUE bloc (17 au total, grille 6 lignes x 3
-    // colonnes, demande utilisateur explicite), sauf le bloc historique rowBlock===1/
-    // depthBlock===1 qui garde le Seigneur de la horde (position inchangée depuis la grille 3x3
-    // d'origine, demande utilisateur explicite de ne pas le déplacer). rowCount et depthCount
-    // doivent rester des multiples de blockSize.
+    // colonnes), sauf le bloc de la DERNIÈRE colonne (depthBlock 2 sur 0..2) qui reçoit le Seigneur
+    // de la horde à la place -- sa ligne (rowBlock) est tirée aléatoirement entre les blocs 2 à 5
+    // sur 6 à chaque nouvelle partie (demande utilisateur explicite, voir lordRowBlock/
+    // lordDepthBlock dans Monsters.init). rowCount et depthCount doivent rester des multiples de
+    // blockSize.
     blockSize: 15,
     // Espacement entre deux monstres consécutifs d'une même rangée (voir Monsters.init). Avec le
     // passage à une vraie image de gobelin (voir GameScene.redrawMonsters/js/assets.js), le

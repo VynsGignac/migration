@@ -41,9 +41,10 @@ const Monsters = {
   // Découpe le bloc rowCount x depthCount (lignes de formation x profondeur) en une grille de
   // blocs 15x15 : 6 blocs en lignes x 3 blocs en colonnes (18 blocs au total, demande utilisateur
   // explicite pour remplir plus la carte, voir GameConfig.monsters.blockSize) : un Chef de guerre
-  // au centre de CHAQUE bloc (17), sauf le bloc historique rowBlock===1/depthBlock===1 (position
-  // inchangée depuis la grille 3x3 d'origine, demande utilisateur explicite de ne pas déplacer le
-  // Seigneur de la horde) qui reçoit le Seigneur de la horde à la place. Mêmes stats que les
+  // au centre de CHAQUE bloc (17), sauf celui de la DERNIÈRE colonne (demande utilisateur
+  // explicite, échangé avec le Chef de guerre qui s'y trouvait avant) dont la ligne est tirée au
+  // hasard entre les blocs 2 à 5 sur 6 à chaque nouvelle partie (voir lordRowBlock/lordDepthBlock
+  // dans init() ci-dessous) et qui reçoit le Seigneur de la horde à la place. Mêmes stats que les
   // gobelins pour l'instant (voir demande utilisateur) -- seul le type (donc l'image, voir
   // GameScene.redrawMonsters) change.
   // Variantes d'image purement cosmétiques pour les gobelins simples (demande utilisateur
@@ -58,6 +59,17 @@ const Monsters = {
     const blockSize = cfg.blockSize;
     const centerLocal = Math.floor((blockSize - 1) / 2);
     const colWidth = GameConfig.hex.size * 1.5;
+    // Bloc du Seigneur de la horde (demande utilisateur explicite) : DERNIÈRE colonne de blocs
+    // (depthCount/blockSize - 1 = 2 sur 0..2) au lieu de la colonne du milieu -- l'échange avec le
+    // Chef de guerre qui s'y trouvait est automatique (voir la boucle plus bas : le bloc qui
+    // recevait avant le Seigneur reçoit désormais un Chef comme n'importe quel autre bloc, celui-ci
+    // reçoit le Seigneur à la place). Ligne (rowBlock) tirée aléatoirement UNE FOIS par partie
+    // (pas persistée séparément : le Seigneur généré ci-dessous fait partie de `list`, donc sa
+    // position survit normalement à une sauvegarde/rechargement, voir serialize/deserialize) parmi
+    // les blocs de lignes 2 à 5 sur 6 -- indices 0-based [1,4], ligne 2 = rowBlock 1 ... ligne 5 =
+    // rowBlock 4.
+    const lordDepthBlock = Math.floor(cfg.depthCount / blockSize) - 1;
+    const lordRowBlock = 1 + Math.floor(Math.random() * 4);
     // Voir commentaire au-dessus de init() : la fin de la formation (dernier depth) doit démarrer
     // à world.startCol + tailAheadOfWarehouseCols colonnes ; le front (depth 0) démarre donc à
     // cette position PLUS le décalage total de la formation ((depthCount-1) * depthSpacing), qu'on
@@ -90,10 +102,10 @@ const Monsters = {
         const localDepth = depth % blockSize;
         let type = 'goblin';
         if (localRow === centerLocal && localDepth === centerLocal) {
-          // Bloc historique du Seigneur de la horde (position figée depuis la grille 3x3
-          // d'origine, demande utilisateur explicite de ne pas le déplacer en agrandissant la
-          // grille) -- tous les autres blocs de la grille reçoivent un Chef de guerre.
-          const isLordBlock = rowBlock === 1 && depthBlock === 1;
+          // Bloc du Seigneur de la horde (voir lordRowBlock/lordDepthBlock plus haut, demande
+          // utilisateur explicite : dernière colonne, ligne aléatoire entre 2 et 5) -- tous les
+          // autres blocs de la grille reçoivent un Chef de guerre.
+          const isLordBlock = rowBlock === lordRowBlock && depthBlock === lordDepthBlock;
           type = isLordBlock ? 'lord' : 'chief';
         }
         const variant = type === 'goblin'
