@@ -473,15 +473,20 @@ const GameConfig = {
       kind: 'extractor', resource: 'mountain', outputResource: 'ore',
       // extractRadius 2 -> 4 (demande utilisateur explicite : "augmente la zone d'action des
       // mines à 4 cases", précisé ensuite : SEULEMENT le Mineur de Fer, le Camp de Mineur -- sur
-      // la pierre -- reste à 2).
-      extractRadius: 4, extractRate: 0.5, outputCap: 20,
+      // la pierre -- reste à 2). extractRate 0.5 -> 0.25 (demande utilisateur explicite : "divise
+      // par 2 la vitesse de travail des mines de fer et de la fonderie", voir foundry.rate
+      // ci-dessous pour le même changement).
+      extractRadius: 4, extractRate: 0.25, outputCap: 20,
       linkTargets: ['foundry'], linkRange: 6,
       ruinLoot: { planks: 3 },
     },
     foundry: {
       // 25 % de 10 planches (2,5, arrondi à 3) transféré en pierre taillée.
       name: 'Fonderie', cost: { planks: 7, stoneBlocks: 3 }, color: 0x8a4a35,
-      kind: 'processor', inputResource: 'ore', outputResource: 'ironIngot', rate: 1.5,
+      // rate 1.5 -> 0.75 (demande utilisateur explicite : "divise par 2 la vitesse de travail des
+      // mines de fer et de la fonderie", voir ironMiner.extractRate ci-dessus pour le même
+      // changement).
+      kind: 'processor', inputResource: 'ore', outputResource: 'ironIngot', rate: 0.75,
       inputCap: 15, outputCap: 15,
       linkTargets: ['warehouse'], linkRange: 6,
       ruinLoot: { planks: 5 },
