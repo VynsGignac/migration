@@ -509,13 +509,13 @@ const GameState = {
     return radius;
   },
 
-  // Rayon EFFECTIF du Temple : rayon de base + 2 si tbd5 est débloquée (voir GameConfig.
-  // techTree.nodes.rec_tbd5, demande utilisateur explicite : "Augmente la zone d'action des
-  // temples de 2"). Indépendant d'Expertise (qui ne parle que des bâtiments de RÉCOLTE, pas des
-  // Temples, kind 'shrine').
+  // Rayon EFFECTIF du Temple : rayon de base + 1 si tbd5 est débloquée (2 -> 1, demande
+  // utilisateur explicite : "avec amelioration, on passe a 3 cases, pas 4" -- rayon de base
+  // toujours 2, voir GameConfig.buildings.temple.extractRadius). Indépendant d'Expertise (qui ne
+  // parle que des bâtiments de RÉCOLTE, pas des Temples, kind 'shrine').
   templeRadius() {
     const def = GameConfig.buildings.temple;
-    return def.extractRadius + (this.isTechUnlocked('rec_tbd5') ? 2 : 0);
+    return def.extractRadius + (this.isTechUnlocked('rec_tbd5') ? 1 : 0);
   },
 
   // Recalcule entièrement l'ensemble des cases révélées (voir revealedTiles) à partir des

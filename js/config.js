@@ -595,8 +595,8 @@ const GameConfig = {
       name: 'Temple', cost: { planks: 5, stoneBlocks: 5, ironIngot: 5, statues: 20 }, color: 0xd4af6a,
       // extractRadius 10 -> 3 -> 2 (demande utilisateur explicite, après calcul théorique du
       // nombre d'Autels que ça permet -- voir échanges précédents : 19 cases dans ce rayon, 18
-      // Autels possibles au maximum ; 61 cases/60 Autels avec Sanctuaire, rec_tbd5, qui ajoute
-      // toujours +2 -- voir templeRadius). devotionPerAltar : 0,5 %/5s par Autel = 0,1 %/s (demande
+      // Autels possibles au maximum ; 37 cases/36 Autels avec Sanctuaire, rec_tbd5, qui ajoute +1
+      // -- voir templeRadius). devotionPerAltar : 0,5 %/5s par Autel = 0,1 %/s (demande
       // utilisateur explicite -- le Temple lui-même ne produit plus rien, voir GameConfig.devotion).
       kind: 'shrine', extractRadius: 2, devotionPerAltar: 0.1,
       ruinLoot: { planks: 8 },
@@ -840,7 +840,7 @@ const GameConfig = {
       },
       rec_tbd5: {
         name: 'Sanctuaire', parent: 'rec_tbd4', ring: 3, angle: 162,
-        description: 'Augmente la zone d\'action des Temples de 2 cases et divise leur coût de construction par 2.',
+        description: 'Augmente la zone d\'action des Temples de 1 case et divise leur coût de construction par 2.',
       },
       rec_tbd6: {
         // Voir GameState.tickProduction, section "Tours" (2.6) : bonus de vitesse de tir = niveau
