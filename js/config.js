@@ -195,18 +195,20 @@ const GameConfig = {
   // decayBands : la perte naturelle N'EST PLUS un taux fixe -- elle dépend de la Dévotion ACTUELLE
   // (demande utilisateur explicite, valeurs finales après plusieurs itérations chiffrées avec
   // l'utilisateur) : chaque tranche de 20 points a son propre taux (%/s), qui grimpe avec le
-  // niveau -- 0 sous 20 %, jusqu'à 2 %/s (10 %/5s) au-dessus de 80 %. Voir
-  // GameState.devotionDecayRateFor, qui choisit la première tranche dont `max` dépasse strictement
-  // la Dévotion actuelle (donc 20 % pile tombe déjà dans la tranche 20-40, etc.) ; ratePerSecond =
-  // valeur en %/5s divisée par 5 (ex. 1 %/5s -> 0.2).
+  // niveau -- 0 sous 20 %, jusqu'à 4 %/s (20 %/5s) au-dessus de 80 % (x2, demande utilisateur
+  // explicite ultérieure : "multiplie par 2 la degenerescence de la religion" -- valeurs d'origine
+  // 0.2/0.5/1.0/2.0 doublées en 0.4/1.0/2.0/4.0). Voir GameState.devotionDecayRateFor, qui choisit
+  // la première tranche dont `max` dépasse strictement la Dévotion actuelle (donc 20 % pile tombe
+  // déjà dans la tranche 20-40, etc.) ; ratePerSecond = valeur en %/5s divisée par 5 (ex. 2 %/5s ->
+  // 0.4).
   devotion: {
     cap: 100,
     decayBands: [
       { max: 20, ratePerSecond: 0 },
-      { max: 40, ratePerSecond: 0.2 },
-      { max: 60, ratePerSecond: 0.5 },
-      { max: 80, ratePerSecond: 1.0 },
-      { max: 100, ratePerSecond: 2.0 },
+      { max: 40, ratePerSecond: 0.4 },
+      { max: 60, ratePerSecond: 1.0 },
+      { max: 80, ratePerSecond: 2.0 },
+      { max: 100, ratePerSecond: 4.0 },
     ],
     // Hystérésis (demande utilisateur explicite : "si la devotion redescend 5% plus bas que le
     // palier... alors l'effet... devient inactif (et se reactive automatiquement dès que le
@@ -591,11 +593,12 @@ const GameConfig = {
       // Coût précisé par l'utilisateur (planches/pierre/fer/statues, pas juste planches/pierre
       // comme les autres bâtiments).
       name: 'Temple', cost: { planks: 5, stoneBlocks: 5, ironIngot: 5, statues: 20 }, color: 0xd4af6a,
-      // extractRadius 10 -> 3 (demande utilisateur explicite, après calcul théorique du nombre
-      // d'Autels que ça permet -- voir échanges précédents : 37 cases dans ce rayon, 36 Autels
-      // possibles au maximum). devotionPerAltar : 0,5 %/5s par Autel = 0,1 %/s (demande utilisateur
-      // explicite -- le Temple lui-même ne produit plus rien, voir GameConfig.devotion).
-      kind: 'shrine', extractRadius: 3, devotionPerAltar: 0.1,
+      // extractRadius 10 -> 3 -> 2 (demande utilisateur explicite, après calcul théorique du
+      // nombre d'Autels que ça permet -- voir échanges précédents : 19 cases dans ce rayon, 18
+      // Autels possibles au maximum ; 61 cases/60 Autels avec Sanctuaire, rec_tbd5, qui ajoute
+      // toujours +2 -- voir templeRadius). devotionPerAltar : 0,5 %/5s par Autel = 0,1 %/s (demande
+      // utilisateur explicite -- le Temple lui-même ne produit plus rien, voir GameConfig.devotion).
+      kind: 'shrine', extractRadius: 2, devotionPerAltar: 0.1,
       ruinLoot: { planks: 8 },
     },
     // kind: 'tower' => tire sur un monstre à portée (range, cases) toutes les fireInterval
