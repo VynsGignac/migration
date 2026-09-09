@@ -3405,13 +3405,14 @@ class GameScene extends Phaser.Scene {
     // d'info n'a plus autant de place relative après les agrandissements successifs du bandeau de
     // ressources au-dessus, voir pcIconSize/desktopLaborIconSize) : les boutons de construction
     // rétrécissent dynamiquement (voir plus bas) plutôt que de risquer ce chevauchement.
-    // +75 quand des boutons d'amélioration seront affichés (demande utilisateur explicite : "il
-    // faut mettre ces icones juste en dessous de l'encadré d'information") : ces boutons (voir
-    // updateInfoPanel) ont maintenant besoin de leur PROPRE espace SOUS le texte, à l'intérieur de
-    // cette réserve (56px de hauteur + marges) -- 200px seul suffisait pour le texte le plus long
-    // connu mais pas pour texte + rangée de boutons en plus, d'où le chevauchement observé sans ce
-    // supplément (capture d'écran à l'appui).
-    const desktopInfoPanelReserve = 200 + (layoutShowUpgrade ? 75 : 0);
+    // +95 quand des boutons d'amélioration seront affichés (75 -> 95, ajusté avec upgradeRowHeight
+    // 56 -> 76 -- voir son commentaire dans updateInfoPanel, icône agrandie + coût en armes sur sa
+    // propre ligne) : ces boutons ont besoin de leur PROPRE espace SOUS le texte, à l'intérieur de
+    // cette réserve -- 200px seul suffisait pour le texte le plus long connu mais pas pour texte +
+    // rangée de boutons en plus, d'où le chevauchement observé sans ce supplément (capture
+    // d'écran à l'appui, demande utilisateur explicite : "il faut mettre ces icones juste en
+    // dessous de l'encadré d'information").
+    const desktopInfoPanelReserve = 200 + (layoutShowUpgrade ? 95 : 0);
     const catBlockY = 10 + desktopIconGridHeight + 6 + desktopLaborIconSize + 12 + desktopInfoPanelReserve;
     // Hauteur de bouton DYNAMIQUE plutôt qu'un seuil qui bascule tout le panneau en mode mobile
     // (demande utilisateur explicite : "le PC a la meme UI que le telephone... c'etait mieux avant
@@ -3925,6 +3926,15 @@ class GameScene extends Phaser.Scene {
   // petit des deux sert de référence pour les tailles (icône/coût), pour ne jamais déborder du
   // bouton même quand il n'est plus parfaitement carré.
   positionBuildButtonContentsSquare(id, x, y, w, h) {
+    // Boutons d'amélioration de Fortin (castle/keep/siegeTower, TOUJOURS 3 ressources -- planches,
+    // pierre taillée, armes -- jamais utilisés ailleurs que dans updateInfoPanel, voir
+    // buildingCategories.defense qui ne les liste pas) : mise en page dédiée (demande utilisateur
+    // explicite, voir _positionFortinUpgradeButtonContents) plutôt que la version générique
+    // ci-dessous, pour agrandir l'icône ET séparer le coût en armes sur sa propre ligne.
+    if (id === 'castle' || id === 'keep' || id === 'siegeTower') {
+      this._positionFortinUpgradeButtonContents(id, x, y, w, h);
+      return;
+    }
     const cx = x + w / 2;
     const size = Math.min(w, h);
     // 47 -> 85 (demande utilisateur explicite : "aggrandit les icones en consequence", boutons
@@ -3972,6 +3982,52 @@ class GameScene extends Phaser.Scene {
       txt.setPosition(cxRun, costY).setVisible(true);
       cxRun += txt.width + gapAfterTxt;
     }
+  }
+
+  // Voir positionBuildButtonContentsSquare (qui délègue ici pour castle/keep/siegeTower) : icône
+  // agrandie avec la MÊME formule que le menu de construction normal (demande utilisateur
+  // explicite : "L'objectif est de tendre vers la taille des éléments dans le menu de
+  // construction" -- pas une formule bricolée à part), rendue possible en grandissant seulement h
+  // (voir upgradeRowHeight dans updateInfoPanel) jusqu'à ce que w (fixe, 3 boutons par rangée dans
+  // la largeur de la colonne) redevienne la seule vraie contrainte : size=min(w,h) plafonne alors
+  // sur w, exactement comme un bouton carré du menu normal plafonnerait dessus. Coût en armes
+  // séparé sur sa propre ligne, sous planches/pierre taillée (demande utilisateur explicite : "si
+  // on met le cout en arme à la ligne en dessous, on peut aggrandir les icones" -- ces 3 boutons
+  // ont TOUJOURS exactement ce coût à 3 ressources, voir GameConfig.buildings.castle/keep/
+  // siegeTower, jamais utilisés ailleurs que dans updateInfoPanel pour ces ids précis).
+  _positionFortinUpgradeButtonContents(id, x, y, w, h) {
+    const cx = x + w / 2;
+    const size = Math.min(w, h);
+    const iconSize = Math.min(size * 0.5, 85);
+    const icon = this.buildButtonIcons[id];
+    icon.setPosition(cx, y + h * 0.30).setVisible(true);
+    if (this.buildingIconKeys[id]) icon.setDisplaySize(iconSize, iconSize);
+    else icon.setScale(iconSize / 30);
+
+    // Même formule de taille que positionBuildButtonContentsSquare (voir plus haut) : cohérence
+    // visuelle avec le menu de construction, aucun rétrécissement nécessaire ici (2 ressources
+    // max par ligne au lieu de 3, voir le commentaire ci-dessus).
+    const costs = this.buildButtonCostIcons[id]; // [planches, pierre taillée, armes] (voir cost)
+    const weaponsCost = costs[costs.length - 1];
+    const otherCosts = costs.slice(0, -1);
+    const costImgSize = Math.max(9, Math.min(22, size * 0.16));
+    const fontSize = Math.max(10, Math.min(18, Math.round(size * 0.15)));
+    const gapAfterImg = 2, gapAfterTxt = 8;
+    costs.forEach(({ txt }) => txt.setFontSize(fontSize));
+
+    const layoutRow = (rowCosts, rowY) => {
+      let rowW = -gapAfterTxt;
+      rowCosts.forEach(({ txt }) => { rowW += costImgSize + gapAfterImg + txt.width + gapAfterTxt; });
+      let rcx = cx - rowW / 2;
+      for (const { img, txt } of rowCosts) {
+        img.setPosition(rcx, rowY).setDisplaySize(costImgSize, costImgSize).setVisible(true);
+        rcx += costImgSize + gapAfterImg;
+        txt.setPosition(rcx, rowY).setVisible(true);
+        rcx += txt.width + gapAfterTxt;
+      }
+    };
+    layoutRow(otherCosts, y + h * 0.64);
+    layoutRow([weaponsCost], y + h * 0.86);
   }
 
   setBuildMode(mode) {
@@ -5513,7 +5569,11 @@ class GameScene extends Phaser.Scene {
       const panelBottomY = rows
         ? this.infoRowsBg.y + this.infoRowsBg.height
         : this.infoPanelText.y + this.infoPanelText.height;
-      const upgradeRowHeight = 56;
+      // 56 -> 76 (demande utilisateur explicite : icône agrandie + coût en armes sur sa propre
+      // ligne, voir _positionFortinUpgradeButtonContents -- a besoin de plus de hauteur pour ses 2
+      // lignes de coût + une icône plus grande). desktopInfoPanelReserve (voir layoutHud) agrandi
+      // en proportion pour ne jamais chevaucher la rangée Démolir/Valider en dessous.
+      const upgradeRowHeight = 76;
       const upgradeY = Math.min(panelBottomY + 10, this.confirmY - upgradeRowHeight - 8);
       const upgradeAreaX = 10, upgradeAreaW = this.sidebarWidth - 20, upgradeGap = 4;
       const count = upgradeOptions.length;
