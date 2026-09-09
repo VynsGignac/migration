@@ -251,6 +251,12 @@ const GameState = {
     state.choice = optionId;
     state.active = true; // le palier vient d'être atteint pour pouvoir choisir, donc forcément actif tout de suite
     this.dirty = true;
+    // buildingsDirty (pas seulement dirty) : même raison que dans updateDevotionTiers ci-dessous --
+    // Regard divin doit dissiper le brouillard IMMÉDIATEMENT au moment du choix (pas seulement au
+    // prochain bâtiment posé/détruit, seul autre déclencheur de computeRevealedTiles) -- bug
+    // signalé ("la bénédiction Regard Divin ne marche pas") : ce cas précis (première activation
+    // via un choix, pas via l'hystérésis d'updateDevotionTiers) avait été oublié ici.
+    this.buildingsDirty = true;
     return true;
   },
 
