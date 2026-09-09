@@ -1310,7 +1310,13 @@ class GameScene extends Phaser.Scene {
       // positionBuildButtonContents/positionBuildButtonContentsSquare), qui n'a besoin d'aucune
       // division de hauteur par le nombre d'options proposables (contrairement au texte d'avant),
       // réglant le chevauchement à la racine plutôt qu'en rétrécissant la police.
-      const btn = this.add.rectangle(0, 0, 10, 10, 0x2e5339, 0).setOrigin(0, 0)
+      // Fond sombre (0x0a0f14, même teinte que sidebarBg/buildMenuBg -- demande utilisateur
+      // explicite : "utilises un fond sombre comme pour le menu de construction") plutôt
+      // qu'entièrement transparent (alpha 0, comme les boutons du menu normal à icône-image, voir
+      // idleAlpha plus bas) : ces 3 boutons flottent directement sur la carte (surtout visible sur
+      // mobile, hors de la colonne PC qui a déjà son propre fond sombre) et restaient peu lisibles
+      // sans arrière-plan propre.
+      const btn = this.add.rectangle(0, 0, 10, 10, 0x0a0f14, 0.85).setOrigin(0, 0)
         .setStrokeStyle(2, GameConfig.colors.buildingBorder, 0.85)
         .setVisible(false).setDepth(1000).setInteractive({ useHandCursor: true });
       btn.on('pointerup', () => this.upgradeSelectedFortin(targetType));
