@@ -550,8 +550,15 @@ const GameState = {
       if (tile.underConstruction) continue; // pas encore opérationnel, pas de zone/brouillard révélé
       const radius = this.zoneRadiusFor(tile.type);
       if (radius == null) continue;
+      // +2 de marge (voir zoneRadiusFor) : le brouillard va un peu plus loin que la vraie zone
+      // d'action (tir/récolte/livraison...) -- n'a pas de sens pour la Tour de Guet (demande
+      // utilisateur explicite : "elle n'a pas de portée en tant que tel, elle ne tire pas... et le
+      // fait sur un rayon de 18 cases", pas 18+2) : def.range EST directement le rayon de
+      // brouillard voulu, sans marge cachée en plus, contrairement aux bâtiments qui ont une vraie
+      // zone d'action distincte de ce qu'ils révèlent.
+      const margin = tile.type === 'watchtower' ? 0 : 2;
       const [col, row] = key.split(',').map(Number);
-      for (const c of HexUtils.hexesInRange(col, row, radius + 2, this.cols, this.rows)) {
+      for (const c of HexUtils.hexesInRange(col, row, radius + margin, this.cols, this.rows)) {
         revealed.add(this.key(c.col, c.row));
       }
     }

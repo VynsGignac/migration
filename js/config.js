@@ -632,9 +632,11 @@ const GameConfig = {
     // pas débloquée (voir GameScene.isBuildingUnlocked).
     watchtower: {
       name: 'Tour de Guet', cost: { planks: 6 }, color: 0x6b7a8f,
-      // range 10 -> 18 (demande utilisateur explicite) : rayon de brouillard revele = range + 2
-      // (voir GameState.computeRevealedTiles/zoneRadiusFor), donc 20 cases desormais -- loin
-      // devant tout le reste (Donjon/keep, le plus grand batiment combattant, restait a 12).
+      // range 10 -> 18 (demande utilisateur explicite) : rayon de brouillard EXACT (pas de +2 de
+      // marge ajoute en plus, contrairement aux autres batiments -- voir le commentaire dedie dans
+      // GameState.computeRevealedTiles, "elle n'a pas de portee en tant que tel, elle ne tire
+      // pas") -- 18 cases desormais, loin devant tout le reste (Donjon/keep, le plus grand
+      // batiment combattant, reste a 12).
       kind: 'watchtower', range: 18,
       ruinLoot: { planks: 3 },
     },
