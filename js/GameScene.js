@@ -51,6 +51,9 @@ class GameScene extends Phaser.Scene {
     this.load.image('weaponsIcon', GameAssets.weaponsIcon);
     this.load.image('devotionIcon', GameAssets.devotionIcon);
     this.load.image('statuesIcon', GameAssets.statuesIcon);
+    // Gemme (demande utilisateur explicite, image fournie -- remplace le losange dessiné à la
+    // main de drawResourceBarIcon, voir resourceBarIconTextureKeys plus bas).
+    this.load.image('gemmeIcon', GameAssets.gemmeIcon);
     this.load.image('woodIcon', GameAssets.woodIcon);
     this.load.image('planksIcon', GameAssets.planksIcon);
     this.load.image('stoneIcon', GameAssets.stoneIcon);
@@ -1064,6 +1067,10 @@ class GameScene extends Phaser.Scene {
     this.resourceBarIconTextureKeys = {
       planks: 'planksIcon', stoneBlocks: 'stoneBlocksIcon', bread: 'breadIcon',
       ironIngot: 'ironIngotIcon', weapons: 'weaponsIcon', statues: 'statuesIcon', devotion: 'devotionIcon',
+      // gemme (demande utilisateur explicite, image fournie) : n'avait jusqu'ici jamais d'entrée
+      // ici (voir le losange dessiné à la main dans drawResourceBarIcon, resté comme secours pour
+      // toute future ressource sans image dédiée).
+      gemme: 'gemmeIcon',
     };
     this.resourceBarIconImages = {};
     for (const res in this.resourceBarIconTextureKeys) {

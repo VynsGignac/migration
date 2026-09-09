@@ -9,7 +9,7 @@ const GameConfig = {
   // ressource montagne sans construire tout un réseau) : GameState.computeRevealedTiles révèle
   // alors toute la carte d'un coup au lieu de la zone d'action des bâtiments.
   debug: {
-    disableFog: true,
+    disableFog: false,
   },
   hex: {
     // Taille d'une case hexagonale en pixels (rayon du centre à un coin)

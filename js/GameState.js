@@ -686,18 +686,30 @@ const GameState = {
     // ne s'applique qu'à CETTE génération de départ, pas aux cadavres laissés par un monstre tué
     // (voir _maybeDropCorpse, qui n'a aucune restriction de rangée -- un monstre meurt où il meurt).
     const edgeRowMargin = (cfg[type] && cfg[type].edgeRowMargin) || 0;
-    let placed = 0;
-    let attempts = 0;
-    while (placed < count && attempts < count * 30) {
-      attempts++;
-      const col = Math.floor(Math.random() * this.cols);
-      const row = Math.floor(Math.random() * this.rows);
-      if (row < edgeRowMargin || row >= this.rows - edgeRowMargin) continue;
-      if (this._withinStartClearance(col, clearance)) continue;
-      if (!this._tileIsFreeForResource(col, row)) continue;
-      const amount = cfg[type].amount;
-      this.resourceTiles.set(this.key(col, row), { type, amount });
-      placed++;
+    // Une bande de colonnes égale par occurrence plutôt qu'un tirage uniforme sur TOUTE la largeur
+    // (demande utilisateur explicite : "que les cadavres... soient répartis de manière plus
+    // homogène sur toute la longueur") -- avec seulement `count` occurrences (9 pour les cadavres)
+    // sur jusqu'à 200 colonnes, un tirage uniforme pouvait par pur hasard les regrouper sur une
+    // petite portion de la carte (contrairement à _spawnBlobs, tiré au hasard de la même façon
+    // mais sur bien plus d'occurrences, où ça moyenne déjà naturellement). Position toujours
+    // aléatoire À L'INTÉRIEUR de chaque bande (pas au centre pile) : garantit une occurrence par
+    // portion de la carte sans les aligner en grille artificielle.
+    const bandWidth = this.cols / count;
+    for (let i = 0; i < count; i++) {
+      const bandStart = Math.floor(i * bandWidth);
+      const bandEnd = Math.max(bandStart + 1, Math.floor((i + 1) * bandWidth));
+      let attempts = 0;
+      while (attempts < 30) {
+        attempts++;
+        const col = bandStart + Math.floor(Math.random() * (bandEnd - bandStart));
+        const row = Math.floor(Math.random() * this.rows);
+        if (row < edgeRowMargin || row >= this.rows - edgeRowMargin) continue;
+        if (this._withinStartClearance(col, clearance)) continue;
+        if (!this._tileIsFreeForResource(col, row)) continue;
+        const amount = cfg[type].amount;
+        this.resourceTiles.set(this.key(col, row), { type, amount });
+        break;
+      }
     }
   },
 
