@@ -3797,7 +3797,11 @@ class GameScene extends Phaser.Scene {
     // souvent), et le bouton finissait par déborder par-dessus "Construire" (bug vécu pour de
     // vrai). Une taille fixe + retour à la ligne rend la position toujours prévisible.
     const upgradeBtnWidth = compact ? 150 : 180;
-    const upgradeBtnHeight = compact ? 34 : 38;
+    // 34/38 -> 54/58 (+20, même écart que la version PC : 56 -> 76, voir updateInfoPanel) : ces 3
+    // boutons passent maintenant par _positionFortinUpgradeButtonContents (icône agrandie + coût
+    // en armes sur sa propre ligne, demande utilisateur explicite) -- sans ce supplément de
+    // hauteur, la 2e ligne de coût chevauchait l'icône sur mobile (capture d'écran à l'appui).
+    const upgradeBtnHeight = compact ? 54 : 58;
     const upgradeX = w - this.buildMenuToggle.width - upgradeBtnWidth - 14;
     // Rangée d'icônes plutôt qu'empilement de texte (demande utilisateur explicite : "les boutons
     // sont superposés... utilise plutôt les icônes... sur PC et sur mobile") -- même système que le
