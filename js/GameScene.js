@@ -2369,7 +2369,7 @@ class GameScene extends Phaser.Scene {
       },
       {
         title: 'Dévotion',
-        body: 'Les {{icon:templeIcon}} Temples génèrent de la Dévotion en fonction du nombre d\'{{icon:altarIcon}} Autels à proximité. Chaque palier atteint débloque une bénédiction tant que la Dévotion est maintenue.',
+        body: 'Les {{icon:templeIcon}} Temples génèrent de la {{icon:devotionIcon}} Dévotion en fonction du nombre d\'{{icon:altarIcon}} Autels à proximité. Chaque palier atteint débloque une bénédiction tant que la Dévotion est maintenue.',
       },
       {
         title: 'La Horde',
@@ -2486,7 +2486,10 @@ class GameScene extends Phaser.Scene {
   // slide, pour permettre l'insertion d'images au milieu du texte (impossible avec un seul objet
   // Text). fontSize/iconSize/lineHeight varient PC/mobile (voir l'appelant, layoutTutorialPanel).
   _layoutTutorialBody(tokens, x, y, maxWidth, fontSize, iconSize) {
-    const lineHeight = Math.round(fontSize * 1.6);
+    // max(...) plutôt que juste fontSize*1.6 (demande utilisateur explicite, icônes agrandies) :
+    // sans ça, une icône plus grande que la ligne de texte déborderait légèrement sur la ligne
+    // suivante (centrage vertical -- voir (lineHeight - iconSize) / 2 plus bas -- devenant négatif).
+    const lineHeight = Math.max(Math.round(fontSize * 1.6), iconSize + 4);
     const spaceWidth = Math.round(fontSize * 0.4);
     const iconGap = 4;
     let cursorX = x, cursorY = y, wordIdx = 0, iconIdx = 0;
@@ -2550,7 +2553,10 @@ class GameScene extends Phaser.Scene {
     // mutuellement avec refreshTutorialPanel en boucle infinie à chaque ouverture).
     if (this.tutorialOpen && this.tutorialBodyTokens) {
       const fontSize = this.mobileLayout ? 13 : 14;
-      const iconSize = this.mobileLayout ? 16 : 18;
+      // 16/18 -> 21/24 (+33%, demande utilisateur explicite : "augmente... la taille des icones de
+      // batiment dans le tuto" -- nombre exact non précisé, choisi pour rester nettement plus
+      // grand sans déborder sur 2 lignes de plus dans les slides les plus chargées).
+      const iconSize = this.mobileLayout ? 21 : 24;
       this._layoutTutorialBody(this.tutorialBodyTokens, px + pad, py + 54, panelWidth - pad * 2, fontSize, iconSize);
     }
 
