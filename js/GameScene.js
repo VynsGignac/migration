@@ -2327,6 +2327,13 @@ class GameScene extends Phaser.Scene {
   buildTutorialPanel() {
     this.tutorialOpen = false;
     this.tutorialIndex = 0;
+    // body : texte normal, avec des icônes de bâtiment/ressource insérées inline via le marqueur
+    // {{icon:xxxIcon}} (demande utilisateur explicite : "je voudrais que tu utilises les icones /
+    // images de batiment dans les phrases pour illustrer") -- voir _tutorialTokenize/
+    // _layoutTutorialBody, qui découpent ce marqueur du texte environnant et mélangent Text/Image
+    // dans le même flux avec retour à la ligne automatique, comme un mini traitement de texte.
+    // Seules les clés déjà chargées avec une VRAIE image (voir buildingIconKeys) sont utilisées ;
+    // le Recycleur (icône vectorielle sans texture dédiée) reste donc en texte simple.
     this.tutorialSlides = [
       {
         title: 'Contrôles de base',
@@ -2334,43 +2341,43 @@ class GameScene extends Phaser.Scene {
       },
       {
         title: 'Brouillard de guerre',
-        body: 'Seules les cases à portée d\'au moins un bâtiment sont visibles. La Tour de Guet ne combat pas mais révèle une zone bien plus grande que les autres bâtiments.',
+        body: 'Les cases trop éloignées des bâtiments sont invisibles. Construis des bâtiments pour les révéler. La {{icon:watchtowerIcon}} Tour de Guet est particulièrement efficace pour cela.',
       },
       {
         title: 'Construire',
-        body: 'Menu de construction → choisir un bâtiment → taper une case libre. Le coût est livré progressivement par l\'Entrepôt le plus proche, via les routes.',
+        body: 'Menu de construction → choisir un bâtiment → taper une case libre. Les ressources nécessaires sont livrées progressivement via les routes par les {{icon:warehouseIcon}} Entrepôts à portée.',
       },
       {
         title: 'Routes et Entrepôt',
-        body: 'Un bâtiment doit être relié par une route à un Entrepôt pour envoyer ou recevoir des ressources ; portée limitée.',
+        body: 'Un bâtiment doit être relié par une {{icon:roadIcon}} route à un {{icon:warehouseIcon}} Entrepôt pour être construit et envoyer ou recevoir des ressources. La portée des Entrepôts est limitée.',
       },
       {
         title: 'Chaîne de production',
-        body: 'Extracteur (récolte une ressource brute) → Transformateur (la raffine) → stock central, via les routes.',
+        body: 'La plupart des bâtiments utilisent des matériaux raffinés ({{icon:planksIcon}} Planche, {{icon:stoneBlocksIcon}} Pierre Taillée, {{icon:breadIcon}} Pain et {{icon:ironIngotIcon}} Lingot de Fer) produits à partir de matériaux bruts ({{icon:woodIcon}} Bois, {{icon:stoneIcon}} Pierre Brute, {{icon:wheatIcon}} Blé et {{icon:oreIcon}} Minerai).',
       },
       {
         title: 'Population et main-d\'œuvre',
-        body: 'Les Maisons produisent des habitants (nourris en pain), affectés automatiquement aux bâtiments proches.',
+        body: 'Les {{icon:houseIcon}} Maisons produisent des habitants (si elles sont suffisamment approvisionnées en {{icon:breadIcon}} pain). Ces habitants sont affectés automatiquement aux bâtiments proches pour booster leur productivité.',
       },
       {
         title: 'Répartition',
-        body: 'Deux panneaux pilotent cette automatisation : la répartition de la population par catégorie (Matériaux/Alimentation/Dévotion/Métallurgie/Militaire), et la répartition des ressources brutes entre leurs débouchés possibles.',
+        body: 'Deux panneaux pilotent les répartitions. La répartition de la population par catégorie (Matériaux/Alimentation/Dévotion/Métallurgie/Militaire), et la répartition des ressources brutes entre leurs débouchés possibles.',
       },
       {
         title: 'Recherche',
-        body: 'L\'Université débloque un arbre technologique. Chaque recherche coûte des Gemmes, obtenues en recyclant des cadavres de monstres (Recycleur de gemmes) ou via la branche Joaillerie.',
+        body: 'L\'{{icon:universityIcon}} Université débloque un arbre technologique. Chaque recherche coûte des {{icon:gemmeIcon}} Gemmes, obtenues principalement en recyclant des cadavres de monstres par le Recycleur de gemmes.',
       },
       {
         title: 'Dévotion',
-        body: 'Temple + Autels à portée génèrent de la Dévotion ; chaque palier atteint débloque une bénédiction tant que le niveau est maintenu.',
+        body: 'Les {{icon:templeIcon}} Temples génèrent de la Dévotion en fonction du nombre d\'{{icon:altarIcon}} Autels à proximité. Chaque palier atteint débloque une bénédiction tant que la Dévotion est maintenue.',
       },
       {
         title: 'La Horde',
-        body: 'Une vague de monstres avance en continu et détruit les bâtiments sur son passage ; Fortin/Château/Donjon/Tour de siège tirent automatiquement s\'ils ont des travailleurs.',
+        body: 'Une vague de monstres avance en continu de la gauche vers la droite et détruit les bâtiments sur son passage ; utilise des {{icon:donjonIcon}} Fortin/{{icon:castleIcon}} Château/{{icon:keepIcon}} Donjon/{{icon:siegeTowerIcon}} Tour de siège pour ralentir ou arrêter la horde.',
       },
       {
         title: 'Objectif',
-        body: 'Tuer le Seigneur de la horde = victoire. Tu perds si tous tes Entrepôts sont détruits — protège-les en priorité.',
+        body: 'Tuer le Seigneur de la horde pour la stopper. Tu perds si tous tes {{icon:warehouseIcon}} Entrepôts sont détruits — protège-les en priorité.',
       },
     ];
 
@@ -2394,10 +2401,24 @@ class GameScene extends Phaser.Scene {
     this.tutorialClose.on('pointerup', () => this.toggleTutorialPanel(false));
     this.uiElements.push(this.tutorialClose);
 
-    this.tutorialBody = this.add.text(0, 0, '', {
-      font: '14px sans-serif', color: '#ffffff', lineSpacing: 5,
-    }).setDepth(1052).setVisible(false);
-    this.uiElements.push(this.tutorialBody);
+    // Pool de mots/icônes réutilisables entre slides (voir _layoutTutorialBody, même principe que
+    // infoRowIcons/infoRowTexts pour le panneau d'info bâtiment) : chaque MOT a son propre objet
+    // Text (pas un seul Text par slide) pour pouvoir intercaler des icônes au milieu du flux avec
+    // un retour à la ligne correct autour d'elles. Tailles généreuses (80 mots/16 icônes) : la
+    // slide la plus fournie (Chaîne de production) n'en utilise qu'une trentaine.
+    this.tutorialBodyWords = [];
+    this.tutorialBodyIcons = [];
+    for (let i = 0; i < 80; i++) {
+      const t = this.add.text(0, 0, '', { font: '14px sans-serif', color: '#ffffff' })
+        .setOrigin(0, 0).setDepth(1052).setVisible(false);
+      this.uiElements.push(t);
+      this.tutorialBodyWords.push(t);
+    }
+    for (let i = 0; i < 16; i++) {
+      const img = this.add.image(0, 0, 'warehouseIcon').setOrigin(0, 0).setDepth(1052).setVisible(false);
+      this.uiElements.push(img);
+      this.tutorialBodyIcons.push(img);
+    }
 
     this.tutorialPageText = this.add.text(0, 0, '', {
       font: '12px sans-serif', color: '#ffffff99',
@@ -2436,10 +2457,68 @@ class GameScene extends Phaser.Scene {
     this.refreshTutorialPanel();
   }
 
+  // Découpe le texte d'une slide en mots/icônes (voir buildTutorialPanel, marqueur
+  // {{icon:xxxIcon}}) pour _layoutTutorialBody ci-dessous -- séparé sur les espaces, un marqueur
+  // reste un seul token (aucun espace à l'intérieur des accolades).
+  _tutorialTokenize(text) {
+    const tokens = [];
+    // Recherche le marqueur N'IMPORTE OÙ dans le token (pas seulement token === marqueur) : une
+    // ponctuation collée sans espace ("(icone" ou "icone)") reste sinon rattachée au marqueur et
+    // ne matche plus rien, affichant le marqueur en texte brut au lieu de l'icône (bug vécu pour
+    // de vrai, voir la parenthèse ouvrante juste avant chaque liste de ressources).
+    const markerRe = /\{\{icon:(\w+)\}\}/;
+    for (const raw of text.split(/\s+/)) {
+      if (!raw) continue;
+      const m = raw.match(markerRe);
+      if (!m) { tokens.push({ type: 'word', text: raw }); continue; }
+      const before = raw.slice(0, m.index);
+      const after = raw.slice(m.index + m[0].length);
+      if (before) tokens.push({ type: 'word', text: before });
+      tokens.push({ type: 'icon', key: m[1] });
+      if (after) tokens.push({ type: 'word', text: after });
+    }
+    return tokens;
+  }
+
+  // Pose les tokens d'une slide (voir _tutorialTokenize) en flux texte + icônes inline, avec
+  // retour à la ligne automatique (comme un mot qui ne tiendrait plus sur la ligne) -- réutilise
+  // le pool tutorialBodyWords/tutorialBodyIcons (voir buildTutorialPanel) plutôt qu'un Text par
+  // slide, pour permettre l'insertion d'images au milieu du texte (impossible avec un seul objet
+  // Text). fontSize/iconSize/lineHeight varient PC/mobile (voir l'appelant, layoutTutorialPanel).
+  _layoutTutorialBody(tokens, x, y, maxWidth, fontSize, iconSize) {
+    const lineHeight = Math.round(fontSize * 1.6);
+    const spaceWidth = Math.round(fontSize * 0.4);
+    const iconGap = 4;
+    let cursorX = x, cursorY = y, wordIdx = 0, iconIdx = 0;
+    for (const token of tokens) {
+      if (token.type === 'icon') {
+        if (iconIdx >= this.tutorialBodyIcons.length) continue; // pool épuisé (slide anormalement longue), on ignore plutôt que planter
+        const img = this.tutorialBodyIcons[iconIdx++];
+        if (cursorX + iconSize > x + maxWidth && cursorX > x) { cursorX = x; cursorY += lineHeight; }
+        img.setTexture(token.key).setDisplaySize(iconSize, iconSize)
+          .setPosition(cursorX, cursorY + (lineHeight - iconSize) / 2).setVisible(true);
+        cursorX += iconSize + iconGap;
+      } else {
+        if (wordIdx >= this.tutorialBodyWords.length) continue;
+        const txt = this.tutorialBodyWords[wordIdx++];
+        txt.setFontSize(fontSize).setText(token.text);
+        const w = txt.width;
+        if (cursorX + w > x + maxWidth && cursorX > x) { cursorX = x; cursorY += lineHeight; }
+        txt.setPosition(cursorX, cursorY).setVisible(true);
+        cursorX += w + spaceWidth;
+      }
+    }
+    for (; wordIdx < this.tutorialBodyWords.length; wordIdx++) this.tutorialBodyWords[wordIdx].setVisible(false);
+    for (; iconIdx < this.tutorialBodyIcons.length; iconIdx++) this.tutorialBodyIcons[iconIdx].setVisible(false);
+  }
+
   refreshTutorialPanel() {
     const slide = this.tutorialSlides[this.tutorialIndex];
     this.tutorialTitle.setText(slide.title);
-    this.tutorialBody.setText(slide.body);
+    // Tokenisé UNE fois par changement de slide (pas à chaque appel de layoutTutorialPanel, par
+    // ex. à chaque redimensionnement) -- voir layoutTutorialPanel, qui reflow juste ces tokens
+    // déjà découpés selon la largeur de panneau courante.
+    this.tutorialBodyTokens = this._tutorialTokenize(slide.body);
     this.tutorialPageText.setText(`${this.tutorialIndex + 1} / ${this.tutorialSlides.length}`);
     // Grisé/désactivé plutôt que masqué en début de liste (position stable des boutons plutôt
     // qu'un bouton "Suivant" qui saute vers la gauche à l'ouverture) -- Suivant devient "Terminer"
@@ -2466,8 +2545,14 @@ class GameScene extends Phaser.Scene {
     const pad = 20;
     this.tutorialTitle.setPosition(px + pad, py + 16).setFontSize(this.mobileLayout ? 15 : 18);
     this.tutorialClose.setPosition(px + panelWidth - this.tutorialClose.width - 10, py + 10);
-    this.tutorialBody.setPosition(px + pad, py + 54).setFontSize(this.mobileLayout ? 13 : 14)
-      .setWordWrapWidth(panelWidth - pad * 2);
+    // Pure repositionnement à partir des tokens déjà découpés (voir refreshTutorialPanel) : PAS
+    // de rappel à refreshTutorialPanel ici (bug corrigé -- l'ancienne version s'appelait
+    // mutuellement avec refreshTutorialPanel en boucle infinie à chaque ouverture).
+    if (this.tutorialOpen && this.tutorialBodyTokens) {
+      const fontSize = this.mobileLayout ? 13 : 14;
+      const iconSize = this.mobileLayout ? 16 : 18;
+      this._layoutTutorialBody(this.tutorialBodyTokens, px + pad, py + 54, panelWidth - pad * 2, fontSize, iconSize);
+    }
 
     const bottomY = py + panelHeight - 16;
     this.tutorialPageText.setPosition(px + pad, bottomY - this.tutorialPageText.height);
@@ -2476,8 +2561,6 @@ class GameScene extends Phaser.Scene {
       this.tutorialNext.x - 10 - this.tutorialPrev.width, bottomY - this.tutorialPrev.height
     );
     this.tutorialSkip.setPosition(px + pad, this.tutorialPrev.y - this.tutorialSkip.height - 8);
-
-    if (this.tutorialOpen) this.refreshTutorialPanel();
   }
 
   // Même principe pause-si-nécessaire que toggleSettingsMenu (voir son commentaire) : le "?" en
@@ -2492,11 +2575,14 @@ class GameScene extends Phaser.Scene {
     this.tutorialPanel.setVisible(visible);
     this.tutorialTitle.setVisible(visible);
     this.tutorialClose.setVisible(visible);
-    this.tutorialBody.setVisible(visible);
     this.tutorialPageText.setVisible(visible);
     this.tutorialPrev.setVisible(visible);
     this.tutorialNext.setVisible(visible);
     this.tutorialSkip.setVisible(visible);
+    if (!visible) {
+      for (const t of this.tutorialBodyWords) t.setVisible(false);
+      for (const img of this.tutorialBodyIcons) img.setVisible(false);
+    }
 
     if (visible) {
       this.tutorialIndex = 0; // repart toujours de la première slide à l'ouverture
