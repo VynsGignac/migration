@@ -691,7 +691,8 @@ class GameScene extends Phaser.Scene {
   // déjà pour les éléments du HUD classique.
   isModalOpen() {
     return this.saveMenuOpen || this.techTreeOpen || this.gameOverOpen || this.resourceRoutingOpen
-      || this.laborRoutingOpen || this.startMenuOpen || this.devotionPanelOpen || this.settingsOpen;
+      || this.laborRoutingOpen || this.startMenuOpen || this.devotionPanelOpen || this.settingsOpen
+      || this.tutorialOpen;
   }
 
   // Vrai si le pointeur est actuellement au-dessus d'un élément du HUD (bandeau/colonne, pavé de
@@ -709,6 +710,7 @@ class GameScene extends Phaser.Scene {
     if (this.demolishButton.visible && Phaser.Geom.Rectangle.Contains(this.demolishButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.pauseButton.getBounds(), pointer.x, pointer.y)) return true;
     if (Phaser.Geom.Rectangle.Contains(this.menuButton.getBounds(), pointer.x, pointer.y)) return true;
+    if (Phaser.Geom.Rectangle.Contains(this.helpButton.getBounds(), pointer.x, pointer.y)) return true;
     for (const id in this.quickMenuButtons) {
       const btn = this.quickMenuButtons[id];
       if (btn.visible && Phaser.Geom.Rectangle.Contains(btn.getBounds(), pointer.x, pointer.y)) return true;
@@ -1210,6 +1212,16 @@ class GameScene extends Phaser.Scene {
     this.uiElements.push(this.menuButton);
     this.attachHoverTooltip(this.menuButton, 'btn:menu', () => 'Menu', { tapToggle: false });
 
+    // "?" : rouvre le tutoriel à tout moment en cours de partie (demande utilisateur explicite,
+    // "Okay pour le ? dans le jeu") -- voir buildTutorialPanel/toggleTutorialPanel, même coin que
+    // Pause/Menu (voir layoutHud).
+    this.helpButton = this.add.text(0, 0, '?', {
+      font: 'bold 18px sans-serif', color: '#10151a', backgroundColor: '#ffffffcc', padding: { x: 13, y: 8 },
+    }).setDepth(1002).setInteractive({ useHandCursor: true });
+    this.helpButton.on('pointerup', () => this.toggleTutorialPanel(true));
+    this.uiElements.push(this.helpButton);
+    this.attachHoverTooltip(this.helpButton, 'btn:help', () => 'Tutoriel', { tapToggle: false });
+
     // Chrono : temps de jeu écoulé (this.elapsed, déjà en pause avec le reste de la simulation --
     // voir update(), incrémenté seulement dans le bloc "if (!this.paused)") -- juste besoin de
     // l'afficher, pas de logique de pause séparée à gérer ici. Même coin que Pause/Menu (voir
@@ -1238,6 +1250,7 @@ class GameScene extends Phaser.Scene {
     this.buildLaborRoutingPanel();
     this.buildDevotionPanel();
     this.buildSettingsMenu();
+    this.buildTutorialPanel();
     this.buildStartMenu();
 
     // Boutons dédiés Entrepôt/Université/Maison/Dévotion (demande utilisateur explicite, voir
@@ -1448,6 +1461,7 @@ class GameScene extends Phaser.Scene {
       this.layoutLaborRoutingPanel();
       this.layoutDevotionPanel();
       this.layoutSettingsMenu();
+      this.layoutTutorialPanel();
       this.layoutStartMenu();
       this.clampZoomAndCamera();
     };
@@ -2303,6 +2317,205 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // Tutoriel (demande utilisateur explicite : "generes un tutoriel... a partir du menu
+  // principal", contenu/ordre des slides validés avec l'utilisateur avant implémentation) : suite
+  // de pages statiques (titre + texte), PAS un panneau interactif comme Paramètres/Répartition --
+  // même coquille (overlay + panneau + titre + fermer) mais profondeur 1050+ (au-dessus de
+  // Paramètres 1040+, lui-même déjà au-dessus du menu de démarrage 1030+) pour toujours s'afficher
+  // par-dessus quoi que ce soit d'autre à l'écran, accessible aussi bien depuis le menu principal
+  // que depuis le bouton "?" en jeu (voir helpButton, GameScene.create) à tout moment.
+  buildTutorialPanel() {
+    this.tutorialOpen = false;
+    this.tutorialIndex = 0;
+    this.tutorialSlides = [
+      {
+        title: 'Contrôles de base',
+        body: 'Glisse pour déplacer la caméra, pince/molette pour zoomer. Tape une case pour la sélectionner. Le monde est cylindrique : assez loin d\'un côté, on revient de l\'autre.',
+      },
+      {
+        title: 'Brouillard de guerre',
+        body: 'Seules les cases à portée d\'au moins un bâtiment sont visibles. La Tour de Guet ne combat pas mais révèle une zone bien plus grande que les autres bâtiments.',
+      },
+      {
+        title: 'Construire',
+        body: 'Menu de construction → choisir un bâtiment → taper une case libre. Le coût est livré progressivement par l\'Entrepôt le plus proche, via les routes.',
+      },
+      {
+        title: 'Routes et Entrepôt',
+        body: 'Un bâtiment doit être relié par une route à un Entrepôt pour envoyer ou recevoir des ressources ; portée limitée.',
+      },
+      {
+        title: 'Chaîne de production',
+        body: 'Extracteur (récolte une ressource brute) → Transformateur (la raffine) → stock central, via les routes.',
+      },
+      {
+        title: 'Population et main-d\'œuvre',
+        body: 'Les Maisons produisent des habitants (nourris en pain), affectés automatiquement aux bâtiments proches.',
+      },
+      {
+        title: 'Répartition',
+        body: 'Deux panneaux pilotent cette automatisation : la répartition de la population par catégorie (Matériaux/Alimentation/Dévotion/Métallurgie/Militaire), et la répartition des ressources brutes entre leurs débouchés possibles.',
+      },
+      {
+        title: 'Recherche',
+        body: 'L\'Université débloque un arbre technologique. Chaque recherche coûte des Gemmes, obtenues en recyclant des cadavres de monstres (Recycleur de gemmes) ou via la branche Joaillerie.',
+      },
+      {
+        title: 'Dévotion',
+        body: 'Temple + Autels à portée génèrent de la Dévotion ; chaque palier atteint débloque une bénédiction tant que le niveau est maintenu.',
+      },
+      {
+        title: 'La Horde',
+        body: 'Une vague de monstres avance en continu et détruit les bâtiments sur son passage ; Fortin/Château/Donjon/Tour de siège tirent automatiquement s\'ils ont des travailleurs.',
+      },
+      {
+        title: 'Objectif',
+        body: 'Tuer le Seigneur de la horde = victoire. Tu perds si tous tes Entrepôts sont détruits — protège-les en priorité.',
+      },
+    ];
+
+    this.tutorialOverlay = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.75)
+      .setOrigin(0, 0).setDepth(1050).setVisible(false).setInteractive();
+    this.tutorialOverlay.on('pointerup', () => this.toggleTutorialPanel(false));
+    this.uiElements.push(this.tutorialOverlay);
+
+    this.tutorialPanel = this.add.rectangle(0, 0, 10, 10, 0x14202b, 0.97)
+      .setOrigin(0, 0).setDepth(1051).setStrokeStyle(2, 0xffd23f).setVisible(false).setInteractive();
+    this.uiElements.push(this.tutorialPanel);
+
+    this.tutorialTitle = this.add.text(0, 0, '', {
+      font: 'bold 18px sans-serif', color: '#ffd23f',
+    }).setDepth(1052).setVisible(false);
+    this.uiElements.push(this.tutorialTitle);
+
+    this.tutorialClose = this.add.text(0, 0, '✕', {
+      font: 'bold 15px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 9, y: 6 },
+    }).setDepth(1052).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.tutorialClose.on('pointerup', () => this.toggleTutorialPanel(false));
+    this.uiElements.push(this.tutorialClose);
+
+    this.tutorialBody = this.add.text(0, 0, '', {
+      font: '14px sans-serif', color: '#ffffff', lineSpacing: 5,
+    }).setDepth(1052).setVisible(false);
+    this.uiElements.push(this.tutorialBody);
+
+    this.tutorialPageText = this.add.text(0, 0, '', {
+      font: '12px sans-serif', color: '#ffffff99',
+    }).setDepth(1052).setVisible(false);
+    this.uiElements.push(this.tutorialPageText);
+
+    this.tutorialPrev = this.add.text(0, 0, '◀ Précédent', {
+      font: 'bold 13px sans-serif', color: '#ffffff', backgroundColor: '#2e5339', padding: { x: 12, y: 8 },
+    }).setDepth(1052).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.tutorialPrev.on('pointerup', () => this.tutorialGo(this.tutorialIndex - 1));
+    this.uiElements.push(this.tutorialPrev);
+
+    // Texte dynamique ("Suivant"/"Terminer" selon la slide, voir refreshTutorialPanel) : action
+    // toujours la même (avancer, ou fermer sur la toute dernière slide).
+    this.tutorialNext = this.add.text(0, 0, 'Suivant ▶', {
+      font: 'bold 13px sans-serif', color: '#10151a', backgroundColor: '#ffd23f', padding: { x: 12, y: 8 },
+    }).setDepth(1052).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.tutorialNext.on('pointerup', () => {
+      if (this.tutorialIndex >= this.tutorialSlides.length - 1) this.toggleTutorialPanel(false);
+      else this.tutorialGo(this.tutorialIndex + 1);
+    });
+    this.uiElements.push(this.tutorialNext);
+
+    this.tutorialSkip = this.add.text(0, 0, 'Passer', {
+      font: '13px sans-serif', color: '#ffffffaa',
+    }).setDepth(1052).setInteractive({ useHandCursor: true }).setVisible(false);
+    this.tutorialSkip.on('pointerup', () => this.toggleTutorialPanel(false));
+    this.uiElements.push(this.tutorialSkip);
+  }
+
+  // Change de slide (voir tutorialPrev/tutorialNext ci-dessus) : borné [0, slides.length-1],
+  // pas de repli circulaire (Précédent/Suivant se désactivent plutôt aux extrémités, voir
+  // refreshTutorialPanel).
+  tutorialGo(index) {
+    this.tutorialIndex = Math.max(0, Math.min(this.tutorialSlides.length - 1, index));
+    this.refreshTutorialPanel();
+  }
+
+  refreshTutorialPanel() {
+    const slide = this.tutorialSlides[this.tutorialIndex];
+    this.tutorialTitle.setText(slide.title);
+    this.tutorialBody.setText(slide.body);
+    this.tutorialPageText.setText(`${this.tutorialIndex + 1} / ${this.tutorialSlides.length}`);
+    // Grisé/désactivé plutôt que masqué en début de liste (position stable des boutons plutôt
+    // qu'un bouton "Suivant" qui saute vers la gauche à l'ouverture) -- Suivant devient "Terminer"
+    // sur la toute dernière slide (voir buildTutorialPanel, même bouton/action, texte différent).
+    const isFirst = this.tutorialIndex === 0;
+    const isLast = this.tutorialIndex === this.tutorialSlides.length - 1;
+    this.tutorialPrev.setAlpha(isFirst ? 0.4 : 1);
+    if (isFirst) this.tutorialPrev.disableInteractive(); else this.tutorialPrev.setInteractive({ useHandCursor: true });
+    this.tutorialNext.setText(isLast ? 'Terminer' : 'Suivant ▶');
+    this.layoutTutorialPanel();
+  }
+
+  layoutTutorialPanel() {
+    if (!this.tutorialPanel) return; // pas encore construit (premier appel avant create)
+    const w = this.scale.width, h = this.scale.height;
+    this.tutorialOverlay.setSize(w, h);
+
+    const panelWidth = Math.min(w - 32, 480);
+    const panelHeight = Math.min(h - 24, 320);
+    const px = (w - panelWidth) / 2;
+    const py = (h - panelHeight) / 2;
+    this.tutorialPanel.setPosition(px, py).setSize(panelWidth, panelHeight);
+
+    const pad = 20;
+    this.tutorialTitle.setPosition(px + pad, py + 16).setFontSize(this.mobileLayout ? 15 : 18);
+    this.tutorialClose.setPosition(px + panelWidth - this.tutorialClose.width - 10, py + 10);
+    this.tutorialBody.setPosition(px + pad, py + 54).setFontSize(this.mobileLayout ? 13 : 14)
+      .setWordWrapWidth(panelWidth - pad * 2);
+
+    const bottomY = py + panelHeight - 16;
+    this.tutorialPageText.setPosition(px + pad, bottomY - this.tutorialPageText.height);
+    this.tutorialNext.setPosition(px + panelWidth - pad - this.tutorialNext.width, bottomY - this.tutorialNext.height);
+    this.tutorialPrev.setPosition(
+      this.tutorialNext.x - 10 - this.tutorialPrev.width, bottomY - this.tutorialPrev.height
+    );
+    this.tutorialSkip.setPosition(px + pad, this.tutorialPrev.y - this.tutorialSkip.height - 8);
+
+    if (this.tutorialOpen) this.refreshTutorialPanel();
+  }
+
+  // Même principe pause-si-nécessaire que toggleSettingsMenu (voir son commentaire) : le "?" en
+  // jeu (voir helpButton) peut ouvrir ce panneau alors que la partie tourne, contrairement à
+  // Paramètres (accessible uniquement depuis un menu déjà en pause) -- pausedByTutorial lève la
+  // pause à la fermeture SEULEMENT si c'est cette ouverture qui l'a posée (une pause manuelle
+  // pendant que le tutoriel est ouvert doit le rester après sa fermeture).
+  toggleTutorialPanel(forceState) {
+    this.tutorialOpen = forceState !== undefined ? forceState : !this.tutorialOpen;
+    const visible = this.tutorialOpen;
+    this.tutorialOverlay.setVisible(visible);
+    this.tutorialPanel.setVisible(visible);
+    this.tutorialTitle.setVisible(visible);
+    this.tutorialClose.setVisible(visible);
+    this.tutorialBody.setVisible(visible);
+    this.tutorialPageText.setVisible(visible);
+    this.tutorialPrev.setVisible(visible);
+    this.tutorialNext.setVisible(visible);
+    this.tutorialSkip.setVisible(visible);
+
+    if (visible) {
+      this.tutorialIndex = 0; // repart toujours de la première slide à l'ouverture
+      this.pausedByTutorial = !this.paused;
+      if (!this.paused) this.togglePause();
+      this.layoutTutorialPanel();
+      this.refreshTutorialPanel();
+    } else if (this.pausedByTutorial) {
+      this.pausedByTutorial = false;
+      if (this.paused) this.togglePause();
+    }
+  }
+
+  // "Tutoriel" : ouvre le panneau dédié par-dessus le menu de démarrage, qui reste ouvert dessous
+  // (même principe que onStartMenuSettings juste au-dessus).
+  onStartMenuTutorial() {
+    this.toggleTutorialPanel(true);
+  }
+
   // Menu de démarrage (demande utilisateur explicite, v0.4 : "un menu de demarrage au lancement
   // du jeu... quelque chose tres simple, avec juste des boutons Nouvelle partie/Charger/
   // Parametre/Quitter... la version doit etre affiché") -- plein écran, toujours ouvert dès la
@@ -2338,6 +2551,7 @@ class GameScene extends Phaser.Scene {
       { key: 'continue', text: 'Continuer', action: () => this.onInGameMenuContinue() },
       { key: 'newGame', text: 'Nouvelle partie', action: () => this.onStartMenuNewGame() },
       { key: 'load', text: 'Charger', action: () => this.onStartMenuLoad() },
+      { key: 'tutorial', text: 'Tutoriel', action: () => this.onStartMenuTutorial() },
       { key: 'settings', text: 'Paramètres', action: () => this.onStartMenuSettings() },
       { key: 'quit', text: 'Quitter', action: () => this.onStartMenuQuit() },
     ];
@@ -2407,8 +2621,8 @@ class GameScene extends Phaser.Scene {
     // en cours de partie, en tête de liste (action la plus probable) -- absent du tout premier menu
     // de démarrage (rien à reprendre à ce stade).
     const order = this.startMenuInGame
-      ? ['continue', 'newGame', 'load', 'settings', 'quit']
-      : ['newGame', 'load', 'settings', 'quit'];
+      ? ['continue', 'newGame', 'load', 'tutorial', 'settings', 'quit']
+      : ['newGame', 'load', 'tutorial', 'settings', 'quit'];
     for (const key of order) {
       this.startMenuButtons[key].setFontSize(btnFontSize).setPadding(btnPadX, btnPadY, btnPadX, btnPadY);
     }
@@ -3324,16 +3538,23 @@ class GameScene extends Phaser.Scene {
     if (this.mobileLayout) {
       this.pauseButton.setFontSize(13).setPadding(7, 5, 7, 5);
       this.menuButton.setFontSize(13).setPadding(7, 5, 7, 5);
+      this.helpButton.setFontSize(13).setPadding(7, 5, 7, 5);
       this.chronoText.setFontSize(12).setPadding(6, 4, 6, 4);
     } else {
       this.pauseButton.setFontSize(18).setPadding(10, 8, 10, 8);
       this.menuButton.setFontSize(18).setPadding(10, 8, 10, 8);
+      this.helpButton.setFontSize(18).setPadding(10, 8, 10, 8);
       this.chronoText.setFontSize(15).setPadding(8, 6, 8, 6);
     }
     const topBtnY = this.mobileLayout ? 4 : 10;
     this.menuButton.setPosition(w - this.menuButton.width - 10, topBtnY);
     this.pauseButton.setPosition(w - this.menuButton.width - this.pauseButton.width - 20, topBtnY);
-    this.chronoText.setPosition(w - this.menuButton.width - this.pauseButton.width - 30, topBtnY);
+    this.helpButton.setPosition(
+      w - this.menuButton.width - this.pauseButton.width - this.helpButton.width - 30, topBtnY
+    );
+    this.chronoText.setPosition(
+      w - this.menuButton.width - this.pauseButton.width - this.helpButton.width - 40, topBtnY
+    );
 
     // Toujours en bas à gauche de l'ÉCRAN entier (pas de la colonne PC), indépendamment de la
     // mise en page : la colonne PC prend toute la hauteur à gauche, un ancrage relatif à elle
@@ -5667,6 +5888,7 @@ class GameScene extends Phaser.Scene {
       this.layoutLaborRoutingPanel();
       this.layoutDevotionPanel();
       this.layoutSettingsMenu();
+      this.layoutTutorialPanel();
       this.layoutStartMenu();
     }
     // Même filet que ci-dessus, mais pour la visibilité des boutons Entrepôt/Université/Maison/
